@@ -112,8 +112,6 @@ Update all version numbers as listed above.
 
 ### 3. Update CHANGELOG
 
-Add release notes to CHANGELOG.md.
-
 ### 4. Commit Changes
 
 ```bash
@@ -139,7 +137,7 @@ git push origin v0.2.0
 Using the GitHub CLI (recommended):
 
 ```bash
-gh release create v0.2.0 --title "v0.2.0" --notes-file CHANGELOG.md
+gh release create v0.2.0 --title "v0.2.0"
 ```
 
 Or via GitHub UI:
@@ -307,7 +305,6 @@ See [Upgrade Procedure](docs/operations/deployment.md#upgrade-procedure).
 
 ## Changelog
 
-Full changelog in CHANGELOG.md.
 ```
 
 ## Next Steps

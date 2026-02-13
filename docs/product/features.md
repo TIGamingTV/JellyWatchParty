@@ -139,6 +139,3 @@ Mobile browsers have reduced functionality due to platform restrictions:
 
 - **Official Jellyfin plugin repository** - Publish to the [official Jellyfin plugin repository](https://jellyfin.org/docs/general/server/plugins/#official-plugins) for native discoverability and installation
 
-## Version History
-
-See the [CHANGELOG](../../CHANGELOG.md) for release notes.
