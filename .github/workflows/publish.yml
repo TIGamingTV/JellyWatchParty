@@ -1,4 +1,4 @@
-name: Publish Docker Image
+name: Publish
 
 on:
   push:
@@ -10,7 +10,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: mhbxyz/openwatchparty-session-server
+  IMAGE_NAME: mhbxyz/owp-session-server
 
 permissions:
   contents: write

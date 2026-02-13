@@ -50,7 +50,7 @@ services:
       - internal
 
   session-server:
-    image: openwatchparty-session-server
+    image: owp-session-server
     container_name: owp-session
     environment:
       - ALLOWED_ORIGINS=https://jellyfin.example.com

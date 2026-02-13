@@ -23,7 +23,7 @@ OpenWatchParty enables synchronized media playback for [Jellyfin](https://jellyf
 ```bash
 docker run -d --name owp-session -p 3000:3000 \
   -e ALLOWED_ORIGINS="http://your-jellyfin:8096" \
-  ghcr.io/mhbxyz/openwatchparty-session-server:latest
+  ghcr.io/mhbxyz/owp-session-server:latest
 ```
 
 Then install the plugin from Jellyfin's catalog. See the [Installation Guide](https://mhbxyz.github.io/OpenWatchParty/operations/installation.html) for full instructions.

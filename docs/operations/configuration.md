@@ -50,7 +50,7 @@ openssl rand -base64 32
 ```yaml
 services:
   session-server:
-    image: openwatchparty-session-server
+    image: owp-session-server
     ports:
       - "3000:3000"
     environment:
@@ -139,7 +139,7 @@ Server constants in `src/ws.rs`:
 # docker-compose.yml
 services:
   session-server:
-    image: openwatchparty-session-server
+    image: owp-session-server
     ports:
       - "3000:3000"
 ```
@@ -154,7 +154,7 @@ Plugin settings:
 # docker-compose.yml
 services:
   session-server:
-    image: openwatchparty-session-server
+    image: owp-session-server
     ports:
       - "127.0.0.1:3000:3000"  # Only localhost
     environment:
@@ -175,7 +175,7 @@ For high availability or multiple Jellyfin instances:
 ```yaml
 services:
   session-server:
-    image: openwatchparty-session-server
+    image: owp-session-server
     deploy:
       replicas: 1  # Single instance (stateful)
     environment:

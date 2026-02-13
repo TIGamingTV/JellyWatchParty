@@ -183,24 +183,24 @@ Docker images are automatically built and pushed to GitHub Container Registry (G
 
 ```bash
 # Latest stable
-docker pull ghcr.io/mhbxyz/openwatchparty-session-server:latest
+docker pull ghcr.io/mhbxyz/owp-session-server:latest
 
 # Specific version
-docker pull ghcr.io/mhbxyz/openwatchparty-session-server:v0.1.0
+docker pull ghcr.io/mhbxyz/owp-session-server:v0.1.0
 
 # Development
-docker pull ghcr.io/mhbxyz/openwatchparty-session-server:beta
+docker pull ghcr.io/mhbxyz/owp-session-server:beta
 ```
 
 ### Build Locally (optional)
 
 ```bash
-docker build -t openwatchparty-session-server:local ./src/server
+docker build -t owp-session-server:local ./src/server
 ```
 
 ## Automated Releases
 
-Releases are fully automated via GitHub Actions (`.github/workflows/docker-publish.yml`).
+Releases are fully automated via GitHub Actions (`.github/workflows/publish.yml`).
 
 ### What Happens on Release
 

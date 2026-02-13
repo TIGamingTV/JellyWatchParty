@@ -49,7 +49,7 @@ Runs on every push/PR and weekly (Monday 00:00 UTC).
 
 Results are uploaded to the GitHub Security tab.
 
-### Docker Publish Workflow (`docker-publish.yml`)
+### Publish Workflow (`publish.yml`)
 
 Handles Docker image publishing to GHCR and release artifacts.
 
@@ -85,13 +85,13 @@ Users can then install/update the plugin directly from Jellyfin's plugin interfa
 
 ```bash
 # Latest stable release
-docker pull ghcr.io/mhbxyz/openwatchparty-session-server:latest
+docker pull ghcr.io/mhbxyz/owp-session-server:latest
 
 # Specific version
-docker pull ghcr.io/mhbxyz/openwatchparty-session-server:v0.1.0
+docker pull ghcr.io/mhbxyz/owp-session-server:v0.1.0
 
 # Development (latest from main)
-docker pull ghcr.io/mhbxyz/openwatchparty-session-server:beta
+docker pull ghcr.io/mhbxyz/owp-session-server:beta
 ```
 
 ## Pre-commit Hooks

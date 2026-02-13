@@ -22,7 +22,7 @@ Install OpenWatchParty on your existing Jellyfin server:
    ```bash
    docker run -d --name owp-session -p 3000:3000 \
      -e ALLOWED_ORIGINS="http://your-jellyfin:8096" \
-     ghcr.io/mhbxyz/openwatchparty-session-server:latest
+     ghcr.io/mhbxyz/owp-session-server:latest
    ```
 
 2. **Install the Plugin** via Jellyfin UI

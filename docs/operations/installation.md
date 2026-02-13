@@ -66,33 +66,33 @@ docker run -d \
   --name owp-session \
   -p 3000:3000 \
   -e ALLOWED_ORIGINS="http://localhost:8096" \
-  ghcr.io/mhbxyz/openwatchparty-session-server:latest
+  ghcr.io/mhbxyz/owp-session-server:latest
 
 # Or use a specific version
 docker run -d \
   --name owp-session \
   -p 3000:3000 \
-  ghcr.io/mhbxyz/openwatchparty-session-server:v0.1.0
+  ghcr.io/mhbxyz/owp-session-server:v0.1.0
 
 # Or use the beta (latest from main branch)
 docker run -d \
   --name owp-session \
   -p 3000:3000 \
-  ghcr.io/mhbxyz/openwatchparty-session-server:beta
+  ghcr.io/mhbxyz/owp-session-server:beta
 ```
 
 #### Option B: Build from Source (Docker)
 
 ```bash
 # Build the image
-docker build -t openwatchparty-session-server ./src/server
+docker build -t owp-session-server ./src/server
 
 # Run the container
 docker run -d \
   --name owp-session \
   -p 3000:3000 \
   -e ALLOWED_ORIGINS="http://localhost:8096" \
-  openwatchparty-session-server
+  owp-session-server
 ```
 
 #### Option C: Build from Source (Native)
@@ -211,7 +211,7 @@ docker run -d \
   -e ALLOWED_ORIGINS="https://jellyfin.example.com" \
   -e JWT_SECRET="your-32-character-secret-key-here" \
   -e LOG_LEVEL="debug" \
-  ghcr.io/mhbxyz/openwatchparty-session-server:latest
+  ghcr.io/mhbxyz/owp-session-server:latest
 ```
 
 ## Firewall Configuration
