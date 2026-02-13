@@ -9,6 +9,14 @@
     "versions": [
       {
         "version": "0.1.0",
+        "changelog": "**Full Changelog**: https://github.com/mhbxyz/OpenWatchParty/commits/v0.1.0\n",
+        "targetAbi": "10.10.0.0",
+        "sourceUrl": "https://github.com/mhbxyz/OpenWatchParty/releases/download/v0.1.0/OpenWatchParty-v0.1.0.zip",
+        "checksum": "ac6c9e432960edf3daf31b0abd12b93d",
+        "timestamp": "2026-02-13T07:20:42Z"
+      },
+      {
+        "version": "0.1.0",
         "changelog": "Initial beta release",
         "targetAbi": "10.10.0.0",
         "sourceUrl": "https://github.com/mhbxyz/OpenWatchParty/releases/download/v0.1.0/OpenWatchParty-v0.1.0.zip",
