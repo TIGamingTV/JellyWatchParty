@@ -110,7 +110,6 @@ OpenWatchParty/
 │   │   ├── utils.mk
 │   │   └── help.mk
 │   └── scripts/             # Utility scripts
-│       └── build-jellyfin-plugin.sh
 │
 ├── docs/                    # Documentation
 │
