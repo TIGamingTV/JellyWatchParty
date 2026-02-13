@@ -45,9 +45,9 @@ Set up a development environment:
 ```bash
 git clone https://github.com/mhbxyz/OpenWatchParty.git
 cd OpenWatchParty
-make up      # Build and start Jellyfin + session server
-make dev     # Start with log following
-make watch   # Auto-restart on file changes
+just up      # Build and start Jellyfin + session server
+just dev     # Start with log following
+just watch   # Auto-restart on file changes
 ```
 
 See [Development Setup](development/setup) for the full workflow.

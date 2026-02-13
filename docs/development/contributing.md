@@ -18,7 +18,7 @@ Thank you for your interest in contributing to OpenWatchParty!
    ```
 3. **Set up development environment**:
    ```bash
-   make up
+   just up
    ```
 4. **Create a branch**:
    ```bash
@@ -102,7 +102,7 @@ docs: update installation instructions
 
 - [ ] Pre-commit hooks pass (`pre-commit run --all-files`)
 - [ ] Code follows project style
-- [ ] Tests pass (`make test`)
+- [ ] Tests pass (`just test`)
 - [ ] Documentation updated
 - [ ] Commit messages are clear
 - [ ] Branch is up to date with main
@@ -248,7 +248,7 @@ cd src/server && cargo clippy -- -D warnings
 **Build failures:**
 ```bash
 # Check locally before pushing
-make build
+just build
 ```
 
 ### Running CI Checks Locally
@@ -258,10 +258,10 @@ make build
 pre-commit run --all-files
 
 # Or run individual checks
-make fmt      # Format Rust code
-make lint     # Run linters
-make test     # Run tests
-make build    # Build all components
+just fmt      # Format Rust code
+just lint     # Run linters
+just test     # Run tests
+just build    # Build all components
 ```
 
 ## Code of Conduct

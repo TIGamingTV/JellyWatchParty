@@ -9,7 +9,7 @@ nav_order: 1
 ## Prerequisites
 
 - **Docker** and **Docker Compose**
-- **Make**
+- **[Just](https://just.systems/)** — command runner (`cargo install just` or [other methods](https://just.systems/man/en/packages.html))
 - **.NET 9.0 SDK** (for plugin development)
 - **Rust 1.83+** (for server development)
 - **Node.js 20+** (optional, for JS tooling)
@@ -24,10 +24,10 @@ git clone https://github.com/mhbxyz/OpenWatchParty.git
 cd OpenWatchParty
 
 # Set up development tools (pre-commit hooks)
-make setup
+just setup
 
 # Start development environment
-make up
+just up
 ```
 
 This will:
@@ -40,7 +40,7 @@ This will:
 
 ### 1. Jellyfin Configuration
 
-After running `make up`:
+After running `just up`:
 
 1. Open `http://localhost:8096`
 2. Complete the Jellyfin setup wizard
@@ -100,77 +100,75 @@ OpenWatchParty/
 │   │   │   └── docker-compose.yml   # Dev environment
 │   │   └── prod/
 │   │       └── docker-compose.yml   # Prod / release builds
-│   ├── make/                # Makefile modules
-│   │   ├── config.mk
-│   │   ├── dev.mk
-│   │   ├── build.mk
-│   │   ├── test.mk
-│   │   ├── docker.mk
-│   │   ├── setup.mk
-│   │   ├── utils.mk
-│   │   └── help.mk
+│   ├── just/                # Just modules
+│   │   ├── dev.just
+│   │   ├── build.just
+│   │   ├── test.just
+│   │   ├── docker.just
+│   │   ├── setup.just
+│   │   └── utils.just
 │   └── scripts/             # Utility scripts
 │
 ├── docs/                    # Documentation
 │
-├── Makefile                 # Build automation
+├── justfile                 # Build automation
 ├── CLAUDE.md               # AI assistant context
 └── README.md               # Project overview
 ```
 
-## Make Commands
+## Commands
 
-Run `make help` for a full list. Key commands:
+Run `just` for a full list. Key commands:
 
 ### Development
 | Command | Description |
 |---------|-------------|
-| `make up` | Start full development environment |
-| `make down` | Stop all services |
-| `make dev` | Start stack and follow logs |
-| `make restart` | Restart all services |
-| `make restart-jellyfin` | Restart Jellyfin only (after JS changes) |
-| `make restart-server` | Rebuild and restart session server |
-| `make watch` | Watch JS files and auto-restart on change |
-| `make shell-jellyfin` | Open shell in Jellyfin container |
-| `make shell-server` | Open shell in session server container |
+| `just up` | Start full development environment |
+| `just down` | Stop all services |
+| `just dev` | Start stack and follow logs |
+| `just restart` | Restart all services |
+| `just restart-jellyfin` | Restart Jellyfin only (after JS changes) |
+| `just restart-server` | Rebuild and restart session server |
+| `just watch` | Watch JS files and auto-restart on change |
+| `just shell-jellyfin` | Open shell in Jellyfin container |
+| `just shell-server` | Open shell in session server container |
 
 ### Build
 | Command | Description |
 |---------|-------------|
-| `make build` | Build the Jellyfin plugin |
-| `make build-server` | Build the session server locally (Rust) |
-| `make build-server-docker` | Rebuild session server Docker image |
-| `make build-all` | Build everything (plugin + server image) |
-| `make rebuild` | Clean and rebuild everything |
-| `make release` | Build release artifacts (zip) |
-| `make release-image` | Build release Docker image (prod) |
+| `just build` | Build the Jellyfin plugin |
+| `just build-server` | Build the session server locally (Rust) |
+| `just build-server-docker` | Rebuild session server Docker image |
+| `just build-all` | Build everything (plugin + server image) |
+| `just rebuild` | Clean and rebuild everything |
+| `just release` | Build release artifacts (zip) |
+| `just release-image` | Build release Docker image (prod) |
 
 ### Observability
 | Command | Description |
 |---------|-------------|
-| `make logs` | Follow logs from all services |
-| `make logs-server` | Follow session server logs only |
-| `make logs-jellyfin` | Follow Jellyfin logs only |
-| `make status` | Show service status with health info |
-| `make health` | Check health of all services |
+| `just logs` | Follow logs from all services |
+| `just logs-server` | Follow session server logs only |
+| `just logs-jellyfin` | Follow Jellyfin logs only |
+| `just status` | Show service status with health info |
+| `just health` | Check health of all services |
 
 ### Testing & Quality
 | Command | Description |
 |---------|-------------|
-| `make test` | Run all tests |
-| `make lint` | Run all linters (Rust + JS) |
-| `make fmt` | Format all code |
-| `make check` | Run cargo check (fast compile check) |
-| `make pre-commit` | Run all pre-commit hooks |
-| `make setup` | Install pre-commit hooks |
+| `just test` | Run all tests |
+| `just lint` | Run all linters (Rust + JS) |
+| `just fmt` | Format all code |
+| `just check` | Run cargo check (fast compile check) |
+| `just pre-commit` | Run all pre-commit hooks |
+| `just setup` | Install pre-commit hooks |
 
 ### Cleanup
 | Command | Description |
 |---------|-------------|
-| `make clean` | Clean all build artifacts |
-| `make clean-docker` | Remove Docker images and volumes |
-| `make reset` | Full reset (containers + artifacts) |
+| `just clean` | Clean all build artifacts |
+| `just clean-docker` | Remove Docker images and volumes |
+| `just reset` | Full reset (containers + artifacts) |
 
 **Quick aliases:** `u`=up, `d`=down, `r`=restart, `l`=logs, `s`=status, `b`=build
 
@@ -186,7 +184,7 @@ pip install pre-commit
 # or: brew install pre-commit
 
 # Install the hooks
-make setup
+just setup
 ```
 
 ### What Gets Checked
@@ -226,7 +224,7 @@ git commit --no-verify
 
 If a hook fails:
 
-1. **Formatting issues**: Run `make fmt` and re-stage files
+1. **Formatting issues**: Run `just fmt` and re-stage files
 2. **Clippy warnings**: Fix the warnings or add `#[allow(...)]` if justified
 3. **Build failures**: Check error messages and fix compilation issues
 4. **Whitespace issues**: Hooks auto-fix these; re-stage the files
@@ -238,18 +236,18 @@ If a hook fails:
 1. **Edit files** in `src/clients/jellyfin-web/`
 2. **Restart Jellyfin** (automatically copies JS files):
    ```bash
-   make restart-jellyfin
+   just restart-jellyfin
    ```
 3. **Hard refresh browser** (Ctrl+F5)
 
-**Tip:** Use `make watch` to automatically restart Jellyfin when JS files change.
+**Tip:** Use `just watch` to automatically restart Jellyfin when JS files change.
 
 ### Rust Session Server
 
 1. **Edit files** in `src/server/src/`
 2. **Restart server** (rebuilds automatically):
    ```bash
-   make restart-server
+   just restart-server
    ```
 
 ### C# Plugin
@@ -257,22 +255,22 @@ If a hook fails:
 1. **Edit files** in `src/plugins/jellyfin/OpenWatchParty/`
 2. **Build and restart**:
    ```bash
-   make build && make restart-jellyfin
+   just build && just restart-jellyfin
    ```
 
 ## Hot Reload
 
 ### JavaScript
 
-Use `make watch` for automatic reload on JS file changes. Otherwise:
-1. Run `make restart-jellyfin`
+Use `just watch` for automatic reload on JS file changes. Otherwise:
+1. Run `just restart-jellyfin`
 2. Hard refresh browser (Ctrl+F5)
 
 ### Rust
 
 The session server needs restart after changes:
 ```bash
-make restart-server
+just restart-server
 ```
 
 For faster iteration, run locally:
@@ -285,7 +283,7 @@ cargo watch -x run
 
 Requires rebuilding and restarting Jellyfin:
 ```bash
-make build && make restart-jellyfin
+just build && just restart-jellyfin
 ```
 
 ## Debugging

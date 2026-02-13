@@ -105,7 +105,7 @@ Local hooks mirror CI checks to catch issues before push.
 pip install pre-commit
 
 # Install hooks
-make setup
+just setup
 # or: pre-commit install
 ```
 

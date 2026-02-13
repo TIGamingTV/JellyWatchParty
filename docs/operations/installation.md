@@ -27,7 +27,7 @@ cd OpenWatchParty
 ### 2. Start Services
 
 ```bash
-make up
+just up
 ```
 
 This starts:

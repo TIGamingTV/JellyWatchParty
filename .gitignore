@@ -1,4 +1,7 @@
 .venv/
+# Environment
+.env
+
 # Docker config
 infra/docker/config/
 

@@ -95,6 +95,7 @@ Set up a complete development environment with hot reload.
 #### Prerequisites
 
 - [Docker](https://docs.docker.com/get-docker/) and Docker Compose
+- [Just](https://just.systems/) — command runner
 - Git
 
 #### 1. Clone and Start
@@ -102,7 +103,7 @@ Set up a complete development environment with hot reload.
 ```bash
 git clone https://github.com/mhbxyz/OpenWatchParty.git
 cd OpenWatchParty
-make up
+just up
 ```
 
 This builds the plugin and starts both Jellyfin (`localhost:8096`) and the session server (`localhost:3000`).
@@ -114,10 +115,10 @@ Follow step 3 from the user installation above.
 #### 3. Development Commands
 
 ```bash
-make dev      # Start stack and follow logs
-make watch    # Auto-restart on JS file changes
-make test     # Run tests
-make lint     # Run linters
+just dev      # Start stack and follow logs
+just watch    # Auto-restart on JS file changes
+just test     # Run tests
+just lint     # Run linters
 ```
 
 > See the [Development Setup Guide](https://mhbxyz.github.io/OpenWatchParty/development/setup.html) for the full development workflow.

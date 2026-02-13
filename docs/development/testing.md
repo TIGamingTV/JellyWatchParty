@@ -84,7 +84,7 @@ dotnet test --collect:"XPlat Code Coverage"
 
 1. Start the development environment:
    ```bash
-   make up
+   just up
    ```
 
 2. Open Jellyfin in two browser windows/tabs

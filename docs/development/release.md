@@ -74,7 +74,7 @@ Initial release.
 ### Build All Components
 
 ```bash
-make build
+just build
 ```
 
 ### Build Individually
