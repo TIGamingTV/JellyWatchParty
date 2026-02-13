@@ -26,6 +26,7 @@ help: ## Show this help
 	@echo "  $(GREEN)build-all$(RESET)          Build everything (plugin + server image)"
 	@echo "  $(GREEN)rebuild$(RESET)            Clean and rebuild everything"
 	@echo "  $(GREEN)release$(RESET)            Build release artifacts (zip)"
+	@echo "  $(GREEN)release-image$(RESET)      Build release Docker image (prod)"
 	@echo ""
 	@echo "$(BOLD)$(CYAN)Observability:$(RESET)"
 	@echo "  $(GREEN)logs$(RESET)               Follow logs from all services"

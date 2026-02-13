@@ -93,9 +93,24 @@ OpenWatchParty/
 │       └── Cargo.toml
 │
 ├── infra/
-│   └── docker/              # Docker configuration
-│       ├── docker-compose.yml
-│       └── entrypoint.sh
+│   ├── docker/              # Docker configuration
+│   │   ├── server.Dockerfile
+│   │   ├── config/          # Jellyfin runtime config (gitignored)
+│   │   ├── dev/
+│   │   │   └── docker-compose.yml   # Dev environment
+│   │   └── prod/
+│   │       └── docker-compose.yml   # Prod / release builds
+│   ├── make/                # Makefile modules
+│   │   ├── config.mk
+│   │   ├── dev.mk
+│   │   ├── build.mk
+│   │   ├── test.mk
+│   │   ├── docker.mk
+│   │   ├── setup.mk
+│   │   ├── utils.mk
+│   │   └── help.mk
+│   └── scripts/             # Utility scripts
+│       └── build-jellyfin-plugin.sh
 │
 ├── docs/                    # Documentation
 │
@@ -130,6 +145,7 @@ Run `make help` for a full list. Key commands:
 | `make build-all` | Build everything (plugin + server image) |
 | `make rebuild` | Clean and rebuild everything |
 | `make release` | Build release artifacts (zip) |
+| `make release-image` | Build release Docker image (prod) |
 
 ### Observability
 | Command | Description |

@@ -2,7 +2,7 @@
 # Build Targets
 # ============================================================================
 
-.PHONY: build build-plugin build-server build-server-docker build-all rebuild release
+.PHONY: build build-plugin build-server build-server-docker build-all rebuild release release-image
 
 build: build-plugin ## Build the Jellyfin plugin (alias)
 
@@ -40,3 +40,8 @@ release: clean ## Build release artifacts (zip)
 	@cp $(SERVER_DIR)/target/release/session-server dist/server/ 2>/dev/null || true
 	@cd dist && zip -r ../$(PROJECT_NAME)-release.zip .
 	@echo "$(GREEN)✓ Release built: $(PROJECT_NAME)-release.zip$(RESET)"
+
+release-image: ## Build release Docker image via prod compose
+	@echo "$(GREEN)▶ Building release Docker image...$(RESET)"
+	@$(COMPOSE_PROD) build session-server
+	@echo "$(GREEN)✓ Release Docker image built$(RESET)"

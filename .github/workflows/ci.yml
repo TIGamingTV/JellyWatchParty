@@ -108,6 +108,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ./src/server
+          file: ./infra/docker/server.Dockerfile
           push: false
           tags: openwatchparty/session-server:test
           cache-from: type=gha

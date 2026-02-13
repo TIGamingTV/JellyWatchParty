@@ -1,10 +1,10 @@
 services:
   session-server:
     build:
-      context: ../../src/server
-      dockerfile: Dockerfile
+      context: ../../../src/server
+      dockerfile: ../../infra/docker/server.Dockerfile
       args:
-        BUILD_MODE: dev  # Use "release" for production
+        BUILD_MODE: dev
     container_name: owp-session-server
     ports:
       - "${SESSION_SERVER_PORT:-3000}:3000"
@@ -31,11 +31,11 @@ services:
     ports:
       - "${JELLYFIN_PORT:-8096}:8096"
     volumes:
-      - ./config:/config
+      - ../config:/config
       - jellyfin-cache:/cache
       - ${MEDIA_DIR:-${HOME}/Videos/Movies}:/media/Movies:ro
-      - ../../src/clients/jellyfin-web:/jellyfin/jellyfin-web/plugins/openwatchparty:ro
-      - ../../src/plugins/jellyfin/OpenWatchParty/dist:/config/plugins/OpenWatchParty
+      - ../../../src/clients/jellyfin-web:/jellyfin/jellyfin-web/plugins/openwatchparty:ro
+      - ../../../src/plugins/jellyfin/OpenWatchParty/dist:/config/plugins/OpenWatchParty
     restart: unless-stopped
     entrypoint:
       - /bin/bash
@@ -70,7 +70,7 @@ services:
     profiles:
       - tools
     volumes:
-      - ../../src/plugins/jellyfin/OpenWatchParty:/src
+      - ../../../src/plugins/jellyfin/OpenWatchParty:/src
     environment:
       - HOME=/tmp
       - DOTNET_CLI_HOME=/tmp/.dotnet

@@ -9,11 +9,11 @@
 SHELL := /bin/bash
 
 # Include modular makefiles
-include make/config.mk
-include make/dev.mk
-include make/build.mk
-include make/test.mk
-include make/docker.mk
-include make/setup.mk
-include make/utils.mk
-include make/help.mk
+include infra/make/config.mk
+include infra/make/dev.mk
+include infra/make/build.mk
+include infra/make/test.mk
+include infra/make/docker.mk
+include infra/make/setup.mk
+include infra/make/utils.mk
+include infra/make/help.mk

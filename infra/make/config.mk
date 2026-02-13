@@ -3,9 +3,11 @@
 # ============================================================================
 
 PROJECT_NAME    := OpenWatchParty
-COMPOSE_FILE    := infra/docker/docker-compose.yml
-COMPOSE         := docker compose -f $(COMPOSE_FILE)
-COMPOSE_TOOLS   := docker compose --profile tools -f $(COMPOSE_FILE)
+COMPOSE_FILE      := infra/docker/dev/docker-compose.yml
+COMPOSE           := docker compose -f $(COMPOSE_FILE)
+COMPOSE_TOOLS     := docker compose --profile tools -f $(COMPOSE_FILE)
+COMPOSE_PROD_FILE := infra/docker/prod/docker-compose.yml
+COMPOSE_PROD      := docker compose -f $(COMPOSE_PROD_FILE)
 
 # Directories
 PLUGIN_DIR      := src/plugins/jellyfin/OpenWatchParty
