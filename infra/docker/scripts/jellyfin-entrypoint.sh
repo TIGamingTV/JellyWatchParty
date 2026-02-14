@@ -6,4 +6,4 @@ PGID=${PGID:-1000}
 
 # --- Drop privileges ---
 chown -R "$PUID:$PGID" /config /cache
-exec setpriv --reugid="$PUID:$PGID" --clear-groups /jellyfin/jellyfin
+exec setpriv --reuid="$PUID" --regid="$PGID" --clear-groups /jellyfin/jellyfin
