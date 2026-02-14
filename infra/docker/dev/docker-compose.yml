@@ -26,7 +26,6 @@ services:
   jellyfin-dev:
     image: jellyfin/jellyfin:10.11.3
     container_name: jellyfin-dev
-    user: "${UID:-1000}:${GID:-1000}"
     depends_on:
       - session-server
     ports:
