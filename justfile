@@ -34,7 +34,7 @@ session_ctr  := "owp-session-server"
 
 # -- Client JS files (order matters for plugin loading) ----------------------
 
-client_js_files := "state.js utils.js ui.js playback.js chat.js ws.js app.js"
+client_js_files := "state.js utils/time.js utils/video.js utils/misc.js utils/media.js utils/log.js ui/styles.js ui/indicators.js ui/toasts.js ui/cards.js ui/home.js ui/render.js playback/play.js playback/bind.js playback/sync.js chat/messages.js chat/input.js ws/send.js ws/auth.js ws/handlers-room.js ws/handlers-sync.js ws/handlers-playback.js ws/handlers-clock.js ws/connection.js app/lifecycle.js app/cleanup.js"
 
 # -- Colors ------------------------------------------------------------------
 
@@ -98,8 +98,8 @@ watch:
     echo -e "{{CYAN}}▶ Watching {{client_dir}} for changes...{{RESET}}"
     echo "  Press Ctrl+C to stop"
     while true; do
-        inotifywait -q -e modify -e create -e delete {{client_dir}}/*.js 2>/dev/null \
-            || fswatch -1 {{client_dir}}/*.js 2>/dev/null \
+        inotifywait -r -q -e modify -e create -e delete {{client_dir}}/ 2>/dev/null \
+            || fswatch -r -1 {{client_dir}}/ 2>/dev/null \
             || sleep 5
         echo -e "{{YELLOW}}▶ Change detected, restarting Jellyfin...{{RESET}}"
         {{compose}} restart jellyfin-dev

@@ -20,6 +20,7 @@ plugin:
     rm -rf {{plugin_dir}}/dist {{plugin_dir}}/bin {{plugin_dir}}/obj 2>/dev/null \
         || (echo -e "{{YELLOW}}⚠ Some files owned by root, using sudo...{{RESET}}" \
             && sudo rm -rf {{plugin_dir}}/dist {{plugin_dir}}/bin {{plugin_dir}}/obj)
+    rm -rf {{plugin_dir}}/Web/utils {{plugin_dir}}/Web/ui {{plugin_dir}}/Web/playback {{plugin_dir}}/Web/chat {{plugin_dir}}/Web/ws {{plugin_dir}}/Web/app 2>/dev/null || true
     rm -f {{plugin_dir}}/Web/*.js 2>/dev/null || true
 
 [doc('Clean server build artifacts')]

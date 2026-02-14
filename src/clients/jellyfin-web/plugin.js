@@ -29,18 +29,47 @@
     document.head.appendChild(script);
   });
 
-  // Optimized parallel loading based on dependencies:
-  // 1. state (no deps) → 2. utils (state) → 3. ui + playback (parallel) → 4. chat (ui) → 5. ws (ui, chat) → 6. app (all)
   const loadAll = async () => {
     await loadScript('state.js');
-    await loadScript('utils.js');
     await Promise.all([
-      loadScript('ui.js'),
-      loadScript('playback.js')
+      loadScript('utils/time.js'),
+      loadScript('utils/video.js'),
+      loadScript('utils/misc.js'),
     ]);
-    await loadScript('chat.js');
-    await loadScript('ws.js');
-    await loadScript('app.js');
+    await Promise.all([
+      loadScript('utils/media.js'),
+      loadScript('utils/log.js'),
+    ]);
+    await Promise.all([
+      loadScript('ui/styles.js'),
+      loadScript('ui/indicators.js'),
+      loadScript('ui/toasts.js'),
+      loadScript('ui/cards.js'),
+    ]);
+    await Promise.all([
+      loadScript('ui/home.js'),
+      loadScript('ui/render.js'),
+    ]);
+    await Promise.all([
+      loadScript('playback/play.js'),
+      loadScript('playback/bind.js'),
+      loadScript('playback/sync.js'),
+    ]);
+    await Promise.all([
+      loadScript('chat/messages.js'),
+      loadScript('chat/input.js'),
+    ]);
+    await loadScript('ws/send.js');
+    await loadScript('ws/auth.js');
+    await Promise.all([
+      loadScript('ws/handlers-room.js'),
+      loadScript('ws/handlers-sync.js'),
+      loadScript('ws/handlers-playback.js'),
+      loadScript('ws/handlers-clock.js'),
+    ]);
+    await loadScript('ws/connection.js');
+    await loadScript('app/lifecycle.js');
+    await loadScript('app/cleanup.js');
   };
 
   loadAll()

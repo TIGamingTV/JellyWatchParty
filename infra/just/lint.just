@@ -22,7 +22,7 @@ client:
     set -uo pipefail
     echo -e "{{CYAN}}▶ Linting JavaScript...{{RESET}}"
     if command -v eslint &> /dev/null; then
-        eslint {{client_dir}}/*.js || true
+        eslint {{client_dir}}/**/*.js {{client_dir}}/*.js || true
     else
         echo -e "{{YELLOW}}⚠ eslint not installed, skipping{{RESET}}"
     fi
