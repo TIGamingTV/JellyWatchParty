@@ -97,12 +97,13 @@ OpenWatchParty/
 │   │   └── prod/
 │   │       └── docker-compose.yml   # Prod / release builds
 │   ├── just/                # Just modules
-│   │   ├── dev.just
+│   │   ├── common.just      # Shared variables
 │   │   ├── build.just
 │   │   ├── test.just
-│   │   ├── docker.just
-│   │   ├── setup.just
-│   │   └── utils.just
+│   │   ├── lint.just
+│   │   ├── logs.just
+│   │   ├── clean.just
+│   │   └── shell.just
 │   └── scripts/             # Utility scripts
 │
 ├── docs/                    # Documentation
@@ -114,7 +115,7 @@ OpenWatchParty/
 
 ## Commands
 
-Run `just` for a full list. Key commands:
+Run `just` for a full list (with submodules). Key commands:
 
 ### Development
 | Command | Description |
@@ -123,57 +124,68 @@ Run `just` for a full list. Key commands:
 | `just down` | Stop all services |
 | `just dev` | Start stack and follow logs |
 | `just restart` | Restart all services |
-| `just restart-jellyfin` | Restart Jellyfin only (after JS changes) |
-| `just restart-server` | Rebuild and restart session server |
 | `just watch` | Watch JS files and auto-restart on change |
-| `just shell-jellyfin` | Open shell in Jellyfin container |
-| `just shell-server` | Open shell in session server container |
+| `just status` | Show service status with health checks |
 
-### Build
+### Build (`just build ...`)
 | Command | Description |
 |---------|-------------|
-| `just build` | Build the Jellyfin plugin |
-| `just build-server` | Build the session server locally (Rust) |
-| `just build-server-docker` | Rebuild session server Docker image |
-| `just build-all` | Build everything (plugin + server image) |
-| `just rebuild` | Clean and rebuild everything |
+| `just build` | Build the Jellyfin plugin (default) |
+| `just build plugin` | Build the Jellyfin plugin |
+| `just build server` | Build the session server locally (Rust) |
+| `just build image` | Rebuild session server Docker image |
+| `just build all` | Build everything (plugin + server image) |
+| `just rebuild` | Clean + rebuild + restart everything |
 | `just release` | Build release artifacts (zip) |
-| `just release-image` | Build release Docker image (prod) |
 
-### Observability
+### Testing (`just test ...`)
 | Command | Description |
 |---------|-------------|
-| `just logs` | Follow logs from all services |
-| `just logs-server` | Follow session server logs only |
-| `just logs-jellyfin` | Follow Jellyfin logs only |
-| `just status` | Show service status with health info |
-| `just health` | Check health of all services |
+| `just test` | Run all tests (Rust + .NET) |
+| `just test server` | Run Rust server tests |
+| `just test plugin` | Run .NET plugin tests |
 
-### Testing & Quality
+### Linting (`just lint ...`)
 | Command | Description |
 |---------|-------------|
-| `just test` | Run all tests |
 | `just lint` | Run all linters (Rust + JS) |
+| `just lint server` | Lint Rust code (clippy) |
+| `just lint client` | Lint JavaScript (eslint) |
 | `just fmt` | Format all code |
 | `just check` | Run cargo check (fast compile check) |
 
-### Cleanup
+### Logs (`just logs ...`)
+| Command | Description |
+|---------|-------------|
+| `just logs` | Follow logs from all services |
+| `just logs server` | Follow session server logs |
+| `just logs jellyfin` | Follow Jellyfin logs |
+
+### Clean (`just clean ...`)
 | Command | Description |
 |---------|-------------|
 | `just clean` | Clean all build artifacts |
-| `just clean-docker` | Remove Docker images and volumes |
+| `just clean plugin` | Clean plugin build artifacts |
+| `just clean server` | Clean server build artifacts |
+| `just clean docker` | Remove Docker images and volumes |
 | `just reset` | Full reset (containers + artifacts) |
 
-**Quick aliases:** `u`=up, `d`=down, `r`=restart, `l`=logs, `s`=status, `b`=build
+### Shell (`just shell ...`)
+| Command | Description |
+|---------|-------------|
+| `just shell server` | Open shell in session server container |
+| `just shell jellyfin` | Open shell in Jellyfin container |
+
+**Quick aliases:** `u`=up, `d`=down, `s`=status
 
 ## Development Workflow
 
 ### JavaScript Client
 
 1. **Edit files** in `src/clients/jellyfin-web/`
-2. **Restart Jellyfin** (automatically copies JS files):
+2. **Rebuild and restart**:
    ```bash
-   just restart-jellyfin
+   just rebuild
    ```
 3. **Hard refresh browser** (Ctrl+F5)
 
@@ -182,9 +194,9 @@ Run `just` for a full list. Key commands:
 ### Rust Session Server
 
 1. **Edit files** in `src/server/src/`
-2. **Restart server** (rebuilds automatically):
+2. **Rebuild everything**:
    ```bash
-   just restart-server
+   just rebuild
    ```
 
 ### C# Plugin
@@ -192,7 +204,7 @@ Run `just` for a full list. Key commands:
 1. **Edit files** in `src/plugins/jellyfin/OpenWatchParty/`
 2. **Build and restart**:
    ```bash
-   just build && just restart-jellyfin
+   just rebuild
    ```
 
 ## Hot Reload
@@ -200,14 +212,14 @@ Run `just` for a full list. Key commands:
 ### JavaScript
 
 Use `just watch` for automatic reload on JS file changes. Otherwise:
-1. Run `just restart-jellyfin`
+1. Run `just rebuild`
 2. Hard refresh browser (Ctrl+F5)
 
 ### Rust
 
 The session server needs restart after changes:
 ```bash
-just restart-server
+just rebuild
 ```
 
 For faster iteration, run locally:
@@ -220,7 +232,7 @@ cargo watch -x run
 
 Requires rebuilding and restarting Jellyfin:
 ```bash
-just build && just restart-jellyfin
+just rebuild
 ```
 
 ## Debugging

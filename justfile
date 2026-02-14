@@ -1,8 +1,8 @@
 # ============================================================================
 # OpenWatchParty — justfile
 # ============================================================================
-# Usage: just [recipe]
-# Run 'just' for available recipes
+# Usage: just [recipe]       — run a root recipe
+#        just <mod> [recipe] — run a module recipe (build, test, lint, …)
 # ============================================================================
 
 set shell := ["bash", "-euo", "pipefail", "-c"]
@@ -46,27 +46,131 @@ RED    := '\033[0;31m'
 BOLD   := '\033[1m'
 RESET  := '\033[0m'
 
-# -- Imports -----------------------------------------------------------------
+# -- Modules -----------------------------------------------------------------
 
-import 'infra/just/help.just'
-import 'infra/just/dev.just'
-import 'infra/just/build.just'
-import 'infra/just/test.just'
-import 'infra/just/docker.just'
-import 'infra/just/setup.just'
-import 'infra/just/utils.just'
+mod build "infra/just/build.just"
+mod test  "infra/just/test.just"
+mod lint  "infra/just/lint.just"
+mod logs  "infra/just/logs.just"
+mod clean "infra/just/clean.just"
+mod shell "infra/just/shell.just"
 
 # -- Aliases -----------------------------------------------------------------
 
 alias u := up
 alias d := down
-alias r := restart
-alias l := logs
 alias s := status
-alias b := build
 
 # -- Default -----------------------------------------------------------------
 
 [doc('Show available recipes')]
 default:
-    @just --list
+    @just --list --list-submodules
+
+# -- Development -------------------------------------------------------------
+
+[doc('Start the full stack (Jellyfin + session server)')]
+up:
+    @just build plugin
+    @echo -e "{{GREEN}}▶ Starting services...{{RESET}}"
+    @{{compose}} up -d session-server jellyfin-dev
+    @echo -e "{{GREEN}}✓ Stack started{{RESET}}"
+    @echo ""
+    @echo -e "  Jellyfin:  {{CYAN}}http://localhost:8096{{RESET}}"
+    @echo -e "  WebSocket: {{CYAN}}ws://localhost:3000/ws{{RESET}}"
+    @echo ""
+
+[doc('Stop all services')]
+down:
+    @echo -e "{{YELLOW}}▶ Stopping services...{{RESET}}"
+    @{{compose}} down
+    @echo -e "{{GREEN}}✓ Services stopped{{RESET}}"
+
+[doc('Start stack and follow logs')]
+dev: up
+    @{{compose}} logs -f --tail=100
+
+[doc('Watch client JS files and auto-restart Jellyfin on change')]
+watch:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo -e "{{CYAN}}▶ Watching {{client_dir}} for changes...{{RESET}}"
+    echo "  Press Ctrl+C to stop"
+    while true; do
+        inotifywait -q -e modify -e create -e delete {{client_dir}}/*.js 2>/dev/null \
+            || fswatch -1 {{client_dir}}/*.js 2>/dev/null \
+            || sleep 5
+        echo -e "{{YELLOW}}▶ Change detected, restarting Jellyfin...{{RESET}}"
+        {{compose}} restart jellyfin-dev
+        echo -e "{{GREEN}}✓ Restarted{{RESET}}"
+    done
+
+[doc('Restart all services')]
+restart:
+    @echo -e "{{YELLOW}}▶ Restarting services...{{RESET}}"
+    @{{compose}} restart session-server jellyfin-dev
+    @echo -e "{{GREEN}}✓ Services restarted{{RESET}}"
+
+[doc('Show service status with health checks')]
+status:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    echo -e "{{BOLD}}{{CYAN}}Service Status:{{RESET}}"
+    echo ""
+    {{compose}} ps --format "table {{{{.Name}}}}\t{{{{.Status}}}}\t{{{{.Ports}}}}"
+    echo ""
+    echo -e "{{BOLD}}{{CYAN}}Health Checks:{{RESET}}"
+    echo ""
+    printf "  Session Server: "
+    curl -sf http://localhost:3000/health > /dev/null 2>&1 \
+        && echo -e "{{GREEN}}✓ healthy{{RESET}}" \
+        || echo -e "{{RED}}✗ unhealthy{{RESET}}"
+    printf "  Jellyfin:       "
+    curl -sf http://localhost:8096/health > /dev/null 2>&1 \
+        && echo -e "{{GREEN}}✓ healthy{{RESET}}" \
+        || echo -e "{{RED}}✗ unhealthy{{RESET}}"
+    printf "  WebSocket:      "
+    timeout 2 bash -c 'echo "" | nc -w1 localhost 3000' > /dev/null 2>&1 \
+        && echo -e "{{GREEN}}✓ reachable{{RESET}}" \
+        || echo -e "{{YELLOW}}? check manually{{RESET}}"
+    echo ""
+
+# -- Build shortcuts ---------------------------------------------------------
+
+[doc('Clean and rebuild everything')]
+rebuild:
+    @just clean
+    @just build all
+    @{{compose}} up -d --force-recreate
+    @echo -e "{{GREEN}}✓ Stack rebuilt and restarted{{RESET}}"
+
+[doc('Build release artifacts (zip)')]
+release:
+    @just clean
+    @echo -e "{{GREEN}}▶ Building release...{{RESET}}"
+    @mkdir -p dist/plugin dist/server
+    @just build plugin
+    @cp -r {{plugin_dir}}/dist/* dist/plugin/
+    @cd {{server_dir}} && cargo build --release
+    @cp {{server_dir}}/target/release/session-server dist/server/ 2>/dev/null || true
+    @cd dist && zip -r ../{{project_name}}-release.zip .
+    @echo -e "{{GREEN}}✓ Release built: {{project_name}}-release.zip{{RESET}}"
+
+[doc('Full reset (stop + remove containers + clean artifacts)')]
+reset: down
+    @just clean docker
+    @just clean
+
+# -- Quality -----------------------------------------------------------------
+
+[doc('Format all code')]
+fmt:
+    @echo -e "{{CYAN}}▶ Formatting Rust code...{{RESET}}"
+    @cd {{server_dir}} && cargo fmt
+    @echo -e "{{GREEN}}✓ Code formatted{{RESET}}"
+
+[doc('Run cargo check (fast compile check)')]
+check:
+    @echo -e "{{CYAN}}▶ Running cargo check...{{RESET}}"
+    @cd {{server_dir}} && cargo check
+    @echo -e "{{GREEN}}✓ Check passed{{RESET}}"

@@ -315,7 +315,7 @@ assembly.GetManifestResourceStream("OpenWatchParty.Plugin.Web.plugin.js");
 dotnet build
 
 # Or use just (from project root)
-just build-plugin
+just build plugin
 ```
 
 The built DLL and dependencies are placed in `bin/Debug/net9.0/`.
