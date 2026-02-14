@@ -166,16 +166,17 @@ Send a playback event (host only).
 
 | Payload Field | Type | Description |
 |---------------|------|-------------|
-| `action` | string | `"play"`, `"pause"`, or `"seek"` |
+| `action` | string | `"play"`, `"pause"`, `"seek"`, or `"buffering"` |
 | `position` | number | Current position (seconds) |
 
 **Behavior by action:**
 
 | Action | Server Behavior |
 |--------|-----------------|
-| `play` | If `all_ready()`: broadcast with `target_server_ts = now + 1500ms`. Otherwise: create `pending_play` |
+| `play` | If `all_ready()`: broadcast with `target_server_ts = now + 1000ms`. Otherwise: create `pending_play` |
 | `pause` | Broadcast with `target_server_ts = now + 300ms` |
 | `seek` | Broadcast with `target_server_ts = now + 300ms` |
+| `buffering` | Broadcast with `target_server_ts = now + 300ms` (treat as paused) |
 
 **Effects:**
 - Updates `room.state`
@@ -343,16 +344,16 @@ Playback command relayed from host.
   "payload": {
     "action": "play",
     "position": 120.5,
-    "target_server_ts": 1678900001500
+    "target_server_ts": 1678900001000
   },
   "ts": 1678900000000,
-  "server_ts": 1678900001500
+  "server_ts": 1678900001000
 }
 ```
 
 | Payload Field | Type | Description |
 |---------------|------|-------------|
-| `action` | string | `"play"`, `"pause"`, or `"seek"` |
+| `action` | string | `"play"`, `"pause"`, `"seek"`, or `"buffering"` |
 | `position` | number | Reference position (seconds) |
 | `target_server_ts` | number | Target server timestamp for execution |
 
@@ -499,9 +500,9 @@ Client A                    Server                    Client B
     ├── player_event (play) ──►│                          │
     │                          │   all_ready() = true     │
     │◄─ player_event ──────────┼─── player_event ────────►│
-    │   target_ts = T+1500     │   target_ts = T+1500     │
+    │   target_ts = T+1000     │   target_ts = T+1000     │
     │                          │                          │
-    │   [T+1500ms]             │                [T+1500ms]│
+    │   [T+1000ms]             │                [T+1000ms]│
     │   video.play()           │              video.play()│
     │                          │                          │
     ├── state_update ─────────►│                          │

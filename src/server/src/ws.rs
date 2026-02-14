@@ -1,13 +1,18 @@
 use crate::auth::JwtConfig;
 use crate::messaging::{broadcast_room_list, broadcast_to_room, send_room_list, send_to_client};
 use crate::room::{close_room, handle_leave};
-use crate::types::{ClientMessageType, Clients, IncomingMessage, PlaybackState, Room, WsMessage};
+use crate::types::{
+    ClientMessageType, Clients, IncomingMessage, PendingPlay, PlaybackState, Room, Rooms,
+    WsMessage,
+};
 use crate::utils::now_ms;
 use futures::StreamExt;
 use log::{debug, info, warn};
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::mpsc;
+use tokio::time::sleep;
 use tokio_stream::wrappers::ReceiverStream;
 
 // Channel buffer size for client message queues (prevents OOM from slow clients)
@@ -15,6 +20,7 @@ const CLIENT_CHANNEL_BUFFER: usize = 100;
 
 const PLAY_SCHEDULE_MS: u64 = 1000; // Reduced from 1500ms for better UX (UX-P1)
 const CONTROL_SCHEDULE_MS: u64 = 300;
+const MAX_READY_WAIT_MS: u64 = 2000;
 const MIN_STATE_UPDATE_INTERVAL_MS: u64 = 500;
 const POSITION_JITTER_THRESHOLD: f64 = 0.5;
 const COMMAND_COOLDOWN_MS: u64 = 2000;
@@ -169,6 +175,22 @@ async fn broadcast_scheduled_play(
     };
     let locked_clients = clients.read().await;
     broadcast_to_room(room, &locked_clients, &msg, None);
+}
+
+fn schedule_pending_play(room_id: String, created_at: u64, clients: Clients, rooms: Rooms) {
+    tokio::spawn(async move {
+        sleep(Duration::from_millis(MAX_READY_WAIT_MS)).await;
+        let mut locked_rooms = rooms.write().await;
+        if let Some(room) = locked_rooms.get_mut(&room_id) {
+            let pending = match room.pending_play.clone() {
+                Some(pending) if pending.created_at == created_at => pending,
+                _ => return,
+            };
+            room.pending_play = None;
+            let target_server_ts = now_ms() + PLAY_SCHEDULE_MS;
+            broadcast_scheduled_play(room, &clients, pending.position, target_server_ts).await;
+        }
+    });
 }
 
 /// Returns true if the client is rate limited (should drop the message)
@@ -545,131 +567,194 @@ async fn client_msg(
             if let Some(ref room_id) = parsed.room {
                 // P-RS01 fix: Collect senders while holding lock, then send after releasing
                 // This reduces lock contention during broadcasts
-                let broadcast_data: Option<(Vec<mpsc::Sender<_>>, String)> = {
+                let mut pending_schedule: Option<(String, u64)> = None;
+                let broadcast_data: Option<(Vec<mpsc::Sender<_>>, String)> = 'broadcast: {
                     let mut locked_rooms = rooms.write().await;
                     let locked_clients = clients.read().await;
 
-                    if let Some(room) = locked_rooms.get_mut(room_id) {
-                        if room.host_id != client_id {
-                            None
+                    let room = match locked_rooms.get_mut(room_id) {
+                        Some(room) => room,
+                        None => break 'broadcast None,
+                    };
+                    if room.host_id != client_id {
+                        break 'broadcast None;
+                    }
+
+                    let current_ts = now_ms();
+                    let is_player_event = parsed.msg_type == ClientMessageType::PlayerEvent;
+                    let action = if is_player_event {
+                        parsed
+                            .payload
+                            .as_ref()
+                            .and_then(|p| p.get("action"))
+                            .and_then(|v| v.as_str())
+                    } else {
+                        None
+                    };
+
+                    if is_player_event && action == Some("pause") {
+                        room.pending_play = None;
+                    }
+
+                    if is_player_event && action == Some("play") && !all_ready(room) {
+                        let position = parsed
+                            .payload
+                            .as_ref()
+                            .and_then(|p| p.get("position"))
+                            .and_then(|v| v.as_f64())
+                            .filter(|pos| is_valid_position(*pos))
+                            .unwrap_or(room.state.position);
+                        room.state.position = position;
+                        if let Some(pending) = room.pending_play.as_mut() {
+                            pending.position = position;
                         } else {
-                            let current_ts = now_ms();
+                            room.pending_play = Some(PendingPlay {
+                                position,
+                                created_at: current_ts,
+                            });
+                            pending_schedule = Some((room.room_id.clone(), current_ts));
+                        }
+                        room.last_state_ts = current_ts;
+                        break 'broadcast None;
+                    }
 
-                            // For state_update: filter out updates that are too frequent or have insignificant changes
-                            let should_process = if parsed.msg_type
-                                == ClientMessageType::StateUpdate
-                            {
-                                if let Some(payload) = &parsed.payload {
-                                    let new_pos = payload
-                                        .get("position")
-                                        .and_then(|v| v.as_f64())
-                                        .unwrap_or(room.state.position);
-                                    let new_play_state = payload
-                                        .get("play_state")
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or(&room.state.play_state);
-                                    let play_state_changed =
-                                        new_play_state != room.state.play_state;
-                                    let pos_diff = new_pos - room.state.position;
-
-                                    // Always allow state_update if play_state changed (critical for sync)
-                                    // Only apply cooldown/throttle for position-only updates
-                                    if play_state_changed {
-                                        true
-                                    } else {
-                                        // Check various throttle conditions
-                                        let in_command_cooldown = room.last_command_ts > 0
-                                            && current_ts - room.last_command_ts
-                                                < COMMAND_COOLDOWN_MS;
-                                        let too_frequent = current_ts - room.last_state_ts
-                                            < MIN_STATE_UPDATE_INTERVAL_MS;
-                                        let small_backward_jitter =
-                                            (-2.0..-POSITION_JITTER_THRESHOLD).contains(&pos_diff);
-                                        let small_forward_jitter =
-                                            (0.0..POSITION_JITTER_THRESHOLD).contains(&pos_diff);
-
-                                        !(in_command_cooldown
-                                            || too_frequent
-                                            || small_backward_jitter
-                                            || small_forward_jitter)
-                                    }
-                                } else {
-                                    true
+                    if room.pending_play.is_some() {
+                        if is_player_event {
+                            if action != Some("pause") {
+                                let position = parsed
+                                    .payload
+                                    .as_ref()
+                                    .and_then(|p| p.get("position"))
+                                    .and_then(|v| v.as_f64())
+                                    .filter(|pos| is_valid_position(*pos))
+                                    .unwrap_or(room.state.position);
+                                room.state.position = position;
+                                if let Some(pending) = room.pending_play.as_mut() {
+                                    pending.position = position;
                                 }
-                            } else {
-                                true
-                            };
-
-                            if !should_process {
-                                None
-                            } else {
-                                if let Some(payload) = &parsed.payload {
-                                    // Validate and update position
-                                    if let Some(pos) =
-                                        payload.get("position").and_then(|v| v.as_f64())
-                                    {
-                                        if is_valid_position(pos) {
-                                            room.state.position = pos;
-                                        }
-                                    }
-                                    // Validate and update play_state
-                                    if let Some(st) =
-                                        payload.get("play_state").and_then(|v| v.as_str())
-                                    {
-                                        if is_valid_play_state(st) {
-                                            room.state.play_state = st.to_string();
-                                        }
-                                    }
-                                    if parsed.msg_type == ClientMessageType::PlayerEvent {
-                                        if let Some(action) =
-                                            payload.get("action").and_then(|v| v.as_str())
-                                        {
-                                            if action == "play" {
-                                                room.state.play_state = "playing".to_string();
-                                            }
-                                            if action == "pause" {
-                                                room.state.play_state = "paused".to_string();
-                                            }
-                                        }
-                                    }
-                                }
-
                                 room.last_state_ts = current_ts;
+                                break 'broadcast None;
+                            }
+                        } else if parsed.msg_type == ClientMessageType::StateUpdate {
+                            let position = parsed
+                                .payload
+                                .as_ref()
+                                .and_then(|p| p.get("position"))
+                                .and_then(|v| v.as_f64())
+                                .filter(|pos| is_valid_position(*pos))
+                                .unwrap_or(room.state.position);
+                            room.state.position = position;
+                            if let Some(pending) = room.pending_play.as_mut() {
+                                pending.position = position;
+                            }
+                            room.last_state_ts = current_ts;
+                            break 'broadcast None;
+                        }
+                    }
 
-                                if parsed.msg_type == ClientMessageType::PlayerEvent {
-                                    room.last_command_ts = current_ts;
-                                    let target_server_ts = now_ms() + CONTROL_SCHEDULE_MS;
-                                    if let Some(payload) = parsed.payload.as_mut() {
-                                        payload["target_server_ts"] =
-                                            serde_json::json!(target_server_ts);
-                                    }
-                                    parsed.server_ts = Some(target_server_ts);
-                                } else {
-                                    parsed.server_ts = Some(now_ms());
+                    // For state_update: filter out updates that are too frequent or have insignificant changes
+                    let should_process = if parsed.msg_type == ClientMessageType::StateUpdate {
+                        if let Some(payload) = &parsed.payload {
+                            let new_pos = payload
+                                .get("position")
+                                .and_then(|v| v.as_f64())
+                                .unwrap_or(room.state.position);
+                            let new_play_state = payload
+                                .get("play_state")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or(&room.state.play_state);
+                            let play_state_changed = new_play_state != room.state.play_state;
+                            let pos_diff = new_pos - room.state.position;
+
+                            // Always allow state_update if play_state changed (critical for sync)
+                            // Only apply cooldown/throttle for position-only updates
+                            if play_state_changed {
+                                true
+                            } else {
+                                // Check various throttle conditions
+                                let in_command_cooldown = room.last_command_ts > 0
+                                    && current_ts - room.last_command_ts < COMMAND_COOLDOWN_MS;
+                                let too_frequent =
+                                    current_ts - room.last_state_ts < MIN_STATE_UPDATE_INTERVAL_MS;
+                                let small_backward_jitter =
+                                    (-2.0..-POSITION_JITTER_THRESHOLD).contains(&pos_diff);
+                                let small_forward_jitter =
+                                    (0.0..POSITION_JITTER_THRESHOLD).contains(&pos_diff);
+
+                                !(in_command_cooldown
+                                    || too_frequent
+                                    || small_backward_jitter
+                                    || small_forward_jitter)
+                            }
+                        } else {
+                            true
+                        }
+                    } else {
+                        true
+                    };
+
+                    if !should_process {
+                        break 'broadcast None;
+                    }
+
+                    if let Some(payload) = &parsed.payload {
+                        // Validate and update position
+                        if let Some(pos) = payload.get("position").and_then(|v| v.as_f64()) {
+                            if is_valid_position(pos) {
+                                room.state.position = pos;
+                            }
+                        }
+                        // Validate and update play_state
+                        if let Some(st) = payload.get("play_state").and_then(|v| v.as_str()) {
+                            if is_valid_play_state(st) {
+                                room.state.play_state = st.to_string();
+                            }
+                        }
+                        if parsed.msg_type == ClientMessageType::PlayerEvent {
+                            if let Some(action) = action {
+                                if action == "play" {
+                                    room.state.play_state = "playing".to_string();
                                 }
-
-                                // Collect senders for clients in the room (excluding sender)
-                                let senders: Vec<_> = room
-                                    .clients
-                                    .iter()
-                                    .filter(|id| *id != client_id)
-                                    .filter_map(|id| {
-                                        locked_clients.get(id).map(|c| c.sender.clone())
-                                    })
-                                    .collect();
-
-                                // Serialize message once
-                                match serde_json::to_string(&parsed) {
-                                    Ok(json) => Some((senders, json)),
-                                    Err(e) => {
-                                        log::error!("Failed to serialize message: {}", e);
-                                        None
-                                    }
+                                if action == "pause" || action == "buffering" {
+                                    room.state.play_state = "paused".to_string();
                                 }
                             }
                         }
+                    }
+
+                    room.last_state_ts = current_ts;
+
+                    if parsed.msg_type == ClientMessageType::PlayerEvent {
+                        room.last_command_ts = current_ts;
+                        let schedule_delay = if action == Some("play") {
+                            PLAY_SCHEDULE_MS
+                        } else {
+                            CONTROL_SCHEDULE_MS
+                        };
+                        let target_server_ts = current_ts + schedule_delay;
+                        if let Some(payload) = parsed.payload.as_mut() {
+                            payload["target_server_ts"] = serde_json::json!(target_server_ts);
+                        }
+                        parsed.server_ts = Some(target_server_ts);
                     } else {
-                        None
+                        parsed.server_ts = Some(current_ts);
+                    }
+
+                    // Collect senders for clients in the room (excluding sender)
+                    let senders: Vec<_> = room
+                        .clients
+                        .iter()
+                        .filter(|id| *id != client_id)
+                        .filter_map(|id| locked_clients.get(id).map(|c| c.sender.clone()))
+                        .collect();
+
+                    // Serialize message once
+                    match serde_json::to_string(&parsed) {
+                        Ok(json) => break 'broadcast Some((senders, json)),
+                        Err(e) => {
+                            log::error!("Failed to serialize message: {}", e);
+                            break 'broadcast None;
+                        }
                     }
                 }; // Locks released here
 
@@ -684,6 +769,9 @@ async fn client_msg(
                             );
                         }
                     }
+                }
+                if let Some((room_id, created_at)) = pending_schedule {
+                    schedule_pending_play(room_id, created_at, clients.clone(), rooms.clone());
                 }
             }
         }

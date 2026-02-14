@@ -135,7 +135,7 @@ Host Browser                     Server                   Client Browser
      │                         [Calculate target_ts]             │
      │                              │                            │
      │◄─── player_event ────────────┼─── player_event ──────────►│
-     │     target_ts = T+1500       │    target_ts = T+1500      │
+     │     target_ts = T+1000       │    target_ts = T+1000      │
      │                              │                            │
      │         [Wait for T]         │            [Wait for T]    │
      │                              │                            │

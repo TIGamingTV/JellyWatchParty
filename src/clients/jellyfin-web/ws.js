@@ -51,6 +51,13 @@
     state.initialSyncUntil = 0;
     state.initialSyncTargetPos = 0;
     state.syncCooldownUntil = 0;
+    state.syncStatus = 'synced';
+    state.pendingPlayUntil = 0;
+    state.currentDrift = 0;
+    if (state.pendingActionTimer) {
+      clearTimeout(state.pendingActionTimer);
+      state.pendingActionTimer = null;
+    }
     // Clear chat
     if (OWP.chat) OWP.chat.clear();
     // Hide the panel instead of showing lobby
@@ -476,6 +483,10 @@
             state.initialSyncTargetPos = 0;
             state.syncStatus = 'synced';  // UX-P3: Mark as synced on pause
             state.pendingPlayUntil = 0;
+            if (state.pendingActionTimer) {
+              clearTimeout(state.pendingActionTimer);
+              state.pendingActionTimer = null;
+            }
             if (ui.updateSyncIndicator) ui.updateSyncIndicator();
             // Pause immediately, no scheduling delay
             video.pause();
@@ -495,6 +506,15 @@
             // Host is buffering - pause and wait for seek/play event
             state.lastSyncPlayState = 'paused';
             // Don't clear cooldown - we'll get a play event soon and need protection
+            state.pendingPlayUntil = 0;
+            if (state.pendingActionTimer) {
+              clearTimeout(state.pendingActionTimer);
+              state.pendingActionTimer = null;
+            }
+            if (state.syncStatus === 'pending_play') {
+              state.syncStatus = 'syncing';
+              if (ui.updateSyncIndicator) ui.updateSyncIndicator();
+            }
             video.pause();
           }
         }

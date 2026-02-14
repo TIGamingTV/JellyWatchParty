@@ -108,13 +108,13 @@ The client has built-in constants that control synchronization behavior. These a
 | Constant | Default | Description |
 |----------|---------|-------------|
 | `SUPPRESS_MS` | 2000 | Anti-feedback lock duration (ms) |
-| `SEEK_THRESHOLD` | 2.5 | Position difference to trigger seek (s) |
+| `SEEK_THRESHOLD` | 1.0 | Position difference to trigger seek (s) |
 | `STATE_UPDATE_MS` | 1000 | State update interval (ms) |
-| `SYNC_LEAD_MS` | 120 | Latency compensation (ms) |
+| `SYNC_LEAD_MS` | 300 | Latency compensation (ms) |
 | `DRIFT_DEADZONE_SEC` | 0.04 | No-correction zone (s) |
-| `DRIFT_SOFT_MAX_SEC` | 2.5 | Forced seek threshold (s) |
-| `PLAYBACK_RATE_MIN` | 0.95 | Minimum catchup speed |
-| `PLAYBACK_RATE_MAX` | 1.05 | Maximum catchup speed |
+| `DRIFT_SOFT_MAX_SEC` | 2.0 | Forced seek threshold (s) |
+| `PLAYBACK_RATE_MIN` | 0.85 | Minimum catchup speed |
+| `PLAYBACK_RATE_MAX` | 2.0 | Maximum catchup speed |
 | `DRIFT_GAIN` | 0.5 | Speed adjustment gain |
 
 ### Server Tuning
@@ -123,7 +123,7 @@ Server constants in `src/ws.rs`:
 
 | Constant | Default | Description |
 |----------|---------|-------------|
-| `PLAY_SCHEDULE_MS` | 1500 | Delay before play broadcast (ms) |
+| `PLAY_SCHEDULE_MS` | 1000 | Delay before play broadcast (ms) |
 | `CONTROL_SCHEDULE_MS` | 300 | Delay before pause/seek broadcast (ms) |
 | `MAX_READY_WAIT_MS` | 2000 | Max wait for ready clients (ms) |
 | `MIN_STATE_UPDATE_INTERVAL_MS` | 500 | Min state update interval (ms) |

@@ -63,7 +63,7 @@ Host                  Server                    Client B
   ├─ play @ pos 120s ───►│                          │
   │                      │                          │
   │                      ├── target_server_ts ─────►│
-  │                      │   = now + 1500ms         │
+  │                      │   = now + 1000ms         │
   │                      │                          │
   │                      │                    scheduleAt(target_ts)
   │                      │                          │
@@ -357,10 +357,10 @@ Host                     Server                   Client B
   │                    pending_play = None            │
   │                         │                         │
   │◄── player_event: play ─┼── player_event: play ──►│
-  │    target_ts = T+1.5s   │   target_ts = T+1.5s    │
+  │    target_ts = T+1.0s   │   target_ts = T+1.0s    │
   │                         │                         │
   ▼                         │                         ▼
-video.play() @ T+1.5s       │              video.play() @ T+1.5s
+video.play() @ T+1.0s       │              video.play() @ T+1.0s
 ```
 
 ### Safety Timeout
@@ -374,7 +374,7 @@ fn schedule_pending_play(room_id, created_at, rooms, clients) {
 
         if room.pending_play.created_at == created_at {
             // Timeout: force play
-            broadcast_scheduled_play(room, clients, position, now + 1500);
+            broadcast_scheduled_play(room, clients, position, now + 1000);
             room.pending_play = None;
         }
     });

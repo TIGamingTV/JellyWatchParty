@@ -136,7 +136,7 @@ Handles WebSocket connections and main business logic.
 
 | Constant | Value | Description |
 |----------|-------|-------------|
-| `PLAY_SCHEDULE_MS` | 1500 | Delay before play execution (ms) |
+| `PLAY_SCHEDULE_MS` | 1000 | Delay before play execution (ms) |
 | `CONTROL_SCHEDULE_MS` | 300 | Delay before pause/seek execution (ms) |
 | `MAX_READY_WAIT_MS` | 2000 | Max wait time for ready clients (ms) |
 | `MIN_STATE_UPDATE_INTERVAL_MS` | 500 | Min interval between state updates (ms) |
