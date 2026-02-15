@@ -162,6 +162,13 @@ reset: down
     @just clean docker
     @just clean
 
+# -- Setup -------------------------------------------------------------------
+
+[doc('Configure git hooks and local dev environment')]
+setup:
+    @git config core.hooksPath .githooks
+    @echo -e "{{GREEN}}✓ Git hooks configured (.githooks/){{RESET}}"
+
 # -- Quality -----------------------------------------------------------------
 
 [doc('Format all code')]

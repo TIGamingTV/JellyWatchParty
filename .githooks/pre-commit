@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Only check formatting if Rust files are staged
+if git diff --cached --name-only | grep -q '\.rs$'; then
+    echo "pre-commit: checking Rust formatting..."
+    cd src/server
+    if ! cargo fmt --check 2>/dev/null; then
+        echo ""
+        echo "ERROR: Rust code is not formatted."
+        echo "Run 'just fmt' and stage the changes."
+        exit 1
+    fi
+    echo "pre-commit: Rust formatting OK"
+fi
