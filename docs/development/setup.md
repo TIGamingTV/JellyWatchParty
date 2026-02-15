@@ -22,6 +22,9 @@ nav_order: 1
 git clone https://github.com/mhbxyz/OpenWatchParty.git
 cd OpenWatchParty
 
+# Configure git hooks (required once after clone)
+just setup
+
 # Start development environment
 just up
 ```
@@ -62,55 +65,80 @@ OpenWatchParty/
 ├── src/
 │   ├── clients/
 │   │   └── jellyfin-web/          # JavaScript client modules
-│   │       ├── plugin.js        # Loader/entry point
-│   │       ├── state.js     # State management
-│   │       ├── utils.js     # Utilities
-│   │       ├── ui.js        # User interface
-│   │       ├── playback.js  # Video sync
-│   │       ├── ws.js        # WebSocket
-│   │       └── app.js       # Initialization
+│   │       ├── plugin.js          # Loader/entry point
+│   │       ├── state.js           # State management
+│   │       ├── utils/             # Utility functions
+│   │       │   ├── log.js, media.js, misc.js
+│   │       │   ├── time.js, video.js
+│   │       ├── ui/                # User interface
+│   │       │   ├── cards.js, home.js, indicators.js
+│   │       │   ├── render.js, styles.js, toasts.js
+│   │       ├── playback/          # Video sync
+│   │       │   ├── bind.js, play.js, sync.js
+│   │       ├── chat/              # Text chat
+│   │       │   ├── input.js, messages.js
+│   │       ├── ws/                # WebSocket
+│   │       │   ├── auth.js, connection.js, send.js
+│   │       │   └── handlers/
+│   │       │       ├── clock.js, playback.js
+│   │       │       ├── room.js, sync.js
+│   │       └── app/               # Initialization
+│   │           ├── cleanup.js, lifecycle.js
 │   │
 │   ├── plugins/
 │   │   └── jellyfin/
-│   │       └── OpenWatchParty/  # C# Jellyfin plugin
+│   │       └── OpenWatchParty/    # C# Jellyfin plugin
 │   │           ├── Plugin.cs
 │   │           ├── Controllers/
 │   │           ├── Configuration/
-│   │           └── Web/         # Bundled JS (copied from clients/)
+│   │           └── Web/           # Bundled JS (copied from clients/)
 │   │
-│   └── server/     # Rust WebSocket server
+│   └── server/                    # Rust WebSocket server
 │       ├── src/
 │       │   ├── main.rs
 │       │   ├── types.rs
-│       │   ├── ws.rs
-│       │   ├── room.rs
+│       │   ├── routes.rs
+│       │   ├── tasks.rs
 │       │   ├── messaging.rs
-│       │   └── auth.rs
+│       │   ├── auth.rs
+│       │   ├── utils.rs
+│       │   ├── ws/
+│       │   │   ├── mod.rs, connection.rs, dispatch.rs
+│       │   │   ├── constants.rs, validation.rs, pending_play.rs
+│       │   │   └── handlers/
+│       │   │       ├── auth.rs, chat.rs, create.rs
+│       │   │       ├── join.rs, misc.rs, playback.rs
+│       │   └── room/
+│       │       ├── mod.rs, leave.rs, close.rs
 │       └── Cargo.toml
 │
+├── .githooks/
+│   └── pre-commit             # cargo fmt check on staged .rs files
+│
 ├── infra/
-│   ├── docker/              # Docker configuration
+│   ├── docker/                # Docker configuration
 │   │   ├── server.Dockerfile
-│   │   ├── config/          # Jellyfin runtime config (gitignored)
 │   │   ├── dev/
-│   │   │   └── docker-compose.yml   # Dev environment
+│   │   │   ├── docker-compose.yml   # Dev environment
+│   │   │   ├── config/             # Jellyfin runtime config (gitignored)
+│   │   │   └── scripts/
+│   │   │       └── jellyfin-entrypoint.sh
 │   │   └── prod/
 │   │       └── docker-compose.yml   # Prod / release builds
-│   ├── just/                # Just modules
-│   │   ├── common.just      # Shared variables
-│   │   ├── build.just
-│   │   ├── test.just
-│   │   ├── lint.just
-│   │   ├── logs.just
-│   │   ├── clean.just
-│   │   └── shell.just
-│   └── scripts/             # Utility scripts
+│   └── just/                  # Just modules
+│       ├── common.just        # Shared variables
+│       ├── build.just
+│       ├── test.just
+│       ├── lint.just
+│       ├── logs.just
+│       ├── clean.just
+│       └── shell.just
 │
-├── docs/                    # Documentation
+├── docs/                      # Documentation
 │
-├── justfile                 # Build automation
-├── CLAUDE.md               # AI assistant context
-└── README.md               # Project overview
+├── justfile                   # Build automation
+├── CLAUDE.md                  # AI assistant context
+└── README.md                  # Project overview
 ```
 
 ## Commands
@@ -241,19 +269,19 @@ just rebuild
 
 1. Open Developer Tools (F12)
 2. Go to Console tab
-3. Filter by "OWP" or "OSP"
+3. Filter by "OWP"
 4. Set breakpoints in Sources tab
 
 **Useful console commands:**
 ```javascript
 // View current state
-console.log(OSP.state);
+console.log(OWP.state);
 
 // Check WebSocket connection
-console.log(OSP.state.ws?.readyState);
+console.log(OWP.state.ws?.readyState);
 
 // View rooms
-console.log(OSP.state.rooms);
+console.log(OWP.state.rooms);
 ```
 
 ### Rust (Server)
@@ -302,16 +330,6 @@ Things to test:
 
 ## Common Development Issues
 
-### Plugin Not Loading
-
-```bash
-# Check plugin is mounted correctly
-docker exec jellyfin-dev ls /config/plugins/
-
-# Check plugin logs
-docker logs jellyfin-dev | grep OpenWatchParty
-```
-
 ### Script Not Updating
 
 1. Clear browser cache (Ctrl+Shift+Delete)
@@ -321,31 +339,9 @@ docker logs jellyfin-dev | grep OpenWatchParty
    curl -I http://localhost:8096/OpenWatchParty/ClientScript
    ```
 
-### WebSocket Connection Issues
+**Tip:** Use `just watch` to automatically restart Jellyfin when JS files change, avoiding stale cache issues.
 
-```bash
-# Check session server is running
-curl http://localhost:3000/health
-
-# Check WebSocket endpoint
-wscat -c ws://localhost:3000/ws
-```
-
-### Build Errors
-
-**Rust:**
-```bash
-cd src/server
-cargo clean
-cargo build
-```
-
-**C#:**
-```bash
-cd src/plugins/jellyfin/OpenWatchParty
-dotnet clean
-dotnet build
-```
+For other issues (plugin not loading, WebSocket connection problems, build errors), see the [Troubleshooting Guide](../operations/troubleshooting.md).
 
 ## Build Optimization (Rust)
 

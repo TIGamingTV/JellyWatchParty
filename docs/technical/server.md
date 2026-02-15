@@ -14,13 +14,32 @@ The OpenWatchParty session server is an asynchronous Rust application using Warp
 
 ```
 src/
-├── main.rs       # Entry point, Warp configuration
-├── types.rs      # Data structures
-├── ws.rs         # WebSocket handler and business logic
-├── room.rs       # Room lifecycle management
-├── messaging.rs  # Message sending functions
-├── auth.rs       # JWT authentication (optional)
-└── utils.rs      # Utilities (timestamp)
+├── main.rs           # Entry point, Warp configuration
+├── types.rs          # Data structures
+├── routes.rs         # Warp route filters
+├── tasks.rs          # Background tasks (zombie cleanup, shutdown)
+├── messaging.rs      # Message sending functions
+├── auth.rs           # JWT authentication (optional)
+├── utils.rs          # Utilities (timestamp)
+├── ws/
+│   ├── mod.rs
+│   ├── connection.rs     # WebSocket connection lifecycle
+│   ├── dispatch.rs       # Message dispatching and error sending
+│   ├── constants.rs      # Protocol constants and limits
+│   ├── validation.rs     # Message validation
+│   ├── pending_play.rs   # Pending play logic
+│   └── handlers/
+│       ├── mod.rs
+│       ├── auth.rs       # Authentication handler
+│       ├── chat.rs       # Chat message handler
+│       ├── create.rs     # Room creation
+│       ├── join.rs       # Room joining
+│       ├── misc.rs       # Ping, list_rooms, etc.
+│       └── playback.rs   # player_event, state_update, ready
+└── room/
+    ├── mod.rs
+    ├── leave.rs          # Client leave / disconnect
+    └── close.rs          # Room closure
 ```
 
 ## Module: `main.rs`
@@ -34,8 +53,8 @@ Application entry point. Configures the Warp server and routes.
 #[tokio::main]
 async fn main() {
     // Thread-safe shared state
-    let clients: Clients = Arc::new(Mutex::new(HashMap::new()));
-    let rooms: Rooms = Arc::new(Mutex::new(HashMap::new()));
+    let clients: Clients = Arc::new(RwLock::new(HashMap::new()));
+    let rooms: Rooms = Arc::new(RwLock::new(HashMap::new()));
 
     // WebSocket route: GET /ws
     let ws_route = warp::path("ws")
@@ -66,8 +85,8 @@ Defines the data structures used by the server.
 ### Type Aliases
 
 ```rust
-pub type Clients = Arc<Mutex<HashMap<String, Client>>>;
-pub type Rooms = Arc<Mutex<HashMap<String, Room>>>;
+pub type Clients = Arc<RwLock<HashMap<String, Client>>>;
+pub type Rooms = Arc<RwLock<HashMap<String, Room>>>;
 ```
 
 ### Struct `Client`
@@ -76,8 +95,14 @@ Represents a connected WebSocket client.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `sender` | `mpsc::UnboundedSender<...>` | Channel for sending messages to client |
+| `sender` | `mpsc::Sender<...>` | Bounded channel for sending messages to client |
 | `room_id` | `Option<String>` | Current room ID (if in a room) |
+| `user_id` | `Option<String>` | Jellyfin user ID (set after auth) |
+| `user_name` | `Option<String>` | Display name (set after auth) |
+| `authenticated` | `bool` | Whether the client has authenticated |
+| `message_count` | `u32` | Messages sent in current rate-limit window |
+| `last_reset` | `u64` | Timestamp of last rate-limit window reset |
+| `last_seen` | `u64` | Timestamp of last activity (for zombie detection) |
 
 ### Struct `Room`
 
@@ -127,12 +152,12 @@ WebSocket message format.
 | `ts` | `u64` | `"ts"` | Client timestamp |
 | `server_ts` | `Option<u64>` | `"server_ts"` | Server timestamp |
 
-## Module: `ws.rs`
+## Module: `ws/`
 
 ### Description
-Handles WebSocket connections and main business logic.
+Handles WebSocket connections and main business logic. Split into sub-modules: `connection.rs` (lifecycle), `dispatch.rs` (message routing), `constants.rs` (protocol constants), `validation.rs` (message validation), `pending_play.rs` (play scheduling), and `handlers/` (per-message-type logic).
 
-### Constants
+### Constants (`ws/constants.rs`)
 
 | Constant | Value | Description |
 |----------|-------|-------------|
@@ -154,7 +179,7 @@ pub async fn client_connection(ws: WebSocket, clients: Clients, rooms: Rooms) {
     let (client_ws_sender, mut client_ws_rcv) = ws.split();
 
     // 2. Create mpsc channel for async sending
-    let (client_sender, client_rcv) = mpsc::unbounded_channel();
+    let (client_sender, client_rcv) = mpsc::channel(CHANNEL_BUFFER_SIZE);
 
     // 3. Task to forward messages to WebSocket
     tokio::spawn(async move {
@@ -246,10 +271,10 @@ Applies filtering (cooldown, rate limit, jitter), broadcasts if accepted.
 #### `ping`
 Responds with `pong` for latency measurement.
 
-## Module: `room.rs`
+## Module: `room/`
 
 ### Description
-Manages room lifecycle and client disconnection.
+Manages room lifecycle and client disconnection. Split into `leave.rs` (client leave/disconnect) and `close.rs` (room closure).
 
 ### Function `handle_disconnect`
 
@@ -310,7 +335,7 @@ Message sending utility functions.
 - `broadcast_room_list(clients, rooms)` - Send room list to all clients
 - `send_to_client(client_id, clients, msg)` - Send message to specific client
 - `broadcast_to_room(room, clients, msg, exclude)` - Broadcast to room members
-- `send_error(client_id, clients, message)` - Send error message
+- `send_error(client_id, clients, message)` - Send error message (also available in `ws/dispatch.rs`)
 
 ## Module: `auth.rs`
 
@@ -343,15 +368,15 @@ pub fn validate_token(token: &str, secret: &str) -> Result<Claims, Error> {
 │          └───────────────────┼───────────────────┘               │
 │                              │                                   │
 │                              ▼                                   │
-│                   Arc<Mutex<Clients>>                            │
-│                   Arc<Mutex<Rooms>>                              │
+│                   Arc<RwLock<Clients>>                           │
+│                   Arc<RwLock<Rooms>>                             │
 │                                                                  │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
 ### Design Considerations
 
-1. **Mutex blocking**: Operations on `clients` and `rooms` are short and synchronous
+1. **RwLock**: Read-heavy workload; multiple readers, exclusive writer
 2. **No deadlock**: Only one lock acquired at a time per handler
 3. **Message cloning**: `warp_msg.clone()` for efficient broadcasting
-4. **Unbounded channels**: No backpressure, suitable for low message volume
+4. **Bounded channels**: Backpressure via bounded `mpsc::Sender` per client

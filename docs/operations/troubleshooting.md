@@ -34,7 +34,7 @@ nav_order: 5
    - Go to Dashboard > General > Branding
    - Verify this line is in "Custom HTML body":
      ```html
-     <script src="/web/plugins/openwatchparty/plugin.js"></script>
+     <script src="/OpenWatchParty/ClientScript"></script>
      ```
 
 2. **Hard refresh the browser**
@@ -325,7 +325,7 @@ Location varies by installation:
 
 1. Press F12 to open Developer Tools
 2. Go to Console tab
-3. Filter by "OSP" or "OpenWatchParty"
+3. Filter by "OWP" or "OpenWatchParty"
 
 **Common messages:**
 
@@ -343,7 +343,7 @@ Location varies by installation:
 In browser console:
 ```javascript
 // Check if connected
-console.log(OSP.state.ws?.readyState);
+console.log(OWP.state.ws?.readyState);
 // 0 = CONNECTING, 1 = OPEN, 2 = CLOSING, 3 = CLOSED
 ```
 

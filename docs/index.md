@@ -16,27 +16,8 @@ OpenWatchParty is a Jellyfin plugin that enables synchronized media playback acr
 
 ### For Users
 
-Install OpenWatchParty on your existing Jellyfin server:
-
-1. **Deploy the Session Server**
-   ```bash
-   docker run -d --name owp-session -p 3000:3000 \
-     -e ALLOWED_ORIGINS="http://your-jellyfin:8096" \
-     ghcr.io/mhbxyz/owp-session-server:latest
-   ```
-
-2. **Install the Plugin** via Jellyfin UI
-   - Go to **Dashboard** > **Plugins** > **Repositories**
-   - Add: `https://mhbxyz.github.io/OpenWatchParty/jellyfin-plugin-repo/manifest.json`
-   - Go to **Catalog** > **OpenWatchParty** > **Install**
-   - Restart Jellyfin
-
-3. **Enable the Client Script**
-   - Go to **Dashboard** > **General** > **Custom HTML**
-   - Add: `<script src="/web/plugins/openwatchparty/plugin.js"></script>`
-   - Save and hard refresh (`Ctrl+F5`)
-
-See [Installation Guide](operations/installation) for detailed instructions.
+Deploy the session server and install the plugin.
+See [Installation Guide](operations/installation) for step-by-step instructions.
 
 ### For Developers
 
@@ -45,6 +26,7 @@ Set up a development environment:
 ```bash
 git clone https://github.com/mhbxyz/OpenWatchParty.git
 cd OpenWatchParty
+just setup   # Configure git hooks (required once)
 just up      # Build and start Jellyfin + session server
 just dev     # Start with log following
 just watch   # Auto-restart on file changes

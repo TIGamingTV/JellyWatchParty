@@ -18,6 +18,7 @@ Thank you for your interest in contributing to OpenWatchParty!
    ```
 3. **Set up development environment**:
    ```bash
+   just setup   # Configure git hooks (required once)
    just up
    ```
 4. **Create a branch**:

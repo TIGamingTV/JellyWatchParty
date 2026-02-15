@@ -119,7 +119,7 @@ The client has built-in constants that control synchronization behavior. These a
 
 ### Server Tuning
 
-Server constants in `src/ws.rs`:
+Server constants in `src/server/src/ws/constants.rs`:
 
 | Constant | Default | Description |
 |----------|---------|-------------|

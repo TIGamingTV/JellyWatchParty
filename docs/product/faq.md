@@ -46,7 +46,7 @@ Not currently. Only the host can control playback. Democratic mode is planned fo
 The room closes and all participants are disconnected. A participant cannot become the new host.
 
 ### Can I chat with other viewers?
-Not yet. Text chat is planned for a future release. For now, use external chat (Discord, etc.).
+Yes! A text chat is available in the Watch Party panel. Messages are sent to all room participants in real time via the session server.
 
 ### Does everyone need the same video quality?
 No. Each client transcodes independently based on their connection and device. Sync is based on playback position, not video quality.
@@ -87,22 +87,27 @@ Optional JWT tokens can be configured. When enabled, clients must authenticate w
 2. Verify the script tag is in Custom HTML (Dashboard > General)
 3. Hard refresh the page (Ctrl+F5)
 
+See [Troubleshooting Guide](../operations/troubleshooting.md#watch-party-button-not-visible) for detailed solutions.
+
 ### I can't connect to the session server
 1. Ensure the session server is running
 2. Check that port 3000 is open in your firewall
 3. Verify the WebSocket URL is correct
-4. Check browser console for errors
+
+See [Troubleshooting Guide](../operations/troubleshooting.md#cannot-connect-to-session-server) for detailed solutions.
 
 ### We're out of sync
 1. Wait a few seconds - sync corrects automatically
 2. If persistent, have the host pause and play again
-3. Try leaving and rejoining the room
-4. Check network quality (high latency = worse sync)
+3. Check network quality (high latency = worse sync)
+
+See [Troubleshooting Guide](../operations/troubleshooting.md#sync-issues) for detailed solutions.
 
 ### The room keeps closing
 1. Check if the host is having connection issues
 2. Verify the session server is stable
-3. Check server logs for errors
+
+See [Troubleshooting Guide](../operations/troubleshooting.md#room-closes-unexpectedly) for detailed solutions.
 
 ## Support
 

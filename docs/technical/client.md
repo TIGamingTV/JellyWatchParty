@@ -13,14 +13,27 @@ The OpenWatchParty client is a set of JavaScript modules (IIFE pattern) injected
 ## Module Architecture
 
 ```
-plugin.js              # Loader - loads modules in order
-    ├── state.js      # Global state and constants
-    ├── utils.js      # Utility functions
-    ├── ui.js         # User interface
-    ├── playback.js   # Video playback management
-    ├── ws.js         # WebSocket communication
-    └── app.js        # Initialization and main loops
+plugin.js                    # Loader - loads modules in parallel waves
+    ├── state.js             # Global state and constants
+    ├── utils/               # Utility functions
+    │   ├── log.js, media.js, misc.js, time.js, video.js
+    ├── ui/                  # User interface
+    │   ├── cards.js, home.js, indicators.js
+    │   ├── render.js, styles.js, toasts.js
+    ├── playback/            # Video playback management
+    │   ├── bind.js, play.js, sync.js
+    ├── chat/                # Text chat
+    │   ├── input.js, messages.js
+    ├── ws/                  # WebSocket communication
+    │   ├── send.js, auth.js, connection.js
+    │   └── handlers/
+    │       ├── clock.js, playback.js, room.js, sync.js
+    └── app/                 # Initialization and cleanup
+        ├── cleanup.js, lifecycle.js
 ```
+
+Modules are loaded in dependency waves, parallelizing where possible:
+`state.js` → `utils/*` → `ui/*` → `playback/*` → `chat/*` → `ws/send` → `ws/auth` → `ws/handlers/*` → `ws/connection` → `app/*`
 
 ## Module: `state.js`
 

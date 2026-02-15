@@ -77,12 +77,15 @@ A lightweight WebSocket server that manages rooms and relays messages.
 - Schedule synchronized actions
 
 **Modules:**
-- `main.rs` - Server setup, Warp routes
+- `main.rs` - Server setup, Warp configuration
 - `types.rs` - Data structures (Client, Room, Message)
-- `ws.rs` - WebSocket handler, message processing
-- `room.rs` - Room lifecycle management
+- `routes.rs` - Warp route filters
+- `tasks.rs` - Background tasks (zombie cleanup, shutdown)
 - `messaging.rs` - Message sending utilities
 - `auth.rs` - JWT validation (optional)
+- `utils.rs` - Utilities (timestamp)
+- `ws/` - WebSocket handling (connection, dispatch, constants, validation, pending_play, handlers/)
+- `room/` - Room lifecycle (leave, close)
 
 ### 3. Web Client (JavaScript)
 
@@ -99,11 +102,12 @@ Modular JavaScript injected into Jellyfin's web interface.
 **Modules:**
 - `plugin.js` - Loader, script initialization
 - `state.js` - Global state and constants
-- `utils.js` - Utility functions
-- `ui.js` - User interface rendering
-- `playback.js` - Video binding and sync
-- `ws.js` - WebSocket communication
-- `app.js` - Application initialization
+- `utils/` - Utility functions (log, media, misc, time, video)
+- `ui/` - User interface (cards, home, indicators, render, styles, toasts)
+- `playback/` - Video binding and sync (bind, play, sync)
+- `chat/` - Text chat (input, messages)
+- `ws/` - WebSocket communication (auth, connection, send, handlers/)
+- `app/` - Initialization and cleanup (cleanup, lifecycle)
 
 ## Data Flow
 
@@ -200,8 +204,14 @@ Clients: HashMap<ClientId, Client>
 Rooms: HashMap<RoomId, Room>
 
 Client {
-  sender: UnboundedSender<Message>
+  sender: Sender<Message>       // bounded channel
   room_id: Option<RoomId>
+  user_id: Option<String>
+  user_name: Option<String>
+  authenticated: bool
+  message_count: u32
+  last_reset: u64
+  last_seen: u64
 }
 
 Room {
@@ -220,7 +230,7 @@ Room {
 ### Client State
 
 ```javascript
-OSP.state = {
+OWP.state = {
   ws: WebSocket,
   roomId: string,
   clientId: string,

@@ -209,7 +209,7 @@ Target: < 200ms drift after 10 minutes
 ```javascript
 // In browser console
 const start = Date.now();
-OSP.ws.send(JSON.stringify({type: 'ping', ts: start}));
+OWP.ws.send(JSON.stringify({type: 'ping', ts: start}));
 // Check pong response for round-trip time
 ```
 
@@ -233,35 +233,7 @@ Create test users in Jellyfin:
 
 ## Continuous Integration
 
-### GitHub Actions (Planned)
-
-```yaml
-# .github/workflows/test.yml
-name: Test
-
-on: [push, pull_request]
-
-jobs:
-  test-rust:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-      - run: cargo test
-        working-directory: src/server
-
-  test-csharp:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-dotnet@v3
-        with:
-          dotnet-version: '9.0'
-      - run: dotnet test
-        working-directory: src/plugins/jellyfin/OpenWatchParty
-```
+Tests run automatically on every push and pull request via GitHub Actions. See [CI/CD](ci.md) for details on the CI pipeline.
 
 ## Debugging Test Failures
 
@@ -280,7 +252,7 @@ RUST_LOG=debug cargo test test_name -- --nocapture
 1. Check browser console for errors
 2. Enable debug logging:
    ```javascript
-   OSP.constants.DEBUG = true;
+   OWP.constants.DEBUG = true;
    ```
 
 ### Network Issues

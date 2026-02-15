@@ -120,14 +120,16 @@ The plugin uses NuGet packages from nuget.org:
 <PackageReference Include="Jellyfin.Model" Version="10.11.5" />
 ```
 
-CI copies JavaScript files to the `Web/` directory before building:
+CI copies JavaScript files (including subdirectories) to the `Web/` directory before building:
 
 ```yaml
 - name: Copy JS files to plugin Web directory
   run: |
     mkdir -p OpenWatchParty/Web
-    cp ../../clients/jellyfin-web/*.js OpenWatchParty/Web/
+    cp -r ../../clients/jellyfin-web/* OpenWatchParty/Web/
 ```
+
+**Note:** The `cp -r` is required because JS modules are now organized in subdirectories (`utils/`, `ui/`, `playback/`, `chat/`, `ws/`, `app/`). The `justfile` handles this correctly via `client_js_files` variable.
 
 ## Troubleshooting
 
