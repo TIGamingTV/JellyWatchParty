@@ -67,7 +67,10 @@ pub async fn client_connection(
     });
 
     let temp_id = uuid::Uuid::new_v4().to_string();
-    info!("Client connected: {} (auth_required: {})", temp_id, jwt_config.enabled);
+    info!(
+        "Client connected: {} (auth_required: {})",
+        temp_id, jwt_config.enabled
+    );
 
     let client = register_client(client_sender, &jwt_config);
     clients.write().await.insert(temp_id.clone(), client);

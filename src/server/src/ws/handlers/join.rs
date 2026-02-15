@@ -25,11 +25,7 @@ fn add_client_to_room(
     }
 }
 
-fn notify_join(
-    client_id: &str,
-    room: &Room,
-    locked_clients: &HashMap<String, Client>,
-) {
+fn notify_join(client_id: &str, room: &Room, locked_clients: &HashMap<String, Client>) {
     send_to_client(
         client_id,
         locked_clients,
@@ -73,7 +69,9 @@ pub(in crate::ws) async fn handle_join_room(
         send_error(client_id, clients, "Authentication required").await;
         return;
     }
-    let Some(ref room_id) = parsed.room else { return };
+    let Some(ref room_id) = parsed.room else {
+        return;
+    };
 
     let payload_name = parsed
         .payload
@@ -85,10 +83,11 @@ pub(in crate::ws) async fn handle_join_room(
     let mut locked_rooms = rooms.write().await;
     let mut locked_clients = clients.write().await;
 
-    let Some(room) = locked_rooms.get_mut(room_id) else { return };
+    let Some(room) = locked_rooms.get_mut(room_id) else {
+        return;
+    };
 
-    if !room.clients.contains(&client_id.to_string())
-        && room.clients.len() >= MAX_CLIENTS_PER_ROOM
+    if !room.clients.contains(&client_id.to_string()) && room.clients.len() >= MAX_CLIENTS_PER_ROOM
     {
         send_to_client(
             client_id,

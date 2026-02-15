@@ -80,11 +80,27 @@ pub(in crate::ws) async fn handle_auth(
         if !jwt_config.enabled {
             handle_identity(client_id, payload, clients).await;
         } else {
-            warn!("Client {} sent auth without token but JWT is required", client_id);
-            send_error(client_id, clients, "Authentication required: no token provided").await;
+            warn!(
+                "Client {} sent auth without token but JWT is required",
+                client_id
+            );
+            send_error(
+                client_id,
+                clients,
+                "Authentication required: no token provided",
+            )
+            .await;
         }
     } else if jwt_config.enabled {
-        warn!("Client {} sent auth with no payload but JWT is required", client_id);
-        send_error(client_id, clients, "Authentication required: no token provided").await;
+        warn!(
+            "Client {} sent auth with no payload but JWT is required",
+            client_id
+        );
+        send_error(
+            client_id,
+            clients,
+            "Authentication required: no token provided",
+        )
+        .await;
     }
 }

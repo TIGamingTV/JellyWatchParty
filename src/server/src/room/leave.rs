@@ -55,7 +55,9 @@ fn close_and_notify(
     if let Ok(msg_json) = serde_json::to_string(&msg) {
         for cid in clients_to_notify {
             if let Some(c) = clients.get(cid) {
-                let _ = c.sender.try_send(Ok(warp::ws::Message::text(msg_json.clone())));
+                let _ = c
+                    .sender
+                    .try_send(Ok(warp::ws::Message::text(msg_json.clone())));
             }
         }
     }
@@ -66,9 +68,7 @@ pub fn handle_leave(
     clients: &mut HashMap<String, Client>,
     rooms: &mut HashMap<String, Room>,
 ) {
-    if let Some((room_id, clients_to_notify)) =
-        detach_client_from_room(client_id, clients, rooms)
-    {
+    if let Some((room_id, clients_to_notify)) = detach_client_from_room(client_id, clients, rooms) {
         close_and_notify(&room_id, &clients_to_notify, clients, rooms);
     }
 }

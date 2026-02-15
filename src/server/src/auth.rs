@@ -44,7 +44,9 @@ fn log_disabled_warning() {
 
 fn validate_secret_quality(secret: &str) {
     if secret.len() < 32 {
-        log::warn!("JWT_SECRET is too short. Use at least 32 characters for secure authentication.");
+        log::warn!(
+            "JWT_SECRET is too short. Use at least 32 characters for secure authentication."
+        );
     }
     let entropy = calculate_entropy(secret);
     if entropy < MIN_ENTROPY_BITS {
@@ -126,7 +128,10 @@ mod tests {
     #[test]
     fn test_entropy_single_char() {
         let entropy = calculate_entropy("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
-        assert!(entropy < 1.0, "Repeated single char should have near-zero entropy");
+        assert!(
+            entropy < 1.0,
+            "Repeated single char should have near-zero entropy"
+        );
     }
 
     #[test]
@@ -152,7 +157,11 @@ mod tests {
     #[test]
     fn test_entropy_uuid() {
         let entropy = calculate_entropy("550e8400e29b41d4a716446655440000");
-        assert!(entropy > 60.0, "UUID should have reasonable entropy: {}", entropy);
+        assert!(
+            entropy > 60.0,
+            "UUID should have reasonable entropy: {}",
+            entropy
+        );
     }
 
     #[test]
@@ -169,7 +178,10 @@ mod tests {
     fn test_jwt_config_disabled() {
         std::env::remove_var("JWT_SECRET");
         let config = JwtConfig::from_env();
-        assert!(!config.enabled, "Auth should be disabled when JWT_SECRET is empty");
+        assert!(
+            !config.enabled,
+            "Auth should be disabled when JWT_SECRET is empty"
+        );
     }
 
     #[test]

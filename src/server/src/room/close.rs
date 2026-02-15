@@ -43,7 +43,9 @@ pub async fn close_room(room_id: &str, clients: &Clients, rooms: &Rooms) {
         let mut locked_rooms = rooms.write().await;
         let locked_clients = clients.read().await;
 
-        let Some(room) = locked_rooms.remove(room_id) else { return };
+        let Some(room) = locked_rooms.remove(room_id) else {
+            return;
+        };
         info!("Closing room {} (host creating new room)", room_id);
         clients_to_notify = room.clients.clone();
 

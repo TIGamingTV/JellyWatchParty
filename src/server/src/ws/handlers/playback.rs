@@ -4,17 +4,11 @@ use super::super::constants::{
 };
 use super::super::pending_play::{all_ready, schedule_pending_play};
 use super::super::validation::{is_valid_play_state, is_valid_position};
-use crate::types::{
-    ClientMessageType, Clients, IncomingMessage, PendingPlay, Room, Rooms,
-};
+use crate::types::{ClientMessageType, Clients, IncomingMessage, PendingPlay, Room, Rooms};
 use crate::utils::now_ms;
 use tokio::sync::mpsc;
 
-fn handle_play_not_ready(
-    room: &mut Room,
-    position: f64,
-    current_ts: u64,
-) -> Option<(String, u64)> {
+fn handle_play_not_ready(room: &mut Room, position: f64, current_ts: u64) -> Option<(String, u64)> {
     room.state.position = position;
     if let Some(pending) = room.pending_play.as_mut() {
         pending.position = position;
@@ -59,11 +53,7 @@ fn absorb_during_pending(
     true
 }
 
-fn should_process_state_update(
-    room: &Room,
-    payload: &serde_json::Value,
-    current_ts: u64,
-) -> bool {
+fn should_process_state_update(room: &Room, payload: &serde_json::Value, current_ts: u64) -> bool {
     let new_pos = payload
         .get("position")
         .and_then(|v| v.as_f64())
@@ -140,14 +130,18 @@ pub(in crate::ws) async fn handle_playback(
     clients: &Clients,
     rooms: &Rooms,
 ) {
-    let Some(ref room_id) = parsed.room else { return };
+    let Some(ref room_id) = parsed.room else {
+        return;
+    };
 
     let mut pending_schedule: Option<(String, u64)> = None;
     let broadcast_data: Option<(Vec<mpsc::Sender<_>>, String)> = 'broadcast: {
         let mut locked_rooms = rooms.write().await;
         let locked_clients = clients.read().await;
 
-        let Some(room) = locked_rooms.get_mut(room_id) else { break 'broadcast None };
+        let Some(room) = locked_rooms.get_mut(room_id) else {
+            break 'broadcast None;
+        };
         if room.host_id != client_id {
             break 'broadcast None;
         }

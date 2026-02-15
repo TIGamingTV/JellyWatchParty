@@ -14,7 +14,10 @@ fn validate_chat(text: &str) -> Result<(), &'static str> {
     Ok(())
 }
 
-type BroadcastData = (Vec<mpsc::Sender<Result<warp::ws::Message, warp::Error>>>, String);
+type BroadcastData = (
+    Vec<mpsc::Sender<Result<warp::ws::Message, warp::Error>>>,
+    String,
+);
 
 fn collect_chat_senders(
     room_id: &str,

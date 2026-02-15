@@ -26,11 +26,7 @@ fn resolve_host_name(
     (host_name, payload_name)
 }
 
-fn build_room(
-    client_id: &str,
-    host_name: &str,
-    payload: Option<&serde_json::Value>,
-) -> Room {
+fn build_room(client_id: &str, host_name: &str, payload: Option<&serde_json::Value>) -> Room {
     let room_id = uuid::Uuid::new_v4().to_string();
     let raw_start_pos = payload
         .and_then(|p| p.get("start_pos"))
@@ -48,7 +44,10 @@ fn build_room(
         .map(|v| v.to_string());
     let room_name = format!("Room de {}", host_name);
 
-    info!("Creating room '{}' ({}) for {}", room_name, room_id, client_id);
+    info!(
+        "Creating room '{}' ({}) for {}",
+        room_name, room_id, client_id
+    );
 
     Room {
         room_id,

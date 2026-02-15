@@ -23,20 +23,23 @@ async fn main() {
     let allowed_origins = Arc::new(routes::get_allowed_origins());
 
     info!("Allowed origins: {:?}", allowed_origins);
-    info!("JWT: {}", if jwt_config.enabled { "ENABLED" } else { "DISABLED" });
+    info!(
+        "JWT: {}",
+        if jwt_config.enabled {
+            "ENABLED"
+        } else {
+            "DISABLED"
+        }
+    );
 
     let clients: Clients = Arc::new(RwLock::new(HashMap::new()));
     let rooms: Rooms = Arc::new(RwLock::new(HashMap::new()));
 
     tasks::spawn_zombie_cleanup(clients.clone(), rooms.clone());
 
-    let routes = routes::build_ws_route(
-        clients,
-        rooms,
-        jwt_config.clone(),
-        allowed_origins.clone(),
-    )
-    .or(routes::build_health_route(jwt_config, allowed_origins));
+    let routes =
+        routes::build_ws_route(clients, rooms, jwt_config.clone(), allowed_origins.clone())
+            .or(routes::build_health_route(jwt_config, allowed_origins));
 
     let shutdown_rx = tasks::setup_shutdown_signal();
 
