@@ -188,13 +188,6 @@ public class OpenWatchPartyController : ControllerBase
             TokenRateLimits[userId] = (limit.Count + 1, limit.ResetTime);
         }
 
-        // Quality settings to include in response
-        var qualitySettings = new {
-            default_max_bitrate = config.DefaultMaxBitrate,
-            prefer_direct_play = config.PreferDirectPlay,
-            allow_host_quality_control = config.AllowHostQualityControl
-        };
-
         // Check if JWT is configured
         if (string.IsNullOrEmpty(config.JwtSecret))
         {
@@ -204,7 +197,6 @@ public class OpenWatchPartyController : ControllerBase
                 auth_enabled = false,
                 user_id = userId,
                 user_name = userName,
-                quality = qualitySettings,
                 session_server_url = config.SessionServerUrl ?? string.Empty
             });
         }
@@ -218,7 +210,6 @@ public class OpenWatchPartyController : ControllerBase
             expires_in = config.TokenTtlSeconds,
             user_id = userId,
             user_name = userName,
-            quality = qualitySettings,
             session_server_url = config.SessionServerUrl ?? string.Empty
         });
     }

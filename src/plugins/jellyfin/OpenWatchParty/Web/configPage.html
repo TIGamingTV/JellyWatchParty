@@ -38,38 +38,6 @@
                         </div>
                     </div>
 
-                    <!-- Quality Settings -->
-                    <div class="verticalSection">
-                        <h2 class="sectionTitle">Quality Control</h2>
-                        <div class="inputContainer">
-                            <select is="emby-select" id="DefaultMaxBitrate" label="Default Max Bitrate">
-                                <option value="0">Auto (no limit)</option>
-                                <option value="120000000">4K - 120 Mbps</option>
-                                <option value="80000000">4K - 80 Mbps</option>
-                                <option value="20000000">1080p - 20 Mbps</option>
-                                <option value="8000000">1080p - 8 Mbps</option>
-                                <option value="4000000">720p - 4 Mbps</option>
-                                <option value="1500000">480p - 1.5 Mbps</option>
-                                <option value="420000">360p - 420 Kbps</option>
-                            </select>
-                            <div class="fieldDescription">Maximum streaming bitrate for watch parties. Lower values reduce bandwidth but decrease quality.</div>
-                        </div>
-                        <div class="checkboxContainer checkboxContainer-withDescription">
-                            <label class="emby-checkbox-label">
-                                <input is="emby-checkbox" type="checkbox" id="PreferDirectPlay" />
-                                <span>Prefer Direct Play</span>
-                            </label>
-                            <div class="fieldDescription checkboxFieldDescription">When enabled, attempts to play media without transcoding if the client supports the format.</div>
-                        </div>
-                        <div class="checkboxContainer checkboxContainer-withDescription">
-                            <label class="emby-checkbox-label">
-                                <input is="emby-checkbox" type="checkbox" id="AllowHostQualityControl" />
-                                <span>Allow Host Quality Control</span>
-                            </label>
-                            <div class="fieldDescription checkboxFieldDescription">When enabled, the host can change quality settings during a watch party.</div>
-                        </div>
-                    </div>
-
                     <div>
                         <button is="emby-button" type="submit" class="raised button-submit block">
                             <span>Save</span>
@@ -118,11 +86,6 @@
                     // Server settings
                     $('#SessionServerUrl', page).val(config.SessionServerUrl || '');
 
-                    // Quality settings
-                    $('#DefaultMaxBitrate', page).val(config.DefaultMaxBitrate || 0);
-                    $('#PreferDirectPlay', page).prop('checked', config.PreferDirectPlay !== false);
-                    $('#AllowHostQualityControl', page).prop('checked', config.AllowHostQualityControl !== false);
-
                     Dashboard.hideLoadingMsg();
                 }).catch(function (err) {
                     Dashboard.hideLoadingMsg();
@@ -148,11 +111,6 @@
 
                     // Server settings
                     config.SessionServerUrl = $('#SessionServerUrl', page).val();
-
-                    // Quality settings
-                    config.DefaultMaxBitrate = parseInt($('#DefaultMaxBitrate', page).val(), 10) || 0;
-                    config.PreferDirectPlay = $('#PreferDirectPlay', page).prop('checked');
-                    config.AllowHostQualityControl = $('#AllowHostQualityControl', page).prop('checked');
 
                     return ApiClient.updatePluginConfiguration(OpenWatchPartyConfigurationPage.pluginId, config);
                 }).then(function () {

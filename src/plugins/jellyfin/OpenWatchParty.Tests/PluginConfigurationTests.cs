@@ -90,38 +90,4 @@ public class PluginConfigurationTests
         Assert.Equal(string.Empty, config.SessionServerUrl);
     }
 
-    [Theory]
-    [InlineData(0, 0)]           // Auto (no limit)
-    [InlineData(8000000, 8000000)]  // 1080p
-    [InlineData(4000000, 4000000)]  // 720p
-    public void DefaultMaxBitrate_ValidValuesAccepted(int input, int expected)
-    {
-        var config = new PluginConfiguration();
-        config.DefaultMaxBitrate = input;
-        Assert.Equal(expected, config.DefaultMaxBitrate);
-    }
-
-    [Theory]
-    [InlineData(-1, 0)]     // Negative -> clamped to 0
-    [InlineData(-1000, 0)]  // Very negative -> clamped to 0
-    public void DefaultMaxBitrate_NegativeClampedToZero(int input, int expected)
-    {
-        var config = new PluginConfiguration();
-        config.DefaultMaxBitrate = input;
-        Assert.Equal(expected, config.DefaultMaxBitrate);
-    }
-
-    [Fact]
-    public void PreferDirectPlay_DefaultIsTrue()
-    {
-        var config = new PluginConfiguration();
-        Assert.True(config.PreferDirectPlay);
-    }
-
-    [Fact]
-    public void AllowHostQualityControl_DefaultIsTrue()
-    {
-        var config = new PluginConfiguration();
-        Assert.True(config.AllowHostQualityControl);
-    }
 }

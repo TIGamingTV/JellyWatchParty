@@ -84,12 +84,6 @@
       if (data.session_server_url) {
         state.wsUrl = data.session_server_url;
       }
-      if (data.quality) {
-        state.quality.maxBitrate = data.quality.default_max_bitrate || 0;
-        state.quality.preferDirectPlay = data.quality.prefer_direct_play !== false;
-        state.quality.allowHostControl = data.quality.allow_host_quality_control !== false;
-        console.log('[OpenWatchParty] Quality settings:', state.quality);
-      }
       if (data.auth_enabled && data.token) {
         state.authToken = data.token;
         const expiresIn = data.expires_in || 3600;
