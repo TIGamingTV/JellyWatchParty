@@ -79,15 +79,22 @@ pub fn build_health_route(
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
     let jwt_filter = warp::any().map(move || jwt_config.clone());
 
-    let cors = warp::cors()
-        .allow_origins(
-            allowed_origins
-                .iter()
-                .map(|s| s.as_str())
-                .collect::<Vec<_>>(),
-        )
-        .allow_methods(vec!["GET"])
-        .allow_headers(vec!["content-type"]);
+    let cors = if allowed_origins.iter().any(|o| o == "*") {
+        warp::cors()
+            .allow_any_origin()
+            .allow_methods(vec!["GET"])
+            .allow_headers(vec!["content-type"])
+    } else {
+        warp::cors()
+            .allow_origins(
+                allowed_origins
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<_>>(),
+            )
+            .allow_methods(vec!["GET"])
+            .allow_headers(vec!["content-type"])
+    };
 
     warp::path("health")
         .and(warp::get())

@@ -41,7 +41,7 @@ openssl rand -base64 32
 |----------|---------|-------------|
 | `PORT` | `3000` | Port to listen on |
 | `HOST` | `0.0.0.0` | Address to bind to |
-| `ALLOWED_ORIGINS` | `*` | CORS allowed origins (comma-separated) |
+| `ALLOWED_ORIGINS` | `http://localhost:8096,https://localhost:8096` | CORS allowed origins (comma-separated) |
 | `JWT_SECRET` | (empty) | Secret for validating tokens |
 | `LOG_LEVEL` | `info` | Log level: `error`, `warn`, `info`, `debug`, `trace` |
 

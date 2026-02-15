@@ -11,6 +11,7 @@ use crate::auth::JwtConfig;
 use crate::types::{Clients, Rooms};
 use log::info;
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use warp::Filter;
@@ -41,13 +42,21 @@ async fn main() {
         routes::build_ws_route(clients, rooms, jwt_config.clone(), allowed_origins.clone())
             .or(routes::build_health_route(jwt_config, allowed_origins));
 
+    let host = std::env::var("HOST").unwrap_or_else(|_| "0.0.0.0".into());
+    let port: u16 = std::env::var("PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(3000);
+    let addr: SocketAddr = format!("{}:{}", host, port)
+        .parse()
+        .expect("Invalid HOST:PORT combination");
+
     let shutdown_rx = tasks::setup_shutdown_signal();
 
-    info!("OpenWatchParty server listening on 0.0.0.0:3000");
-    let (_, server) =
-        warp::serve(routes).bind_with_graceful_shutdown(([0, 0, 0, 0], 3000), async {
-            shutdown_rx.await.ok();
-        });
+    info!("OpenWatchParty server listening on {}", addr);
+    let (_, server) = warp::serve(routes).bind_with_graceful_shutdown(addr, async {
+        shutdown_rx.await.ok();
+    });
 
     server.await;
     info!("Server shutdown complete");

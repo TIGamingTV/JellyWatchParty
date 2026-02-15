@@ -172,6 +172,45 @@ services:
       - "traefik.http.services.owp-ws.loadbalancer.server.port=3000"
 ```
 
+### Cloudflare Tunnel
+
+Cloudflare Tunnel (`cloudflared`) creates an outbound-only connection to Cloudflare's edge, so you don't need to open any ports.
+
+**Important:** In the tunnel configuration, use the Docker service name or the host IP to reach the session server — never `localhost`, which resolves to the tunnel container's own loopback.
+
+```yaml
+# ~/.cloudflared/config.yml
+tunnel: your-tunnel-id
+credentials-file: /path/to/credentials.json
+
+ingress:
+  # Jellyfin
+  - hostname: jellyfin.example.com
+    service: http://jellyfin:8096
+  # Session server WebSocket
+  - hostname: owp.example.com
+    service: http://session-server:3000
+  - service: http_status:404
+```
+
+Session server environment:
+
+```yaml
+services:
+  session-server:
+    image: owp-session-server
+    environment:
+      - ALLOWED_ORIGINS=https://jellyfin.example.com
+      - JWT_SECRET=${JWT_SECRET}
+    networks:
+      - internal
+```
+
+Plugin settings:
+- **Session Server URL**: `wss://owp.example.com/ws`
+
+If `cloudflared` runs on the Docker host (not in a container), use the host IP or `host.docker.internal` instead of the service name.
+
 ## SSL/TLS Configuration
 
 ### Let's Encrypt with Caddy
