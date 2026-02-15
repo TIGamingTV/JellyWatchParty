@@ -89,6 +89,7 @@
     bound: false,
     autoReconnect: true,
     isConnecting: false,
+    wsUrl: '',
     reconnectAttempts: 0,        // For exponential backoff
     initialized: false,
     // Log buffering (for logs sent before WS connected)

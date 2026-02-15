@@ -79,7 +79,7 @@
     if (!token) {
       token = await actions.fetchAuthToken();
     }
-    const wsUrl = DEFAULT_WS_URL;
+    const wsUrl = state.wsUrl || DEFAULT_WS_URL;
     console.log('[OpenWatchParty] Connecting to WebSocket:', wsUrl);
     if (wsUrl.startsWith('ws://') && window.location.protocol === 'https:') {
       console.warn('[OpenWatchParty] WARNING: Using insecure WebSocket (ws://) on HTTPS page. Data may be intercepted.');

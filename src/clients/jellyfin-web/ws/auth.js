@@ -81,6 +81,9 @@
       state.authEnabled = data.auth_enabled || false;
       state.userId = data.user_id || '';
       state.userName = data.user_name || getJellyfinUsername() || '';
+      if (data.session_server_url) {
+        state.wsUrl = data.session_server_url;
+      }
       if (data.quality) {
         state.quality.maxBitrate = data.quality.default_max_bitrate || 0;
         state.quality.preferDirectPlay = data.quality.prefer_direct_play !== false;
