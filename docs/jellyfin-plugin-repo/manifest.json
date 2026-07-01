@@ -6,6 +6,15 @@
     "overview": "Synchronized watch parties for Jellyfin. Create or join rooms to watch content together with friends, perfectly in sync.",
     "owner": "TIGamingTV",
     "category": "General",
-    "versions": []
+    "versions": [
+      {
+        "version": "1",
+        "changelog": "\n",
+        "targetAbi": "10.11.11.0",
+        "sourceUrl": "https://github.com/TIGamingTV/OpenWatchParty/releases/download/v1/OpenWatchParty-v1.zip",
+        "checksum": "bbcc417163035264e10916f4f46701e1",
+        "timestamp": "2026-07-01T22:03:31Z"
+      }
+    ]
   }
 ]
