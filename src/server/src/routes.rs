@@ -1,6 +1,7 @@
 use crate::auth::JwtConfig;
 use crate::types::{Clients, Rooms};
 use log::warn;
+use std::collections::HashMap;
 use std::sync::Arc;
 use warp::Filter;
 
@@ -58,16 +59,24 @@ pub fn build_ws_route(
         )
         .untuple_one();
 
+    let client_id_filter = warp::query::<HashMap<String, String>>()
+        .map(|q: HashMap<String, String>| q.get("client_id").cloned());
+
     warp::path("ws")
         .and(origin_check)
         .and(warp::ws())
         .and(clients_filter)
         .and(rooms_filter)
         .and(jwt_filter)
+        .and(client_id_filter)
         .map(
-            |ws: warp::ws::Ws, clients, rooms, jwt_config: Arc<JwtConfig>| {
+            |ws: warp::ws::Ws,
+             clients,
+             rooms,
+             jwt_config: Arc<JwtConfig>,
+             client_id: Option<String>| {
                 ws.on_upgrade(move |socket| {
-                    crate::ws::client_connection(socket, clients, rooms, jwt_config)
+                    crate::ws::client_connection(socket, clients, rooms, jwt_config, client_id)
                 })
             },
         )
@@ -148,11 +157,8 @@ mod tests {
 
     #[test]
     fn get_allowed_origins_default() {
-        // Without modifying env vars, just verify the parsing logic:
-        // The function splits on comma, trims, and filters empty
         let result = get_allowed_origins();
         assert!(!result.is_empty());
-        // Each entry should be trimmed (no leading/trailing whitespace)
         for origin in &result {
             assert_eq!(origin, origin.trim());
             assert!(!origin.is_empty());
