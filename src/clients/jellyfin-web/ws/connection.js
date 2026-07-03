@@ -6,6 +6,38 @@
   const ui = OWP.ui;
   const { DEFAULT_WS_URL, RECONNECT_BASE_MS, RECONNECT_MAX_MS, PING_INIT_MS, PING_STABLE_MS, PING_STABLE_AFTER } = OWP.constants;
 
+  const CLIENT_ID_STORAGE_KEY = 'owp_persistent_client_id';
+
+  const generateUuid = () => {
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+      return window.crypto.randomUUID();
+    }
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0;
+      const v = c === 'x' ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
+  };
+
+  const getPersistentClientId = () => {
+    try {
+      let id = window.localStorage.getItem(CLIENT_ID_STORAGE_KEY);
+      if (!id) {
+        id = generateUuid();
+        window.localStorage.setItem(CLIENT_ID_STORAGE_KEY, id);
+      }
+      return id;
+    } catch (err) {
+      if (!state.sessionOnlyClientId) state.sessionOnlyClientId = generateUuid();
+      return state.sessionOnlyClientId;
+    }
+  };
+
+  const withClientId = (baseUrl, clientId) => {
+    const separator = baseUrl.includes('?') ? '&' : '?';
+    return `${baseUrl}${separator}client_id=${encodeURIComponent(clientId)}`;
+  };
+
   const onWsOpen = (token) => {
     console.log('[OpenWatchParty] WebSocket connected');
     state.isConnecting = false;
@@ -81,12 +113,13 @@
       token = await actions.fetchAuthToken();
     }
     const wsUrl = state.wsUrl || DEFAULT_WS_URL;
-    console.log('[OpenWatchParty] Connecting to WebSocket:', wsUrl);
+    const fullWsUrl = withClientId(wsUrl, getPersistentClientId());
+    console.log('[OpenWatchParty] Connecting to WebSocket:', fullWsUrl);
     if (wsUrl.startsWith('ws://') && window.location.protocol === 'https:') {
       console.warn('[OpenWatchParty] WARNING: Using insecure WebSocket (ws://) on HTTPS page. Data may be intercepted.');
     }
     try {
-      state.ws = new WebSocket(wsUrl);
+      state.ws = new WebSocket(fullWsUrl);
     } catch (err) {
       console.error('[OpenWatchParty] Failed to create WebSocket:', err);
       state.isConnecting = false;
