@@ -410,7 +410,7 @@ services:
 ## Security Updates
 
 Stay informed about security updates:
-- Watch the [GitHub repository](https://github.com/mhbxyz/OpenWatchParty)
+- Watch the [GitHub repository](https://github.com/TIGamingTV/OpenWatchParty)
 - Check release notes for security fixes
 - Update promptly when security patches are available
 - Monitor the Security tab for vulnerability alerts

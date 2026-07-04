@@ -112,7 +112,7 @@ See [Troubleshooting Guide](../operations/troubleshooting.md#room-closes-unexpec
 ## Support
 
 ### Where can I report bugs?
-Open an issue on the [GitHub repository](https://github.com/mhbxyz/OpenWatchParty/issues).
+Open an issue on the [GitHub repository](https://github.com/TIGamingTV/OpenWatchParty/issues).
 
 ### How can I contribute?
 See the [Contributing Guide](../development/contributing.md) for how to submit pull requests.

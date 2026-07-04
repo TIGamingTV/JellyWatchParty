@@ -20,7 +20,7 @@ The easiest way to run OpenWatchParty is with Docker Compose.
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/mhbxyz/OpenWatchParty.git
+git clone https://github.com/TIGamingTV/OpenWatchParty.git
 cd OpenWatchParty
 ```
 
@@ -72,19 +72,19 @@ docker run -d \
   --name owp-session \
   -p 3000:3000 \
   -e ALLOWED_ORIGINS="http://localhost:8096" \
-  ghcr.io/mhbxyz/owp-session-server:latest
+  ghcr.io/tigamingtv/owp-session-server:latest
 
 # Or use a specific version
 docker run -d \
   --name owp-session \
   -p 3000:3000 \
-  ghcr.io/mhbxyz/owp-session-server:v0.1.0
+  ghcr.io/tigamingtv/owp-session-server:v0.1.0
 
 # Or use the beta (latest from main branch)
 docker run -d \
   --name owp-session \
   -p 3000:3000 \
-  ghcr.io/mhbxyz/owp-session-server:beta
+  ghcr.io/tigamingtv/owp-session-server:beta
 ```
 
 #### Option B: Build from Source (Docker)
@@ -121,7 +121,7 @@ Install directly from Jellyfin's plugin interface:
 1. Go to **Dashboard** > **Plugins** > **Repositories**
 2. Click **Add** and enter:
    ```
-   https://mhbxyz.github.io/OpenWatchParty/jellyfin-plugin-repo/manifest.json
+   https://tigamingtv.github.io/OpenWatchParty/jellyfin-plugin-repo/manifest.json
    ```
 3. Go to **Catalog** tab
 4. Find **OpenWatchParty** and click **Install**
@@ -134,7 +134,7 @@ This method provides automatic update notifications when new versions are releas
 
 1. **Download the Plugin**
 
-   Get the latest release from the [releases page](https://github.com/mhbxyz/OpenWatchParty/releases):
+   Get the latest release from the [releases page](https://github.com/TIGamingTV/OpenWatchParty/releases):
    - `OpenWatchParty-vX.Y.Z.zip`
 
 2. **Install to Jellyfin**
@@ -217,7 +217,7 @@ docker run -d \
   -e ALLOWED_ORIGINS="https://jellyfin.example.com" \
   -e JWT_SECRET="your-32-character-secret-key-here" \
   -e LOG_LEVEL="debug" \
-  ghcr.io/mhbxyz/owp-session-server:latest
+  ghcr.io/tigamingtv/owp-session-server:latest
 ```
 
 ## Firewall Configuration

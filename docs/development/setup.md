@@ -19,7 +19,7 @@ nav_order: 1
 
 ```bash
 # Clone the repository
-git clone https://github.com/mhbxyz/OpenWatchParty.git
+git clone https://github.com/TIGamingTV/OpenWatchParty.git
 cd OpenWatchParty
 
 # Configure git hooks (required once after clone)

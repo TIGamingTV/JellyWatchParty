@@ -120,7 +120,7 @@
     isInitialSync: false,  // True during initial catch-up after joining (disables HARD_SEEK)
     initialSyncUntil: 0,   // Timestamp when initial sync phase ends (max duration)
     initialSyncTargetPos: 0, // Target position when joining - used to detect/fix Jellyfin resume jumps
-    syncStatus: 'synced',  // 'synced' | 'syncing' | 'pending_play' - for UX indicator (UX-P3)
+    syncStatus: 'unknown',  // 'unknown' | 'synced' | 'syncing' | 'pending_play' - for UX indicator (UX-P3)
     currentDrift: 0,       // Current playback drift in seconds (positive = behind host)
     pendingPlayUntil: 0,   // Timestamp when pending play ends (for spinner) (UX-P3)
     // Authentication

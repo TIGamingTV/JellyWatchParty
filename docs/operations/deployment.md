@@ -380,7 +380,7 @@ docker compose pull
 
 ```bash
 # Download new plugin version
-wget https://github.com/mhbxyz/OpenWatchParty/releases/latest/download/OpenWatchParty.dll
+wget https://github.com/TIGamingTV/OpenWatchParty/releases/latest/download/OpenWatchParty.dll
 
 # Replace plugin
 mv OpenWatchParty.dll ./plugins/OpenWatchParty/

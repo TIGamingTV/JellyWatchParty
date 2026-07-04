@@ -422,8 +422,8 @@ When reporting issues, include:
 
 ### Where to Get Help
 
-- [GitHub Issues](https://github.com/mhbxyz/OpenWatchParty/issues) - Bug reports
-- [GitHub Discussions](https://github.com/mhbxyz/OpenWatchParty/discussions) - Questions
+- [GitHub Issues](https://github.com/TIGamingTV/OpenWatchParty/issues) - Bug reports
+- [GitHub Discussions](https://github.com/TIGamingTV/OpenWatchParty/discussions) - Questions
 - [Jellyfin Forums](https://forum.jellyfin.org/) - Community help
 
 ## Reset Procedures

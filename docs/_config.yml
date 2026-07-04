@@ -3,7 +3,7 @@ description: Synchronized watch parties for Jellyfin
 remote_theme: just-the-docs/just-the-docs@v0.10.0
 
 # GitHub repository
-repository: mhbxyz/OpenWatchParty
+repository: TIGamingTV/OpenWatchParty
 
 # For local development only (overridden by GitHub Actions)
 baseurl: "/OpenWatchParty"
@@ -11,7 +11,7 @@ baseurl: "/OpenWatchParty"
 # Aux links (top right)
 aux_links:
   "GitHub":
-    - "https://github.com/mhbxyz/OpenWatchParty"
+    - "https://github.com/TIGamingTV/OpenWatchParty"
 
 aux_links_new_tab: true
 
