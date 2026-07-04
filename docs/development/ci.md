@@ -71,7 +71,7 @@ Handles Docker image publishing to GHCR and release artifacts.
 
 #### Plugin Repository
 
-On release, the workflow automatically updates the [Jellyfin plugin repository](https://mhbxyz.github.io/OpenWatchParty/jellyfin-plugin-repo/manifest.json):
+On release, the workflow automatically updates the [Jellyfin plugin repository](https://tigamingtv.github.io/OpenWatchParty/jellyfin-plugin-repo/manifest.json):
 
 1. Downloads the built plugin zip
 2. Calculates MD5 checksum
@@ -85,13 +85,13 @@ Users can then install/update the plugin directly from Jellyfin's plugin interfa
 
 ```bash
 # Latest stable release
-docker pull ghcr.io/mhbxyz/owp-session-server:latest
+docker pull ghcr.io/tigamingtv/owp-session-server:latest
 
 # Specific version
-docker pull ghcr.io/mhbxyz/owp-session-server:v0.1.0
+docker pull ghcr.io/tigamingtv/owp-session-server:v0.1.0
 
 # Development (latest from main)
-docker pull ghcr.io/mhbxyz/owp-session-server:beta
+docker pull ghcr.io/tigamingtv/owp-session-server:beta
 ```
 
 ## Build Configuration
@@ -158,7 +158,7 @@ docker build -t test ./src/server
 The README includes CI status badges:
 
 ```markdown
-[![CI](https://img.shields.io/github/actions/workflow/status/mhbxyz/OpenWatchParty/ci.yml?branch=main)](https://github.com/mhbxyz/OpenWatchParty/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/TIGamingTV/OpenWatchParty/ci.yml?branch=main)](https://github.com/TIGamingTV/OpenWatchParty/actions/workflows/ci.yml)
 ```
 
 | Badge | Meaning |

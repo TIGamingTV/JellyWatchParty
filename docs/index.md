@@ -24,7 +24,7 @@ See [Installation Guide](operations/installation) for step-by-step instructions.
 Set up a development environment:
 
 ```bash
-git clone https://github.com/mhbxyz/OpenWatchParty.git
+git clone https://github.com/TIGamingTV/OpenWatchParty.git
 cd OpenWatchParty
 just setup   # Configure git hooks (required once)
 just up      # Build and start Jellyfin + session server

@@ -183,13 +183,13 @@ Docker images are automatically built and pushed to GitHub Container Registry (G
 
 ```bash
 # Latest stable
-docker pull ghcr.io/mhbxyz/owp-session-server:latest
+docker pull ghcr.io/tigamingtv/owp-session-server:latest
 
 # Specific version
-docker pull ghcr.io/mhbxyz/owp-session-server:v0.1.0
+docker pull ghcr.io/tigamingtv/owp-session-server:v0.1.0
 
 # Development
-docker pull ghcr.io/mhbxyz/owp-session-server:beta
+docker pull ghcr.io/tigamingtv/owp-session-server:beta
 ```
 
 ### Build Locally (optional)
@@ -224,13 +224,13 @@ Users can install the plugin in two ways:
 #### Via Jellyfin UI (Recommended)
 
 1. Go to Dashboard > Plugins > Repositories
-2. Add: `https://mhbxyz.github.io/OpenWatchParty/jellyfin-plugin-repo/manifest.json`
+2. Add: `https://tigamingtv.github.io/OpenWatchParty/jellyfin-plugin-repo/manifest.json`
 3. Go to Catalog > Find "OpenWatchParty" > Install
 4. Restart Jellyfin
 
 #### Via Direct Download
 
-1. Go to [Releases](https://github.com/mhbxyz/OpenWatchParty/releases)
+1. Go to [Releases](https://github.com/TIGamingTV/OpenWatchParty/releases)
 2. Download `OpenWatchParty-vX.Y.Z.zip`
 3. Extract to Jellyfin plugins folder
 4. Restart Jellyfin

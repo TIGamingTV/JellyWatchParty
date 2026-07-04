@@ -12,10 +12,10 @@ first priority in this project.**
 
 ## Round 1 — Fork rebranding
 
-The repo still referenced the upstream project (`mhbxyz`) throughout. Fixed:
+The repo still referenced the original upstream project throughout. Fixed:
 
 - `.github/workflows/publish.yml`:
-  - `IMAGE_NAME: mhbxyz/owp-session-server` → `tigamingtv/owp-session-server`
+  - `IMAGE_NAME` → `tigamingtv/owp-session-server`
   - plugin manifest `sourceUrl` → `https://github.com/TIGamingTV/OpenWatchParty/releases/...`
   - `targetAbi` → `"10.11.11.0"` (was `"10.10.0.0"`)
 - `src/plugins/jellyfin/OpenWatchParty/OpenWatchPartyPlugin.csproj`:
@@ -449,47 +449,54 @@ accurate — `state.js` still had `syncStatus: 'synced'` as the default).
 **Diagnostic finding this round**: user confirmed buttons/panel/room-join
 *do* work on the desktop client (injected script loads and runs fine — rules
 out `ScriptInjectionMiddleware` path-matching as the cause). User tried the
-desktop client as **both host and guest** — sync fails in both directions.
-This points away from a host/guest-specific code path and toward a
-client-wide problem binding to a real, event-dispatching `<video>` element —
-consistent with Round 11's hypothesis (b): Jellyfin Media Player likely
-renders actual video via a native (e.g. mpv-based) player layer instead of
-relying on the standard HTML5 `<video>` element's play/pause/seeked events
-and `currentTime`/`playbackRate` properties, which `utils/video.js`'s
-`getVideo()` (a plain `document.querySelector('video')`) and
-`playback/bind.js`/`playback/sync.js` all depend on entirely.
+desktop client as both host and guest — sync failed both ways. Initial
+hypothesis was Round 11's (b) — no real `<video>` element (native mpv-based
+player bypassing HTML5 video) — **but a server-log capture during a repro
+disproved this**: client `f08eaef1` (the desktop client, user "tom") showed
+a genuine `<video>` element loading correctly
+(`[CLIENT:...:VIDEO] event=buffering readyState=0` →
+`event=ready readyState=4`), so `utils/video.js`'s `getVideo()` and event
+binding are NOT the problem on this client.
 
-**Next diagnostic step (not yet done)**: the client already sends structured
-logs (`'VIDEO'`, `'HOST'`, `'SYNC'` categories via `utils/log.js`'s `log()`)
-as `client_log` WS messages, which the server prints directly to its own log
-stream (`src/server/src/ws/handlers/misc.rs` `handle_client_log`, format
-`[CLIENT:<id8>:<category>] <message>`, at `info` level — server's
-`env_logger` defaults to `info` so no config change needed). Tail the
-session-server container's logs (`docker logs -f <container>`) while
-reproducing on the desktop client:
-- If **no** `[CLIENT:...:VIDEO]` or `[CLIENT:...:HOST]` lines ever appear when
-  playing/pausing/seeking as host → `getVideo()` is returning `null` (no
-  `<video>` element in the DOM at all in that client), so `bindVideo()`
-  silently no-ops (`src/clients/jellyfin-web/playback/bind.js:82-84`, just
-  returns on `!video`, no logging on that path).
-- If `[CLIENT:...:HOST]` lines **do** appear (so a `<video>` element exists
-  and dispatches real events) but the *other* client still never syncs → the
-  element exists but its `currentTime`/`paused` reflect real playback, so the
-  break is downstream (e.g. player-visible position not matching what native
-  layer is actually rendering, or a room/message-routing issue specific to
-  that client's connection).
-- With the new `'unknown'` status fix applied, also just watch the sync
-  indicator itself on that client: if it stays gray ("Not synced yet")
-  forever, that alone (no log-tailing needed) confirms the drift loop
-  (`playback/sync.js`'s `syncLoop`, gated on `state.currentVideoElement ||
-  utils.getVideo()`) never engages.
+**Actual root cause found**: reading the full log timeline for `f08eaef1`:
+- `18:40:51` — last successful ping (already on the 30s "stable" cadence
+  per `ws/connection.js`'s `schedulePing`, `samples=8`)
+- then **~2 minutes of total silence** — no more pings at all, meaning its
+  ping `setInterval` (or the whole JS engine) was suspended
+- `18:42:56` — server's zombie reaper (`ZOMBIE_TIMEOUT_MS = 60_000` in
+  `src/server/src/tasks.rs`) finally notices and starts the reconnect grace
+  period (`schedule_disconnect` in `src/server/src/room/reconnect.rs`)
+- `18:43:16` — grace period (`RECONNECT_GRACE_SECS`, was `20`) expires,
+  server disconnects it
+- `18:43:18` — client reconnects — **2 seconds too late**, treated as a
+  brand-new stranger instead of reattaching to its room (Round 10's fix
+  requires reconnecting *within* the grace window)
 
-If this confirms no working `<video>` element exists in Jellyfin Media
-Player, the injected-JS architecture cannot reach it at all (same ceiling as
-Neptune/Swiftfin/native TV apps), and the only path to supporting it is the
-server-side remote-control-API approach discussed below (or documenting it
-as an unsupported client and directing users to browser/Jellyfin-Web-in-app
-mode instead, if JMP has one).
+**Conclusion**: this is NOT a `<video>`-binding / injected-JS-architecture
+ceiling at all. Jellyfin Media Player's embedded QtWebEngine appears to
+suspend JS timers far more aggressively than a normal browser tab (a
+multi-minute stall, not seconds), so the ping heartbeat dies, the connection
+gets zombie-reaped, and by the time the JS engine wakes up and reconnects it
+narrowly misses the grace window — falling out of the room entirely before
+any sync logic downstream gets a chance to run. Same underlying class of
+issue as Round 10, just with a much longer stall duration than that fix's
+20s grace period accounted for.
+
+**Fix applied this round**: `src/server/src/room/reconnect.rs` —
+`RECONNECT_GRACE_SECS` `20` → `90`, to comfortably cover this client's
+observed suspension length. **Not yet compiled, deployed, or retested.**
+Tradeoff worth knowing: a client that's truly gone (crash, force-quit) now
+takes up to 90s longer to be cleaned out of the room (stale participant
+count, room briefly "held open") — acceptable for small-group home use, but
+worth keeping in mind if it ever matters.
+
+**Next step**: package/deploy the reconnect.rs change (plus the `state.js`/
+`ui/indicators.js`/`ui/styles.js` sync-status fix from earlier this round)
+and retest on the desktop client. If sync still fails even after surviving
+the reconnect, revisit the `<video>`-element angle — but this specific log
+capture shows a working video element and a connectivity/timer-throttling
+problem as the actual cause, not the injected-JS ceiling discussed earlier
+in the project.
 
 ---
 
