@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "0.1",
+        "changelog": "\n",
+        "targetAbi": "10.11.11.0",
+        "sourceUrl": "https://github.com/TIGamingTV/OpenWatchParty/releases/download/v0.1/OpenWatchParty-v0.1.zip",
+        "checksum": "1f93362180fd78a57586d3633c27437f",
+        "timestamp": "2026-07-04T18:26:15Z"
+      },
+      {
         "version": "1.2",
         "changelog": "\n",
         "targetAbi": "10.11.11.0",
