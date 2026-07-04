@@ -50,6 +50,7 @@
     .owp-sync-dot.synced { background: #69f0ae; }
     .owp-sync-dot.syncing { background: #ffd740; animation: owp-pulse 1s infinite; }
     .owp-sync-dot.pending { background: #ff9800; animation: owp-pulse 0.5s infinite; }
+    .owp-sync-dot.unknown { background: #9e9e9e; }
     @keyframes owp-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
     .owp-sync-spinner { width: 12px; height: 12px; border: 2px solid #444; border-top-color: #ff9800; border-radius: 50%; animation: owp-spin 0.8s linear infinite; }
     @keyframes owp-spin { to { transform: rotate(360deg); } }

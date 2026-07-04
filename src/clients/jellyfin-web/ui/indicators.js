@@ -11,23 +11,24 @@
     el.textContent = connected ? 'Online' : 'Offline';
   };
 
+  const describeSyncStatus = (status) => {
+    if (status === 'pending_play') {
+      const remaining = Math.max(0, (state.pendingPlayUntil - (Date.now() + (state.serverOffsetMs || 0))) / 1000);
+      return { dotClass: 'pending', label: `Waiting for sync... ${remaining.toFixed(1)}s`, showSpinner: true };
+    }
+    if (status === 'syncing') {
+      return { dotClass: 'syncing', label: 'Out of sync', showSpinner: false };
+    }
+    if (status === 'synced') {
+      return { dotClass: 'synced', label: 'In sync', showSpinner: false };
+    }
+    return { dotClass: 'unknown', label: 'Not synced yet', showSpinner: false };
+  };
+
   const updateSyncIndicator = () => {
     const el = document.getElementById('owp-sync-indicator');
     if (!el || state.isHost) return;
-    const status = state.syncStatus || 'synced';
-    let dotClass, label, showSpinner = false;
-    if (status === 'pending_play') {
-      dotClass = 'pending';
-      const remaining = Math.max(0, (state.pendingPlayUntil - (Date.now() + (state.serverOffsetMs || 0))) / 1000);
-      label = `Waiting for sync... ${remaining.toFixed(1)}s`;
-      showSpinner = true;
-    } else if (status === 'syncing') {
-      dotClass = 'syncing';
-      label = 'Out of sync';
-    } else {
-      dotClass = 'synced';
-      label = 'In sync';
-    }
+    const { dotClass, label, showSpinner } = describeSyncStatus(state.syncStatus);
     el.innerHTML = showSpinner
       ? `<div class="owp-sync-spinner"></div><span>${label}</span>`
       : `<div class="owp-sync-dot ${dotClass}"></div><span>${label}</span>`;
@@ -35,23 +36,10 @@
 
   const buildSyncStatusIndicator = () => {
     if (state.isHost) return '';
-    const status = state.syncStatus || 'synced';
-    let dotClass, label, extra = '';
-    if (status === 'pending_play') {
-      dotClass = 'pending';
-      const remaining = Math.max(0, (state.pendingPlayUntil - (Date.now() + (state.serverOffsetMs || 0))) / 1000);
-      label = `Waiting for sync... ${remaining.toFixed(1)}s`;
-      extra = '<div class="owp-sync-spinner"></div>';
-    } else if (status === 'syncing') {
-      dotClass = 'syncing';
-      label = 'Out of sync';
-    } else {
-      dotClass = 'synced';
-      label = 'In sync';
-    }
+    const { dotClass, label, showSpinner } = describeSyncStatus(state.syncStatus);
     return `
       <div class="owp-sync-status" id="owp-sync-indicator">
-        ${extra || `<div class="owp-sync-dot ${dotClass}"></div>`}
+        ${showSpinner ? '<div class="owp-sync-spinner"></div>' : `<div class="owp-sync-dot ${dotClass}"></div>`}
         <span>${label}</span>
       </div>
     `;
