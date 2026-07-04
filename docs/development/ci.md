@@ -8,11 +8,17 @@ nav_order: 5
 
 OpenWatchParty uses GitHub Actions for continuous integration and security scanning.
 
+## Branching model
+
+`develop` is the integration branch — PRs land there first. `main` only receives
+merges from `develop` (or hotfix branches) and is what releases are cut from.
+See [Release](release) for the full flow.
+
 ## Workflows
 
 ### CI Workflow (`ci.yml`)
 
-Runs on every push and pull request to `main` and `dev` branches.
+Runs on every push and pull request to `main` and `develop` branches.
 
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
@@ -51,23 +57,31 @@ Results are uploaded to the GitHub Security tab.
 
 ### Publish Workflow (`publish.yml`)
 
-Handles Docker image publishing to GHCR and release artifacts.
+Handles Docker image publishing to GHCR and release artifacts. A `changes`
+job (via `dorny/paths-filter`) detects whether `src/server/**` or the plugin
+(`src/plugins/jellyfin/**`, `src/clients/jellyfin-web/**`) changed, so each
+push only rebuilds the components that actually changed.
 
 #### Triggers
 
-| Event | Condition | Tags Generated |
-|-------|-----------|----------------|
-| Push to `main` | Changes in `src/server/**` | `beta` |
-| GitHub Release | Published | `vX.Y.Z`, `vX.Y`, `latest` |
+| Event | Condition | Result |
+|-------|-----------|--------|
+| Push to `main` | Server changed | Docker image tagged `beta` |
+| Push to `develop` | Server changed | Docker image tagged `dev` |
+| Push to `develop` | Plugin/client changed | Plugin rebuilt, rolling `develop-latest` pre-release updated, `manifest-dev.json` updated |
+| GitHub Release | Published | Docker image tagged `vX.Y.Z`, `vX.Y`, `latest`; plugin built, attached to the release, `manifest.json` updated |
 
 #### Jobs
 
 | Job | Trigger | Description |
-|-----|---------|-------------|
-| **Build & Push Docker Image** | All | Builds multi-platform image (amd64, arm64) and pushes to GHCR |
+|-----|---------|--------------|
+| **Detect Changes** | Push only | Computes `server`/`plugin` path-filter outputs used to gate the jobs below |
+| **Build & Push Docker Image** | Server changed, or release | Builds multi-platform image (amd64, arm64) and pushes to GHCR |
 | **Build Jellyfin Plugin** | Release only | Builds plugin and creates zip archive |
 | **Upload Release Assets** | Release only | Attaches plugin zip to GitHub Release |
 | **Update Plugin Manifest** | Release only | Updates `manifest.json` for Jellyfin plugin repository |
+| **Build & Publish Develop Plugin** | Push to `develop`, plugin/client changed | Builds plugin, publishes it as an asset on the rolling `develop-latest` pre-release |
+| **Update Develop Plugin Manifest** | After the job above | Updates `manifest-dev.json` for the develop plugin channel |
 
 #### Plugin Repository
 
@@ -81,6 +95,11 @@ On release, the workflow automatically updates the [Jellyfin plugin repository](
 
 Users can then install/update the plugin directly from Jellyfin's plugin interface.
 
+On every push to `develop` that touches the plugin or client JS, the same
+thing happens against a separate develop channel — see
+[Release: Develop Plugin Channel](release#develop-plugin-channel) for how
+testers install it.
+
 #### Docker Image
 
 ```bash
@@ -90,8 +109,11 @@ docker pull ghcr.io/tigamingtv/owp-session-server:latest
 # Specific version
 docker pull ghcr.io/tigamingtv/owp-session-server:v0.1.0
 
-# Development (latest from main)
+# Latest build from main (pre-release)
 docker pull ghcr.io/tigamingtv/owp-session-server:beta
+
+# Latest build from develop
+docker pull ghcr.io/tigamingtv/owp-session-server:dev
 ```
 
 ## Build Configuration
@@ -120,16 +142,25 @@ The plugin uses NuGet packages from nuget.org:
 <PackageReference Include="Jellyfin.Model" Version="10.11.5" />
 ```
 
-CI copies JavaScript files (including subdirectories) to the `Web/` directory before building:
+The `.csproj` embeds `Web\**\*.js` as resources, so CI copies the client JS
+files (including subdirectories: `utils/`, `ui/`, `playback/`, `chat/`,
+`ws/`, `app/`) into `OpenWatchParty/Web/` before building, using the same
+explicit file list as the release/develop plugin build jobs:
 
 ```yaml
 - name: Copy JS files to plugin Web directory
   run: |
     mkdir -p OpenWatchParty/Web
-    cp -r ../../clients/jellyfin-web/* OpenWatchParty/Web/
+    cp ../../clients/jellyfin-web/plugin.js OpenWatchParty/Web/plugin.js
+    for f in state.js utils/time.js ... ; do
+      mkdir -p "OpenWatchParty/Web/$(dirname "$f")"
+      cp "../../clients/jellyfin-web/$f" "OpenWatchParty/Web/$f"
+    done
 ```
 
-**Note:** The `cp -r` is required because JS modules are now organized in subdirectories (`utils/`, `ui/`, `playback/`, `chat/`, `ws/`, `app/`). The `justfile` handles this correctly via `client_js_files` variable.
+**Note:** An explicit file list is used instead of `cp -r .../jellyfin-web/*`
+so that `tests/*.test.js` and other non-shipped files never get embedded as
+plugin resources.
 
 ## Troubleshooting
 

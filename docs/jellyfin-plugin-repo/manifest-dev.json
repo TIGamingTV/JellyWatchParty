@@ -1,0 +1,11 @@
+[
+  {
+    "guid": "0f2fd0fd-09ff-4f49-9f1c-4a8f421a4b7d",
+    "name": "OpenWatchParty (Develop)",
+    "description": "Watch movies together in sync with friends on Jellyfin",
+    "overview": "Rolling development build of OpenWatchParty, rebuilt automatically from the develop branch. Unstable — for testers only.",
+    "owner": "TIGamingTV",
+    "category": "General",
+    "versions": []
+  }
+]
