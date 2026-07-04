@@ -7,7 +7,7 @@ use std::time::Duration;
 /// How long a disconnected client's room slot is held open, waiting for
 /// them to reconnect under the same persistent client_id, before the
 /// room is actually torn down / the client is actually removed.
-const RECONNECT_GRACE_SECS: u64 = 20;
+const RECONNECT_GRACE_SECS: u64 = 90;
 
 /// Called whenever a client's WebSocket connection ends — whether it
 /// closed normally, errored, or was reaped as a zombie. Instead of
