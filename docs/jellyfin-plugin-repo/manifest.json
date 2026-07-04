@@ -16,7 +16,7 @@
         "timestamp": "2026-07-02T19:07:57Z"
       },
       {
-        "version": "1",
+        "version": "1.0",
         "changelog": "\n",
         "targetAbi": "10.11.11.0",
         "sourceUrl": "https://github.com/TIGamingTV/OpenWatchParty/releases/download/v1/OpenWatchParty-v1.zip",
@@ -24,7 +24,7 @@
         "timestamp": "2026-07-02T13:53:15Z"
       },
       {
-        "version": "1",
+        "version": "1.0",
         "changelog": "\n",
         "targetAbi": "10.11.11.0",
         "sourceUrl": "https://github.com/TIGamingTV/OpenWatchParty/releases/download/v1/OpenWatchParty-v1.zip",

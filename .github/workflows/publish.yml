@@ -202,6 +202,12 @@ jobs:
         run: |
           VERSION="${{ github.event.release.tag_name }}"
           VERSION="${VERSION#v}"  # Remove 'v' prefix if present
+
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+){0,2}$ ]]; then
+            echo "::error::Release tag '$VERSION' is not a valid numeric version (expected e.g. 1.0.1). Aborting manifest update."
+            exit 1
+          fi
+
           ZIP_FILE=$(ls artifacts/*.zip | head -1)
           CHECKSUM=$(md5sum "$ZIP_FILE" | awk '{print $1}')
           TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
