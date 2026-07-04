@@ -500,6 +500,163 @@ in the project.
 
 ---
 
+## Round 13 — CONFIRMED: desktop client has no reachable `<video>` element (Round 12's conclusion corrected)
+
+Both `RECONNECT_GRACE_SECS: 90` and the `syncStatus: 'unknown'` fix were
+deployed (committed as `6aacfec` and `b3dc8ef`; a manifest version-guard fix
+for Round 9 also landed as `7e1e183`). Retested on the desktop client:
+**still doesn't sync**, and this time the user confirmed precisely what's
+missing: connect/identify/`CLOCK` ping lines still show up fine, but
+**zero** `[CLIENT:...:CLIENT]`, `[CLIENT:...:VIDEO]`, or
+`[CLIENT:...:HOST]` lines ever appear — even though the desktop client
+visibly showed as joined (participant count, chat panel) and video was
+visibly playing on screen.
+
+**Round 12's "confirmed working video element" conclusion was based on a
+misattributed client ID.** Re-reading that same log capture: the
+`buffering`→`ready` `VIDEO` events actually came from `ec5cb37c`
+("tom_test"), a *different* client — not `f08eaef1` ("tom", the desktop
+client, confirmed by the user both times). `f08eaef1` never produced a
+single `CLIENT`/`VIDEO`/`HOST` line in *either* test capture, only `CLOCK`
+pings. The connectivity/reconnect-timing bug Round 12 found and fixed was
+real and worth keeping, but it was never the reason the desktop client
+doesn't sync.
+
+**Root cause, now confirmed by direct evidence rather than speculation**:
+`ws/handlers/sync.js`'s `syncToRoom()` (line 32:
+`if (!video || state.isHost || !msg.payload?.state) return;`) and
+`ws/handlers/playback.js`'s `handlePlayerEvent()` (line 77:
+`if (state.isHost || !video) return;`) both bail out **before** reaching
+their `utils.log('CLIENT', ...)` calls whenever `video` is falsy. `video` is
+computed once per incoming message via `utils/video.js`'s `getVideo()`
+(`document.querySelector('video')`) at the top of `connection.js`'s
+`handleMessage()`. Meanwhile `applyRoomState()` and `ui.render()` (which
+don't touch `video` at all) still run fine, explaining why the room-join
+UI/chat/participant-count works perfectly while video sync logic silently
+no-ops with no log trace whatsoever.
+
+**Conclusion**: `document.querySelector('video')` returns `null` in Jellyfin
+Media Player's rendering context despite real video being visibly on
+screen — i.e. whatever renders that picture is not a standard DOM `<video>`
+element reachable from the page's own document. This matches Round 11's
+original hypothesis (b): Jellyfin Media Player (Qt/QtWebEngine-based) most
+likely renders actual playback through a native layer (commonly
+libmpv-based for broader format/hardware-acceleration support) instead of
+the browser's HTML5 video pipeline. This is the **same architectural
+ceiling already documented for Neptune/Swiftfin/Fladder/native TV apps** in
+`CLAUDE.md`'s "Known constraint" section — just now shown to also apply to
+the official desktop client, not only fully-native mobile/TV apps.
+
+**Not yet done — cheapest possible check before treating this as fully
+architectural**: Jellyfin Media Player may have a settings toggle for its
+player backend (something like "native/mpv player" vs. falling back to the
+built-in web player). If such a setting exists and disabling it forces JMP
+to use the standard HTML5 `<video>`-based web player, this whole problem
+disappears with zero code changes. Worth checking Settings → Player (or
+similar) in JMP before investing in Round 13.5 below. If confirmed via web
+inspector (`document.querySelector('video')` from JMP's console, if
+"Enable Web Inspector" is available in its settings) that no `<video>`
+element exists regardless, the native-player theory is airtight.
+
+**If no such toggle exists / doesn't help**, the two real paths forward
+(discussed but not started, see "Cross-cutting architectural note" below):
+1. Document Jellyfin Media Player as unsupported for injected-JS sync
+   (same as Neptune/Swiftfin), and point users at Jellyfin Web in a regular
+   browser instead, if acceptable.
+2. Build the alternative server-side architecture: poll Jellyfin's
+   `/Sessions` API and drive `Pause`/`Unpause`/`Seek` via its core
+   remote-control API — reaches any client Jellyfin itself can remote-control
+   (including native players), at the cost of coarser sync (hard seeks only,
+   no smooth playback-rate drift correction) and no chat/self-service room
+   UI (becomes more of an admin tool). Requires
+   `EnableRemoteControlOfOtherUsers` permission. Not yet started; first
+   suggested validation step (manually testing whether a remote Pause via
+   Jellyfin's Dashboard → Active Devices actually affects Jellyfin Media
+   Player's native player) has never been confirmed done.
+
+---
+
+## Round 14 — Native mpv-player adapter built for jellyfin-desktop/JMP (UNTESTED)
+
+Researched (via web search/fetch of upstream `jellyfin/jellyfin-desktop`
+source, since the old Qt-based Jellyfin Media Player is archived/deprecated
+in favor of this CEF+mpv rewrite) exactly how that client avoids a DOM
+`<video>` element: its player plugin
+(`src/web/mpv-video-player.js`, extending `mpv-player-base.js`) registers
+itself as `window._mpvVideoPlayerInstance` and routes all real playback
+through a native bridge (`window.api.player.*`) instead of ever creating a
+`<video>` tag. Confirmed no user-facing setting exists to disable this and
+fall back to HTML5 video — native mpv playback is the entire reason this
+client exists, not an optional mode.
+
+**`mpv-player-base.js`'s API surface** (per upstream source, not locally
+tested): `currentTime(val)` — getter/setter, **milliseconds not seconds**;
+`paused()` — a method, not a property; `setPlaybackRate(value)` /
+`getPlaybackRate()`; `pause()` / `resume()` / `unpause()`. Events fired via
+an internal `this.events.trigger(...)`: `'playing'`, `'pause'`, `'unpause'`,
+`'stopped'`, `'volumechange'`, `'error'` — **no confirmed equivalent to
+HTML5's `'waiting'`/buffering event**, and the exact subscription mechanism
+for those events wasn't confirmed from source alone.
+
+**Fix implemented**: rather than guess at the event-subscription API,
+`src/clients/jellyfin-web/utils/video.js` was rewritten to add a
+polling-based adapter (`NATIVE_POLL_MS = 250`) that wraps
+`window._mpvVideoPlayerInstance` behind an `HTMLMediaElement`-shaped object
+(`currentTime`/`paused`/`playbackRate`/`readyState`/`networkState`/`seeking`
+getters+setters, `play()`/`pause()` methods, `addEventListener`/
+`removeEventListener`) so `playback/bind.js` and `playback/sync.js` work
+completely unmodified — they can't tell the difference between a real
+`<video>` and this adapter. `getVideo()` now: returns a real
+`document.querySelector('video')` if one exists (browsers, and presumably
+any client that does use HTML5 video); otherwise, if
+`window._mpvVideoPlayerInstance` exists and exposes `currentTime`/`paused`
+as functions, lazily builds and caches a singleton adapter around it
+(rebuilding if the instance reference changes, e.g. on next-episode
+autoplay); otherwise returns `null` as before. The adapter detects
+play/pause transitions and seeks (jump between polls larger than 1s vs.
+naturally-elapsed playback time) itself, since it can't rely on unconfirmed
+native events for these.
+
+**Known limitations of this fix, to watch for once tested**:
+- No real buffering signal exists from `mpv-player-base.js`'s confirmed API,
+  so `readyState`/`networkState` are coarse approximations (jumps straight
+  to "ready" on first successful poll) — real mid-playback buffering stalls
+  on this client won't be detected or reflected in the sync status.
+- Seek detection is heuristic (position jumped >1s more than expected
+  elapsed time) rather than a real `'seeked'` event, so a genuine 1+ second
+  network hitch could be misread as a manual seek, or a true sub-second seek
+  could be missed.
+- `app/lifecycle.js`'s UI-detection interval (which calls `bindVideo()`)
+  gates entirely on `document.visibilityState === 'visible'`
+  (`startIntervals()`, `UI_CHECK_MS` interval). Not verified whether CEF
+  reports `'visible'` correctly while jellyfin-desktop is actively playing —
+  if it doesn't, this adapter would never even get invoked regardless of how
+  correct it is. Worth checking if the fix still doesn't engage after
+  deploying.
+- Everything here is inferred from reading upstream `jellyfin-desktop`
+  source via web search/fetch, not from a live REPL/console session against
+  a real running instance — the base method names/signatures could be
+  stale, version-specific, or subtly misread by the fetch summarization.
+  **Treat this fix as a first attempt requiring real testing, not a
+  confirmed correct implementation.**
+
+**Deliberately avoided creating a new file** for this adapter (folded into
+the existing `utils/video.js`) specifically to sidestep Round 6's exact
+failure mode — a new client file silently missing from one of the three
+places that need to know about it (`plugin.js`'s `loadAll()` script list,
+`infra/just/common.just`'s `client_js_files`, and
+`.github/workflows/publish.yml`'s copy step). No changes needed to any of
+those three for this round.
+
+**Status**: written, not compiled/deployed/tested. Next step: package,
+deploy, retest on the desktop client, and check whether
+`[CLIENT:...:VIDEO]`/`[CLIENT:...:HOST]`/`[CLIENT:...:SYNC]` log lines now
+appear for it. If they still don't appear at all, check the
+`document.visibilityState` gate above first before assuming the adapter
+itself is wrong.
+
+---
+
 ## Cross-cutting architectural note (from mid-conversation)
 
 Discussed but not implemented: a fundamentally different, **server-side**
@@ -514,3 +671,70 @@ requirements (`EnableRemoteControlOfOtherUsers`). The suggested first step —
 manually testing whether Neptune/Fladder even honor a remote Pause command
 via Jellyfin's Dashboard → Active Devices UI — was never confirmed as done.
 Worth revisiting if broadening client support becomes a priority again.
+
+---
+
+## Round 12 — Develop-first branching + a real develop build for both components
+
+The user asked for a proper `develop`-before-`main` workflow, with a full
+"develop" build/image for **both** the session server and the Jellyfin
+plugin (previously only the session server got a rolling develop build; the
+plugin had no develop-channel equivalent at all).
+
+**Found while investigating (all fixed):**
+
+- `.github/workflows/ci.yml` triggered on branches `[main, dev]`, but the
+  actual branch is `develop` — CI silently never ran on pushes/PRs against
+  it. Fixed to `[main, develop]`.
+- `ci.yml`'s `.NET Tests` job only copied top-level `*.js` files into
+  `OpenWatchParty/Web/`, missing every subdirectory module (`utils/`, `ui/`,
+  `playback/`, `chat/`, `ws/`, `app/`). Since the `.csproj` embeds
+  `Web\**\*.js` as resources, test builds were silently missing most of the
+  client JS. Fixed to use the same explicit file list as the release build
+  job (not `cp -r`, to avoid embedding `tests/*.test.js` as plugin
+  resources).
+- `docs/development/ci.md` and `release.md` had drifted from what the
+  workflows actually do (wrong branch name, missing `dev` tag, `cp -r`
+  documented but not implemented). Rewritten to match reality.
+
+**Added:**
+
+- `publish.yml` now starts with a `changes` job (`dorny/paths-filter`)
+  that detects whether `src/server/**` or the plugin/client
+  (`src/plugins/jellyfin/**`, `src/clients/jellyfin-web/**`) changed, so
+  each push only rebuilds what's relevant. The Docker build job is now
+  gated on `needs.changes.outputs.server == 'true' || release event`
+  (previously the entire workflow was gated on a `src/server/**` path
+  filter, which is why the plugin never had a develop build path at all).
+- New `build-plugin-dev` job: on push to `develop` with plugin/client
+  changes, builds the plugin, versions it `0.0.<run_number>` (always valid
+  for `System.Version`, always below any real `1.x` release), zips it, and
+  publishes/overwrites it on a rolling pre-release tagged `develop-latest`
+  via `softprops/action-gh-release` (confirmed via its docs: assets are
+  overwritten by default when the tag already exists — this is the
+  standard rolling/nightly-release pattern, not verified by actually
+  running it yet).
+- New `update-dev-manifest` job: writes the new version into
+  `docs/jellyfin-plugin-repo/manifest-dev.json` (new file, seeded with an
+  empty `versions` array) and pushes to `main`, mirroring the existing
+  release-time `update-plugin-manifest` job. This is a **second, separate**
+  Jellyfin plugin repository URL testers can add
+  (`.../jellyfin-plugin-repo/manifest-dev.json`) to get the develop channel
+  without touching the stable feed.
+
+**Branch protection on `main` (PR-required, develop-first) — NOT done by
+me.** No `gh` CLI and no `GITHUB_TOKEN`/`GH_TOKEN` were available in the
+assistant sandbox, so this had to stay a manual step for the user. Note the
+important wrinkle if/when it's set up: both `update-plugin-manifest`
+(release) and the new `update-dev-manifest` (develop push) jobs push
+directly to `main` using the workflow's `GITHUB_TOKEN` — a protection rule
+that blocks all direct pushes without an exception for the
+`github-actions` bot (or repo admins) will break both of those jobs.
+
+**Status**: none of this has been run for real yet (no push to `develop`
+with plugin changes, no release cut since). First real test should be a
+small plugin/client-only change pushed to `develop` — confirm the
+`build-plugin-dev` and `update-dev-manifest` jobs both fire and skip
+correctly (i.e. a server-only change should *not* trigger them, and vice
+versa), and that `manifest-dev.json` ends up valid and installable in
+Jellyfin.

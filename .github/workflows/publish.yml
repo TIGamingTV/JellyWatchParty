@@ -3,8 +3,6 @@ name: Publish
 on:
   push:
     branches: [main, develop]
-    paths:
-      - 'src/server/**'
   release:
     types: [published]
 
@@ -16,9 +14,31 @@ permissions:
   packages: write
 
 jobs:
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    outputs:
+      server: ${{ steps.filter.outputs.server }}
+      plugin: ${{ steps.filter.outputs.plugin }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            server:
+              - 'src/server/**'
+            plugin:
+              - 'src/plugins/jellyfin/**'
+              - 'src/clients/jellyfin-web/**'
+
   build:
     name: Build (${{ matrix.platform }})
     runs-on: ${{ matrix.runner }}
+    needs: changes
+    if: github.event_name == 'release' || needs.changes.outputs.server == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -84,6 +104,7 @@ jobs:
     name: Merge & Push Manifest
     runs-on: ubuntu-latest
     needs: build
+    if: needs.build.result == 'success'
     steps:
       - name: Download digests
         uses: actions/download-artifact@v4
@@ -238,4 +259,103 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add docs/jellyfin-plugin-repo/manifest.json
           git commit -m "Update plugin manifest for ${{ github.event.release.tag_name }}"
+          git push
+
+  build-plugin-dev:
+    name: Build & Publish Develop Plugin
+    runs-on: ubuntu-latest
+    needs: changes
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop' && needs.changes.outputs.plugin == 'true'
+    outputs:
+      version: ${{ steps.package.outputs.version }}
+      checksum: ${{ steps.package.outputs.checksum }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Copy JS files to plugin Web directory
+        working-directory: src/plugins/jellyfin
+        run: |
+          mkdir -p OpenWatchParty/Web
+          cp ../../clients/jellyfin-web/plugin.js OpenWatchParty/Web/plugin.js
+          for f in state.js utils/time.js utils/video.js utils/misc.js utils/media.js utils/log.js ui/styles.js ui/indicators.js ui/toasts.js ui/cards.js ui/home.js ui/render.js playback/play.js playback/bind.js playback/sync.js chat/messages.js chat/input.js ws/send.js ws/auth.js ws/handlers/room.js ws/handlers/sync.js ws/handlers/playback.js ws/handlers/clock.js ws/connection.js app/lifecycle.js app/cleanup.js; do
+            mkdir -p "OpenWatchParty/Web/$(dirname "$f")"
+            cp "../../clients/jellyfin-web/$f" "OpenWatchParty/Web/$f"
+          done
+
+      - name: Build plugin
+        working-directory: src/plugins/jellyfin/OpenWatchParty
+        run: dotnet publish -c Release -o dist
+
+      - name: Package develop build
+        id: package
+        working-directory: src/plugins/jellyfin/OpenWatchParty
+        run: |
+          VERSION="0.0.${{ github.run_number }}"
+          (cd dist && zip -r ../OpenWatchParty-dev.zip .)
+          CHECKSUM=$(md5sum OpenWatchParty-dev.zip | awk '{print $1}')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "checksum=$CHECKSUM" >> "$GITHUB_OUTPUT"
+
+      - name: Publish rolling develop release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: develop-latest
+          name: "Develop build #${{ github.run_number }}"
+          body: |
+            Automated development build from `develop` @ ${{ github.sha }}. Not for production use.
+
+            Install via the dev plugin repository URL (see docs/development/release.md), not via manual sideload of this asset unless you know what you're doing.
+
+            Latest commit: ${{ github.event.head_commit.message }}
+          prerelease: true
+          make_latest: false
+          files: src/plugins/jellyfin/OpenWatchParty/OpenWatchParty-dev.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  update-dev-manifest:
+    name: Update Develop Plugin Manifest
+    runs-on: ubuntu-latest
+    needs: build-plugin-dev
+    if: needs.build-plugin-dev.result == 'success'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update manifest-dev.json
+        run: |
+          VERSION="${{ needs.build-plugin-dev.outputs.version }}"
+          CHECKSUM="${{ needs.build-plugin-dev.outputs.checksum }}"
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          CHANGELOG=$(printf '%s' "${{ github.event.head_commit.message }}" | jq -Rs '.')
+
+          jq --arg version "$VERSION" \
+             --arg checksum "$CHECKSUM" \
+             --arg timestamp "$TIMESTAMP" \
+             --argjson changelog "$CHANGELOG" \
+             '.[0].versions = [{
+               "version": $version,
+               "changelog": $changelog,
+               "targetAbi": "10.11.11.0",
+               "sourceUrl": "https://github.com/TIGamingTV/OpenWatchParty/releases/download/develop-latest/OpenWatchParty-dev.zip",
+               "checksum": $checksum,
+               "timestamp": $timestamp
+             }]' \
+             docs/jellyfin-plugin-repo/manifest-dev.json > manifest-dev.tmp.json
+
+          mv manifest-dev.tmp.json docs/jellyfin-plugin-repo/manifest-dev.json
+
+      - name: Commit and push manifest
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/jellyfin-plugin-repo/manifest-dev.json
+          git commit -m "Update develop plugin manifest (build ${{ github.run_number }})"
           git push
