@@ -28,12 +28,18 @@
           <div class="owp-section" style="border-top: 1px solid #333; padding-top: 15px;">
             <button class="owp-btn" style="width:100%" id="owp-btn-create">Create Room</button>
           </div>
+          <div class="owp-section" style="border-top: 1px solid #333; padding-top: 15px;">
+            <div class="owp-label">Host From Another Device (e.g. Fladder)</div>
+            <div id="owp-bridge-active"></div>
+            <div id="owp-bridge-available"></div>
+          </div>
       </div>
       <div class="owp-footer">Server: ${DEFAULT_WS_URL.replace(/^wss?:\/\//, '').replace('/ws', '')}</div>
     `;
     const btn = panel.querySelector('#owp-btn-create');
     if (btn) btn.onclick = () => OWP.actions && OWP.actions.createRoom && OWP.actions.createRoom();
     ui.updateRoomListUI();
+    ui.updateBridgeListUI();
   };
 
   const renderRoom = (panel) => {
@@ -97,6 +103,7 @@
       ui.updateStatusIndicator();
       ui.updateSyncIndicator();
       ui.updateRoomListUI();
+      ui.updateBridgeListUI();
       ui.renderHomeWatchParties();
       return;
     }

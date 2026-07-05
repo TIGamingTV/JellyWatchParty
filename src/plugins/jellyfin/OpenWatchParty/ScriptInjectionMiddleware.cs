@@ -4,6 +4,8 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using OpenWatchParty.Plugin.Services;
 
 namespace OpenWatchParty.Plugin;
 
@@ -102,5 +104,12 @@ public class ServiceRegistrator : MediaBrowser.Controller.Plugins.IPluginService
     public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
     {
         serviceCollection.AddSingleton<IStartupFilter, ScriptInjectionStartupFilter>();
+
+        // Singleton + hosted-service-wrapping-the-same-instance: eagerly
+        // subscribes to ISessionManager's playback events at server startup,
+        // while remaining directly injectable into the controller for
+        // admin-triggered start/stop actions.
+        serviceCollection.AddSingleton<HostBridgeManager>();
+        serviceCollection.AddHostedService(sp => sp.GetRequiredService<HostBridgeManager>());
     }
 }

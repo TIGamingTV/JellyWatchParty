@@ -50,6 +50,7 @@
       loadScript('ui/indicators.js'),
       loadScript('ui/toasts.js'),
       loadScript('ui/cards.js'),
+      loadScript('ui/bridge.js'),
     ]);
     await Promise.all([
       loadScript('ui/home.js'),
