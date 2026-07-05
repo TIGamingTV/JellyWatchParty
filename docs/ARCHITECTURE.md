@@ -91,7 +91,10 @@ C# plugin targeting the Jellyfin plugin ABI. Key files:
 - `Services/HostBridgeManager.cs` — hosted service; subscribes to
   `ISessionManager`'s playback events for the server's lifetime and owns
   all currently-active `SessionHostBridge` instances, keyed by Jellyfin
-  session id.
+  session id. `GetEligibleSessions()` excludes sessions whose `Client` is
+  `"Jellyfin Web"` or `"Jellyfin Media Player"` — those already run the
+  injected script and can host via the normal "Create Room" button, so
+  they're left out of the bridge picker to avoid clutter.
 - `Services/SessionHostBridge.cs` — one bridge: owns a `ClientWebSocket` to
   the session server for one Jellyfin session, translating its
   `PlaybackStart`/`PlaybackProgress`/`PlaybackStopped` events into

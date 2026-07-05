@@ -15,6 +15,19 @@ namespace OpenWatchParty.Plugin.Services;
 /// </summary>
 public sealed class HostBridgeManager : IHostedService
 {
+    // Clients that render Jellyfin Web's index.html and already run the
+    // injected OWP script (see docs/ARCHITECTURE.md's native-client
+    // constraint) — these can already host a room themselves via the
+    // normal "Create Room" button, so they're excluded from the bridge
+    // picker to avoid clutter/confusion. Everything else (Fladder,
+    // Swiftfin, Infuse, official mobile/TV apps, ...) is a genuine
+    // native-client candidate.
+    private static readonly HashSet<string> InjectedClientNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Jellyfin Web",
+        "Jellyfin Media Player"
+    };
+
     private readonly ISessionManager _sessionManager;
     private readonly ILogger<HostBridgeManager> _logger;
     private readonly ConcurrentDictionary<string, SessionHostBridge> _bridges = new();
@@ -50,12 +63,15 @@ public sealed class HostBridgeManager : IHostedService
 
     /// <summary>
     /// Active Jellyfin sessions that could be started as a bridge host
-    /// (i.e. currently playing something and not already bridged).
+    /// (i.e. currently playing something, not already bridged, and not
+    /// already running the injected OWP client itself).
     /// </summary>
     public IReadOnlyList<BridgeableSessionInfo> GetEligibleSessions()
     {
         return _sessionManager.Sessions
-            .Where(s => s.NowPlayingItem != null && !_bridges.ContainsKey(s.Id))
+            .Where(s => s.NowPlayingItem != null
+                && !_bridges.ContainsKey(s.Id)
+                && !InjectedClientNames.Contains(s.Client ?? string.Empty))
             .Select(s => new BridgeableSessionInfo(s.Id, s.UserName, s.DeviceName, s.Client, s.NowPlayingItem?.Name))
             .ToList();
     }

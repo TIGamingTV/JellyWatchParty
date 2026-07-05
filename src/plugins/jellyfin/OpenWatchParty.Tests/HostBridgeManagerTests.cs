@@ -13,7 +13,7 @@ namespace OpenWatchParty.Plugin.Tests;
 /// </summary>
 public class HostBridgeManagerTests
 {
-    private static SessionInfo CreateSession(string id, bool isPlaying)
+    private static SessionInfo CreateSession(string id, bool isPlaying, string client = "Fladder")
     {
         var session = new SessionInfo(Mock.Of<ISessionManager>(), Mock.Of<ILogger>())
         {
@@ -21,7 +21,7 @@ public class HostBridgeManagerTests
             UserId = Guid.NewGuid(),
             UserName = "User-" + id,
             DeviceName = "Device-" + id,
-            Client = "Fladder",
+            Client = client,
         };
 
         if (isPlaying)
@@ -72,6 +72,33 @@ public class HostBridgeManagerTests
         var eligible = manager.GetEligibleSessions();
 
         Assert.Equal("Some Movie", eligible[0].NowPlayingItemName);
+    }
+
+    [Theory]
+    [InlineData("Jellyfin Web")]
+    [InlineData("Jellyfin Media Player")]
+    [InlineData("jellyfin web")]
+    public void GetEligibleSessions_ExcludesSessionsAlreadyRunningInjectedClient(string client)
+    {
+        var browserSession = CreateSession("s1", isPlaying: true, client: client);
+        var manager = CreateManager(new[] { browserSession });
+
+        var eligible = manager.GetEligibleSessions();
+
+        Assert.Empty(eligible);
+    }
+
+    [Fact]
+    public void GetEligibleSessions_IncludesNativeClientsAlongsideExcludedOnes()
+    {
+        var browserSession = CreateSession("s1", isPlaying: true, client: "Jellyfin Web");
+        var fladderSession = CreateSession("s2", isPlaying: true, client: "Fladder");
+        var manager = CreateManager(new[] { browserSession, fladderSession });
+
+        var eligible = manager.GetEligibleSessions();
+
+        Assert.Single(eligible);
+        Assert.Equal("s2", eligible[0].SessionId);
     }
 
     [Fact]

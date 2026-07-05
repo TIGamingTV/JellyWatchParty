@@ -1164,14 +1164,43 @@ onto anonymous objects with explicit camelCase keys
 `sessionId`/`userName`/`roomId`/`connected`) at the HTTP boundary, matching
 the existing `/Token` endpoint's convention, instead of serializing the
 internal DTOs directly. `dotnet build`/`dotnet test` re-verified clean
-(48/48) after the fix. **Not yet re-verified against the live deployment**
-— the user found this by testing the previous build; the fix itself still
-needs to go through another dev-build install + restart + click-Start
-cycle to confirm the room actually gets created this time.
+(48/48) after the fix.
+
+**Confirmed working end-to-end** (2026-07-05): the user's first attempt
+after the fix still failed identically — turned out the dev-build update
+hadn't actually been picked up yet (still running the pre-fix plugin
+version). After properly updating to the rebuilt dev version (`0.0.21`,
+published via the rolling `develop` build — `docs/jellyfin-plugin-repo/
+manifest-dev.json` on GitHub Pages confirmed this build existed with a
+changelog matching the fix commit) and restarting Jellyfin, starting a
+bridge on a real Fladder session actually worked. **This is the first
+confirmed-working end-to-end test of the whole Fladder-as-host feature**
+— Round 16/17's "unverified against a live server" caveat is resolved for
+the host-bridge-creation path specifically. Still not separately confirmed:
+that a browser guest joining the resulting room actually stays in sync
+with Fladder's playback over time (only "room gets created and is joinable"
+was directly observed in this exchange).
 
 **Lesson for future work on this plugin**: never assume ASP.NET Core/
 Jellyfin auto-converts C# record/property casing for JSON responses.
 Either project explicit anonymous objects with literal keys (as done
 here and in `/Token`), or write a throwaway request against a real/dev
 instance and inspect the actual response body before wiring client JS
-against assumed field names.
+against assumed field names. Also: when debugging "the fix didn't work"
+reports against a rolling dev-build pipeline, check whether the *new*
+build was actually installed (version number, timestamp) before assuming
+the fix itself is wrong — plugin updates require an explicit Catalog
+update **and** a Jellyfin restart, and are easy to skip without noticing.
+
+**Follow-up**: the "Host From Another Device" list was showing every
+active session with something playing, including plain Jellyfin Web
+browser tabs and Jellyfin Media Player — both already run the injected
+script and can host a room themselves via "Create Room", so listing them
+in the bridge picker was just clutter (and mildly confusing, since
+bridging one would mean two separate connections — the browser's own OWP
+client and the backend bridge — racing to be host of different rooms for
+the same underlying session). `HostBridgeManager.GetEligibleSessions()`
+now excludes sessions whose `Client` is `"Jellyfin Web"` or `"Jellyfin
+Media Player"` (case-insensitive), leaving only genuine native-client
+candidates (Fladder, and anything else that isn't one of those two).
+`dotnet build`/`dotnet test` clean (52/52, 4 new tests for this filter).
