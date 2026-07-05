@@ -8,12 +8,12 @@
     "category": "General",
     "versions": [
       {
-        "version": "0.0.19",
-        "changelog": "feat(plugin): bridge native-client sessions in as OpenWatchParty room hosts\n\nAdds an admin-gated hostbridge so sessions that can't run the injected\nbrowser client (e.g. Fladder on Android TV) can still host a watch party:\nHostBridgeManager subscribes to ISessionManager's playback events and\nSessionHostBridge speaks the normal browser-host WebSocket protocol to the\nsession server on that session's behalf. Host-only by design — receivers\nstill join the resulting room themselves through the existing OWP UI, no\nnew push channel to browsers. JWT minting extracted into SessionServerAuth\nso both the bridge and the existing /Token endpoint share it.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+        "version": "0.0.20",
+        "changelog": "feat(client): move host-bridge picker into the in-player widget, open to all users\n\nRelocates the Fladder-as-host bridge picker from the Jellyfin admin config\npage into the same lobby panel used to create/join a room, so it's where\nusers actually look for it. Drops the RequiresElevation gate on the\n/OpenWatchParty/Bridge/* endpoints in favor of plain [Authorize] — any\nlogged-in user can now see active sessions and start/stop a bridge, per\nexplicit sign-off that this info isn't considered private in this\ndeployment. Adds src/clients/jellyfin-web/ui/bridge.js and updates every\nplace the injected-client file list is duplicated (common.just, ci.yml,\npublish.yml) so the new module actually ships.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
         "targetAbi": "10.11.11.0",
         "sourceUrl": "https://github.com/TIGamingTV/OpenWatchParty/releases/download/develop-latest/OpenWatchParty-dev.zip",
-        "checksum": "81bab094b8024f364c06f13b3d2766ee",
-        "timestamp": "2026-07-05T16:27:40Z"
+        "checksum": "ecf55ec86af22325cccb5a72223b158a",
+        "timestamp": "2026-07-05T17:05:04Z"
       }
     ]
   }
