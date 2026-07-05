@@ -8,12 +8,12 @@
     "category": "General",
     "versions": [
       {
-        "version": "0.0.12",
-        "changelog": "fix(ci): force Pages rebuild after bot-authored manifest commits\n\nGITHUB_TOKEN-authenticated pushes don't trigger other workflows (GitHub's\nanti-recursion protection), so update-plugin-manifest and\nupdate-dev-manifest's git push to main never actually triggered docs.yml -\nPages just never rebuilt on its own. Confirmed live: manifest-dev.json had\nthe correct 0.0.10 entry committed on main but the site kept serving the\nempty seed content.\n\nBoth jobs now explicitly dispatch docs.yml via the REST API after pushing,\nwhich isn't subject to the same suppression since it's an explicit call\nrather than a passive push event.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+        "version": "0.0.15",
+        "changelog": "fix(sync): hysteresis drift correction to reduce playbackRate flicker\n\nReplace the single 40ms deadzone with separate enter/exit thresholds\n(0.3s/0.1s) so rate correction starts and stops as discrete bursts\ninstead of continuously nudging playbackRate away from 1x on every\ntiny drift. Update docs to match.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
         "targetAbi": "10.11.11.0",
         "sourceUrl": "https://github.com/TIGamingTV/OpenWatchParty/releases/download/develop-latest/OpenWatchParty-dev.zip",
-        "checksum": "e35aa4e55f682b40b0865b3b07847b6b",
-        "timestamp": "2026-07-05T11:52:31Z"
+        "checksum": "7f6bdaa195fe9d512bac3cb12291e12e",
+        "timestamp": "2026-07-05T13:44:09Z"
       }
     ]
   }
