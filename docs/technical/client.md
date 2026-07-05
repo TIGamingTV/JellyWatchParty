@@ -53,7 +53,8 @@ Defines global shared state and configuration constants.
 | `SEEK_THRESHOLD` | number | `1.0` | Difference threshold for seek (seconds) |
 | `STATE_UPDATE_MS` | number | `1000` | State update send interval (ms) |
 | `SYNC_LEAD_MS` | number | `300` | Sync advance to compensate latency (ms) |
-| `DRIFT_DEADZONE_SEC` | number | `0.04` | Dead zone for no correction (seconds) |
+| `DRIFT_CORRECTION_ENTER_SEC` | number | `0.3` | Drift needed to start a correction burst (seconds) |
+| `DRIFT_CORRECTION_EXIT_SEC` | number | `0.1` | Drift must fall under this to stop correcting (seconds) |
 | `DRIFT_SOFT_MAX_SEC` | number | `2.0` | Threshold for forced seek (seconds) |
 | `PLAYBACK_RATE_MIN` | number | `0.85` | Minimum playback speed for catchup |
 | `PLAYBACK_RATE_MAX` | number | `2.0` | Maximum playback speed for catchup |

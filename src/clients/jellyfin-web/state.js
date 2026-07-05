@@ -53,7 +53,8 @@
     SEEK_THRESHOLD: 1.0,          // Reduced from 2.5s - smaller seeks now broadcast (UX-P2)
     STATE_UPDATE_MS: 1000,        // Reduced from 2000ms - more responsive state updates (UX-P1)
     SYNC_LEAD_MS: 300,            // Compensates processing + initial HLS buffer
-    DRIFT_DEADZONE_SEC: 0.04,
+    DRIFT_CORRECTION_ENTER_SEC: 0.3, // Start a rate-correction burst once drift exceeds this
+    DRIFT_CORRECTION_EXIT_SEC: 0.1,  // Stop correcting (snap to 1x) once drift falls back under this
     DRIFT_SOFT_MAX_SEC: 2.0,      // Seek to correct if drift > 2s
     PLAYBACK_RATE_MIN: 0.85,      // Allow slowdown if ahead
     PLAYBACK_RATE_MAX: 2.0,       // Aggressive catch-up (browser pitch correction preserves audio)
@@ -116,6 +117,7 @@
     isBuffering: false,
     wantsToPlay: false,
     isSyncing: false,
+    isDriftCorrecting: false, // Hysteresis latch: true while actively rate-correcting drift (see playback/sync.js)
     syncCooldownUntil: 0,  // Timestamp until which position updates are ignored (after resume)
     isInitialSync: false,  // True during initial catch-up after joining (disables HARD_SEEK)
     initialSyncUntil: 0,   // Timestamp when initial sync phase ends (max duration)

@@ -4,7 +4,8 @@
   const state = OWP.state;
   const utils = OWP.utils;
   const {
-    DRIFT_DEADZONE_SEC,
+    DRIFT_CORRECTION_ENTER_SEC,
+    DRIFT_CORRECTION_EXIT_SEC,
     DRIFT_SOFT_MAX_SEC,
     PLAYBACK_RATE_MIN,
     PLAYBACK_RATE_MAX,
@@ -70,20 +71,34 @@
     return false;
   };
 
-  const applySyncCorrection = (drift, abs, video, expected, serverNow) => {
-    if (abs < DRIFT_DEADZONE_SEC) {
-      if (video.playbackRate !== 1) video.playbackRate = 1;
-      if (state.syncStatus !== 'synced') {
-        state.syncStatus = 'synced';
-        state.currentDrift = 0;
-        if (OWP.ui && OWP.ui.updateSyncIndicator) OWP.ui.updateSyncIndicator();
-      }
-      return;
-    }
-    if (state.syncStatus !== 'syncing') {
-      state.syncStatus = 'syncing';
+  // Hysteresis (Schmitt-trigger) drift controller: once a correction burst starts, it
+  // holds the rate-adjustment path until drift falls under the (tighter) exit threshold,
+  // then snaps back to 1x and goes quiet. This avoids constantly nudging playbackRate
+  // for sub-ENTER-threshold jitter, which otherwise never fully looks or feels like 1x.
+  const goQuiet = (video) => {
+    state.isDriftCorrecting = false;
+    if (video.playbackRate !== 1) video.playbackRate = 1;
+    if (state.syncStatus !== 'synced') {
+      state.syncStatus = 'synced';
+      state.currentDrift = 0;
       if (OWP.ui && OWP.ui.updateSyncIndicator) OWP.ui.updateSyncIndicator();
     }
+  };
+
+  const applySyncCorrection = (drift, abs, video, expected, serverNow) => {
+    if (!state.isDriftCorrecting) {
+      if (abs < DRIFT_CORRECTION_ENTER_SEC) {
+        goQuiet(video);
+        return;
+      }
+      state.isDriftCorrecting = true;
+      state.syncStatus = 'syncing';
+      if (OWP.ui && OWP.ui.updateSyncIndicator) OWP.ui.updateSyncIndicator();
+    } else if (abs < DRIFT_CORRECTION_EXIT_SEC) {
+      goQuiet(video);
+      return;
+    }
+
     state.currentDrift = drift;
     if (abs >= DRIFT_SOFT_MAX_SEC) {
       const now = utils.nowMs();
@@ -98,6 +113,7 @@
         video.currentTime = expected;
         state.lastSyncServerTs = serverNow;
         state.lastSyncPosition = expected;
+        state.isDriftCorrecting = false;
         if (video.playbackRate !== 1) video.playbackRate = 1;
         return;
       }
@@ -115,15 +131,18 @@
     const video = state.currentVideoElement || utils.getVideo();
     if (!video) return;
     if (!state.inRoom || state.isHost) {
+      state.isDriftCorrecting = false;
       if (video.playbackRate !== 1) video.playbackRate = 1;
       return;
     }
     if (!state.lastSyncServerTs || state.lastSyncPlayState !== 'playing') {
+      state.isDriftCorrecting = false;
       if (video.playbackRate !== 1) video.playbackRate = 1;
       return;
     }
     if (state.isBuffering || !utils.isVideoReady()) return;
     if (video.paused) {
+      state.isDriftCorrecting = false;
       if (video.playbackRate !== 1) video.playbackRate = 1;
       return;
     }

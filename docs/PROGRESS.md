@@ -776,3 +776,44 @@ dispatch call actually lands and Pages redeploys within a minute or two
 afterward). The already-committed `0.0.10` entry on `main` should get
 picked up as a side effect the next time *any* commit touching `docs/**`
 lands on `main` — did not wait to confirm this manually.
+
+---
+
+## Round 14 — Drift-correction hysteresis (reduce visible playbackRate flicker)
+
+Now that sync itself works, the user flagged a UX issue: `playback/sync.js`
+was constantly nudging `video.playbackRate` away from 1x, which looked
+noticeable/weird even when barely out of sync.
+
+**Root cause**: the old controller had a single 40ms `DRIFT_DEADZONE_SEC`
+threshold, re-evaluated every `syncLoop` tick (`SYNC_LOOP_MS` = 500ms), with
+a `sqrt(drift) * DRIFT_GAIN` correction curve. Because the curve is steep
+near zero (e.g. 100ms drift → already 1.16x) and there was no gap between
+"start correcting" and "stop correcting," the rate was essentially always
+slightly off 1x, visibly flickering as drift oscillated across the single
+threshold.
+
+**Fix**: replaced the single deadzone with a hysteresis (Schmitt-trigger)
+controller — two thresholds instead of one:
+- `DRIFT_CORRECTION_ENTER_SEC` (0.3s) — drift must exceed this to *start* a
+  correction burst.
+- `DRIFT_CORRECTION_EXIT_SEC` (0.1s) — drift must fall back under this
+  (tighter) bound to *stop* the burst and snap back to exactly 1x.
+
+Between bursts, playback sits untouched at 1x regardless of small jitter.
+New `state.isDriftCorrecting` flag (`state.js`) tracks which side of the
+hysteresis band the controller is currently on; it's force-reset to `false`
+whenever `syncLoop` exits early (paused, buffering, is-host, not in room,
+hard-seek), so a fresh drift event always restarts at the wider ENTER
+threshold rather than resuming mid-burst. The existing sqrt/gain correction
+curve, hard-seek threshold (`DRIFT_SOFT_MAX_SEC` = 2.0s), and rate clamps
+were left unchanged — only the entry/exit gating changed.
+
+Updated `docs/technical/sync.md`, `docs/technical/client.md`, and
+`docs/operations/configuration.md` (all referenced the old
+`DRIFT_DEADZONE_SEC` constant directly).
+
+**Status**: implemented, not yet tested against a live room — needs a
+multi-client watch session to confirm the correction bursts feel less
+jittery in practice and that `DRIFT_CORRECTION_ENTER_SEC`/`EXIT_SEC` (0.3s /
+0.1s) are reasonably tuned rather than too aggressive or too lax.
