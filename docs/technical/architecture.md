@@ -199,7 +199,14 @@ Host                            Server                    Participants
   │    to participants — they never saw a disruption]           │
   │                                │                            │
   ────────────────────────────────────────────────────────────────
-           OR, if the host never reconnects within 90s:
+     OR, if the host never reconnects within 90s and others remain:
+  │                          [grace period expires]              │
+  │                          [promote earliest-joined participant]│
+  │                                │                            │
+  │                                ├── host_changed ────────────►│
+  │                                │   (room stays open)         │
+  ────────────────────────────────────────────────────────────────
+        OR, if the host never reconnects and no one else is left:
   │                          [grace period expires]              │
   │                          [tear down room]                    │
   │                                │                            │
@@ -250,6 +257,9 @@ Room {
   state: PlaybackState
   last_state_ts: u64
   last_command_ts: u64
+  chat_history: VecDeque<ChatHistoryEntry>  // capped at 50, replayed on join/reattach
+  democratic_mode: bool                     // host-toggleable; true lets any participant control playback
+  password_hash: Option<(String, String)>   // (salt, hash); never serialized to clients
 }
 ```
 
@@ -287,7 +297,7 @@ See [Security Guide](../operations/security.md) for detailed security configurat
 | Resource | Limit | Configurable |
 |----------|-------|--------------|
 | Clients per room | 20 | Server constant `MAX_CLIENTS_PER_ROOM` |
-| Rooms per user | 3 | Server constant `MAX_ROOMS_PER_USER` |
+| Hosted rooms per user | 1 | Not configurable — creating a new room closes any room the user already hosts (`ws/handlers/create.rs`) |
 | Messages per second | 30 | Server constant `RATE_LIMIT_MESSAGES` |
 | Message size | 64 KB | Server constant |
 | Token requests | 10/min per user | Plugin constant |
@@ -333,26 +343,26 @@ Server schedules a 90s grace period (does NOT close the room yet)
        │                                                            participants
        │
        ▼ (90s elapses, no reconnect)
-Room is closed
+Other participants remain?
        │
-       ▼
-All participants receive "room_closed" message
+       ├── Yes ──► Earliest-joined remaining participant is promoted to
+       │           host in place; "host_changed" broadcast; room stays open
        │
-       ▼
-Clients show "Room closed" notification
-Playback continues locally (not synced)
+       └── No ──► Room is closed; all participants (none, in this case)
+                   would receive "room_closed"
 ```
 
 **Notes**:
 - A brief disconnect (network blip, tab throttling, background app) is
   invisible to participants as long as the host reconnects within 90
   seconds (`RECONNECT_GRACE_SECS` in `src/server/src/room/reconnect.rs`)
-- Only after the grace period expires without a reconnect does the room
-  actually close
-- Participants can create a new room to continue if the host doesn't
-  come back
-- Automatic host transfer (to a different user, not just the same host
-  reconnecting) is planned (see roadmap)
+- If the grace period expires and other participants remain, host duties
+  transfer automatically to the earliest-joined remaining participant
+  (`promote_new_host` in `src/server/src/room/leave.rs`) — the room is
+  only actually closed if no participants are left
+- The same promotion logic applies when the host explicitly leaves
+  (`leave_room`) rather than disconnecting, via the same
+  `detach_client_from_room` function
 
 ### Persistent Client ID
 
@@ -443,7 +453,8 @@ When a client disconnects and reconnects, using the same persistent
 |----------|----------|
 | Any client reconnects within 90s | Reattaches to the same client entry; if they were in a room, `room_state` is resent and their host/guest role is restored |
 | Host reconnects within 90s | Room stays open the whole time; participants see no disruption |
-| Host does not reconnect within 90s | Room is torn down, `room_closed` broadcast to remaining participants |
+| Host does not reconnect within 90s, others remain | Earliest-joined remaining participant is promoted to host; `host_changed` broadcast; room stays open |
+| Host does not reconnect within 90s, no one else remains | Room is torn down, `room_closed` broadcast (no other participants left to receive it) |
 | Server restart | All rooms lost (in-memory only); clients reconnect to an empty server |
 
 **Auto-reconnect**:
