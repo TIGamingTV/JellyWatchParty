@@ -738,3 +738,41 @@ small plugin/client-only change pushed to `develop` — confirm the
 correctly (i.e. a server-only change should *not* trigger them, and vice
 versa), and that `manifest-dev.json` ends up valid and installable in
 Jellyfin.
+
+---
+
+## Round 13 — Dev plugin channel built correctly but never went live
+
+First real test of Round 12: pushed the CI/CD infra work plus the pending
+video adapter fix to `develop`. `build-plugin-dev` and `update-dev-manifest`
+both fired correctly (and only for the plugin/client change, as intended —
+`build`/`merge` correctly skipped since no `src/server/**` changed).
+`manifest-dev.json` on `main` ended up with a correct `0.0.10` entry
+pointing at the `develop-latest` pre-release. But
+`https://tigamingtv.github.io/OpenWatchParty/jellyfin-plugin-repo/manifest-dev.json`
+kept serving the empty seed content — nothing showed up in Jellyfin's
+catalog after adding the repo.
+
+**Root cause**: pushes authenticated with the workflow's own `GITHUB_TOKEN`
+do not trigger other workflows (GitHub's anti-recursion protection) — so
+the bot's `git push` to `main` inside `update-dev-manifest` never triggered
+`docs.yml`, and Pages never rebuilt. The stable channel has the exact same
+latent bug in the pre-existing `update-plugin-manifest` (release) job — it
+just hadn't been noticed because a later human-authored commit that also
+touched `docs/**` happened to trigger a rebuild that picked up the
+already-committed (but never-deployed-on-its-own) manifest change.
+
+**Fix**: both jobs now explicitly call the GitHub REST API
+(`POST /repos/{repo}/actions/workflows/docs.yml/dispatches`) right after
+their `git push`, using the same `GITHUB_TOKEN` — an explicit
+`workflow_dispatch` API call is not subject to the same anti-recursion
+suppression as passive push events, so this reliably forces the Pages
+rebuild. Required adding `actions: write` to `publish.yml`'s top-level
+`permissions`.
+
+**Status**: fix written, not yet observed working (needs another push to
+`develop` with a plugin/client change, or a release, to confirm the
+dispatch call actually lands and Pages redeploys within a minute or two
+afterward). The already-committed `0.0.10` entry on `main` should get
+picked up as a side effect the next time *any* commit touching `docs/**`
+lands on `main` — did not wait to confirm this manually.
