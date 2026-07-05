@@ -1215,7 +1215,8 @@ Switched to a prefix match (`Client.StartsWith(...)`) against
 `"Jellyfin Web"` / `"Jellyfin Desktop"` / `"Jellyfin Media Player"`, per
 the user's own suggestion to treat the version as a wildcard. `dotnet
 build`/`dotnet test` clean (54/54, 2 more tests covering the
-version-suffixed strings actually seen in the field). **Not yet
-re-confirmed against the live deployment** — same as before, needs a
-dev-build update + restart to verify the two sessions actually disappear
-from the picker this time.
+version-suffixed strings actually seen in the field). **Confirmed working
+against the live deployment** (2026-07-05) — after updating to the
+rebuilt dev version and restarting, the Jellyfin Web/Desktop sessions no
+longer appear in the "Host From Another Device" list, leaving only
+Fladder.
