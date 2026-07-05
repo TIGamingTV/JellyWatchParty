@@ -21,7 +21,10 @@ pub fn spawn_zombie_cleanup(clients: Clients, rooms: Rooms) {
                     .collect()
             };
             for id in zombies {
-                warn!("Zombie connection detected, starting reconnect grace period: {}", id);
+                warn!(
+                    "Zombie connection detected, starting reconnect grace period: {}",
+                    id
+                );
                 crate::room::schedule_disconnect(id, clients.clone(), rooms.clone()).await;
             }
         }
