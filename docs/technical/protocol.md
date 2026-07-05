@@ -10,7 +10,22 @@ nav_order: 2
 
 OpenWatchParty uses a JSON-over-WebSocket protocol for real-time communication between clients and the session server.
 
-**Endpoint:** `ws(s)://<host>:3000/ws`
+**Endpoint:** `ws(s)://<host>:3000/ws?client_id=<persistent-client-id>`
+
+### `client_id` Query Parameter
+
+The client generates a UUID once, persists it in `localStorage`, and
+sends it as `?client_id=` on every connection attempt (including
+reconnects). This is a *different* identifier from the per-connection
+`client` field used elsewhere in this protocol and from the
+`client_hello.payload.client_id` below — this query param is what lets
+the server recognize "this is the same client as before" across a
+dropped connection, so it can reattach the client to its existing room
+membership (and resend `room_state`) instead of treating it as brand
+new. Only values that look like a real UUIDv4 are trusted; anything
+else is ignored and the server mints a fresh ID instead. See
+[Architecture: Persistent Client ID](architecture.md) and
+[Server: `room/reconnect.rs`](server.md) for the reattachment mechanics.
 
 ## Message Format
 

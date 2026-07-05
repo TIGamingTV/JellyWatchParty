@@ -1,0 +1,28 @@
+// Custom just-the-docs color scheme for OpenWatchParty.
+// Keyed off the logo's blue-to-purple play-button gradient, with the
+// logo's orange accent reserved for search highlighting only, so it
+// doesn't compete with the primary link/button color. Variable names
+// follow just-the-docs' documented color-scheme customization points
+// (https://just-the-docs.com/docs/customization/#color-schemes) — set
+// `color_scheme: owp` in _config.yml to use this instead of the stock
+// `dark` scheme.
+
+$body-background-color: #14141c;
+$sidebar-color: #1b1b28;
+$search-background-color: #1b1b28;
+$table-background-color: #1b1b28;
+$code-background-color: #1e1e2c;
+
+$body-heading-color: #f2f0fb;
+$body-text-color: #d6d4e6;
+$nav-child-link-color: #c9c3f5;
+
+$border-color: #2d2b40;
+$table-border-color: #2d2b40;
+
+$link-color: #8c7bff;
+$btn-primary-color: #7a5cff;
+$base-button-color: #232134;
+
+$search-result-highlight-color: #f5a623;
+$feedback-color: $sidebar-color;

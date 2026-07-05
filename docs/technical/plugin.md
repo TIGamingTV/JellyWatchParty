@@ -13,16 +13,23 @@ The OpenWatchParty plugin integrates with Jellyfin's plugin architecture to serv
 ## Project Structure
 
 ```
-src/plugins/jellyfin/OpenWatchParty/
-├── Plugin.cs                     # Plugin entry point
-├── OpenWatchParty.csproj         # Project file
-├── Controllers/
-│   └── OpenWatchPartyController.cs  # REST API endpoints
-├── Configuration/
-│   └── PluginConfiguration.cs    # Configuration model
-└── Web/
-    ├── configPage.html           # Admin configuration page
-    └── plugin.js                 # Client JavaScript bundle
+src/plugins/jellyfin/
+├── OpenWatchParty/
+│   ├── Plugin.cs                     # Plugin entry point
+│   ├── OpenWatchPartyPlugin.csproj   # Project file
+│   ├── Controllers/
+│   │   └── OpenWatchPartyController.cs  # REST API endpoints
+│   ├── Configuration/
+│   │   └── PluginConfiguration.cs    # Configuration model
+│   ├── Services/                     # Host Bridge (see host-bridge.md)
+│   │   ├── HostBridgeManager.cs      # Hosted service, owns active bridges
+│   │   ├── SessionHostBridge.cs      # One bridge: session → session-server WS
+│   │   └── SessionServerAuth.cs      # Shared JWT minting
+│   └── Web/
+│       ├── configPage.html           # Admin configuration page
+│       └── plugin.js                 # Client JS loader (fetches modules
+│                                      # individually, not a pre-bundled script)
+└── OpenWatchParty.Tests/              # xUnit/Moq test project
 ```
 
 ## Plugin.cs
@@ -80,7 +87,13 @@ ASP.NET Core controller providing REST API endpoints.
 
 #### `GET /OpenWatchParty/ClientScript`
 
-Serves the client JavaScript bundle with caching support.
+Serves the client JS *loader* (`plugin.js`) with caching support. The
+loader then fetches each individual module via
+`GET /OpenWatchParty/Client/{*path}` (`GetClientModule`, same embedded-
+resource/ETag caching model) — the client is not shipped as one
+pre-bundled file. See [Client](client.md) for the module list, and
+[REST API](api.md) for the full endpoint reference, including the
+[Host Bridge](host-bridge.md) endpoints this controller also exposes.
 
 ```csharp
 [HttpGet("ClientScript")]
@@ -303,8 +316,11 @@ assembly.GetManifestResourceStream("OpenWatchParty.Plugin.Web.plugin.js");
 
 ```xml
 <ItemGroup>
-  <PackageReference Include="Jellyfin.Controller" Version="10.9.0" />
-  <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="7.0.0" />
+  <PackageReference Include="Jellyfin.Controller" Version="10.11.11" ExcludeAssets="runtime" />
+  <PackageReference Include="Jellyfin.Model" Version="10.11.11" ExcludeAssets="runtime" />
+  <PackageReference Include="Newtonsoft.Json" Version="13.0.3" ExcludeAssets="runtime" />
+  <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="6.35.0" />
+  <PackageReference Include="Microsoft.IdentityModel.Tokens" Version="6.35.0" />
 </ItemGroup>
 ```
 

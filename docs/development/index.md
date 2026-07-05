@@ -6,11 +6,6 @@ has_children: true
 
 # Development Guide
 
-Contribute to OpenWatchParty development.
-
-- [Setup](setup) - Development environment
-- [Contributing](contributing) - How to contribute
-- [Testing](testing) - Running tests
-- [CI/CD](ci) - Continuous integration
-- [Release](release) - Release process
-- [File Transformation Integration](file-transformation-integration) - Automatic script injection
+Contribute to OpenWatchParty development — see the sidebar for
+environment setup, contributing guidelines, testing, CI/CD, and the
+release process.

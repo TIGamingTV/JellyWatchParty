@@ -8,7 +8,7 @@ nav_order: 1
 
 ## Prerequisites
 
-- **Jellyfin Server** 10.8.x or 10.9.x
+- **Jellyfin Server** 10.11.x
 - **Docker** and **Docker Compose** (recommended)
 - **Port 3000** available for the session server
 - Admin access to Jellyfin

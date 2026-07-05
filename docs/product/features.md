@@ -19,7 +19,7 @@ nav_order: 2
 - **Play/Pause sync** - Host controls playback state for all clients
 - **Seek sync** - Jumping to a position syncs everyone
 - **Position sync** - Continuous updates keep clients aligned
-- **Drift correction** - Automatic playback speed adjustment (0.85x-2.0x)
+- **Drift correction** - Automatic playback speed adjustment (0.85x-2.0x), using hysteresis so it only kicks in once drift exceeds 0.3s and stays quiet until it falls back under 0.1s (see [Sync Algorithms](../technical/sync.md))
 - **HLS support** - Works with Jellyfin's adaptive streaming
 
 ### User Interface
@@ -55,9 +55,9 @@ nav_order: 2
 ### Jellyfin Versions
 | Version | Status |
 |---------|--------|
-| 10.9.x | Supported |
-| 10.8.x | Supported |
-| 10.7.x | Not tested |
+| 10.11.x | Supported (current target) |
+| 10.9.x - 10.10.x | Not tested |
+| 10.8.x and earlier | Not supported |
 
 ### Browsers
 
@@ -70,6 +70,7 @@ nav_order: 2
 | Safari (iOS) | 14+ | Partial | See mobile limitations |
 | Chrome (Android) | 80+ | Partial | See mobile limitations |
 | Firefox (Android) | 79+ | Partial | See mobile limitations |
+| Jellyfin Desktop | Any (CEF+mpv) | Supported | Uses a native player adapter (see [Client](../technical/client.md#module-utilsvideojs)) instead of an HTML5 `<video>` element |
 
 #### Safari Known Issues
 
@@ -112,8 +113,8 @@ Mobile browsers have reduced functionality due to platform restrictions:
 
 1. **Host-only control** - Only the host can control playback (democratic mode planned)
 2. **Single media** - One media item per room (by design)
-3. **Ephemeral rooms** - Rooms are closed when the host leaves or server restarts (by design)
-4. **Web only** - Only works in web browsers (no native mobile/TV apps planned)
+3. **Ephemeral rooms** - Rooms are closed when the host leaves and doesn't reconnect within 90 seconds, or when the server restarts (by design)
+4. **Guests need a browser or Jellyfin Media Player client** - The Watch Party UI (joining, chat, the room list) only exists in the injected web client and Jellyfin Desktop. Hosting is broader: a [Host Bridge](../technical/host-bridge.md) lets any native/TV client (e.g. Fladder on Android TV) act as room host even though it can't run the UI itself — but someone still has to join as a guest from a supported client to actually watch.
 5. **No message history** - Chat messages are not persisted; late joiners won't see previous messages
 
 ## Roadmap
