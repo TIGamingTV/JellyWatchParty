@@ -78,6 +78,8 @@ public class HostBridgeManagerTests
     [InlineData("Jellyfin Web")]
     [InlineData("Jellyfin Media Player")]
     [InlineData("jellyfin web")]
+    [InlineData("Jellyfin Web 10.11.11")]
+    [InlineData("Jellyfin Desktop 3.0.0-dev")]
     public void GetEligibleSessions_ExcludesSessionsAlreadyRunningInjectedClient(string client)
     {
         var browserSession = CreateSession("s1", isPlaying: true, client: client);

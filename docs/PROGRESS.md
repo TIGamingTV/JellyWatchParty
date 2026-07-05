@@ -1204,3 +1204,18 @@ now excludes sessions whose `Client` is `"Jellyfin Web"` or `"Jellyfin
 Media Player"` (case-insensitive), leaving only genuine native-client
 candidates (Fladder, and anything else that isn't one of those two).
 `dotnet build`/`dotnet test` clean (52/52, 4 new tests for this filter).
+
+**Follow-up #2** (same day): the exact-match version above still failed
+against the real server — the user checked Dashboard → Active Devices and
+found the actual `Client` strings are `"Jellyfin Web 10.11.11"` and
+`"Jellyfin Desktop 3.0.0-dev"` (Jellyfin Media Player appears to have been
+renamed to "Jellyfin Desktop" in newer builds), both with a trailing
+version that an exact-string `HashSet.Contains` check will never match.
+Switched to a prefix match (`Client.StartsWith(...)`) against
+`"Jellyfin Web"` / `"Jellyfin Desktop"` / `"Jellyfin Media Player"`, per
+the user's own suggestion to treat the version as a wildcard. `dotnet
+build`/`dotnet test` clean (54/54, 2 more tests covering the
+version-suffixed strings actually seen in the field). **Not yet
+re-confirmed against the live deployment** — same as before, needs a
+dev-build update + restart to verify the two sessions actually disappear
+from the picker this time.

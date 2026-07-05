@@ -22,11 +22,21 @@ public sealed class HostBridgeManager : IHostedService
     // picker to avoid clutter/confusion. Everything else (Fladder,
     // Swiftfin, Infuse, official mobile/TV apps, ...) is a genuine
     // native-client candidate.
-    private static readonly HashSet<string> InjectedClientNames = new(StringComparer.OrdinalIgnoreCase)
+    //
+    // SessionInfo.Client includes a trailing version (e.g. "Jellyfin Web
+    // 10.11.11", "Jellyfin Desktop 3.0.0-dev" — the latter being the
+    // renamed Jellyfin Media Player), so this matches on prefix rather
+    // than exact equality.
+    private static readonly string[] InjectedClientPrefixes =
     {
         "Jellyfin Web",
+        "Jellyfin Desktop",
         "Jellyfin Media Player"
     };
+
+    private static bool IsInjectedClient(string? client) =>
+        !string.IsNullOrEmpty(client)
+        && InjectedClientPrefixes.Any(prefix => client.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
 
     private readonly ISessionManager _sessionManager;
     private readonly ILogger<HostBridgeManager> _logger;
@@ -71,7 +81,7 @@ public sealed class HostBridgeManager : IHostedService
         return _sessionManager.Sessions
             .Where(s => s.NowPlayingItem != null
                 && !_bridges.ContainsKey(s.Id)
-                && !InjectedClientNames.Contains(s.Client ?? string.Empty))
+                && !IsInjectedClient(s.Client))
             .Select(s => new BridgeableSessionInfo(s.Id, s.UserName, s.DeviceName, s.Client, s.NowPlayingItem?.Name))
             .ToList();
     }
