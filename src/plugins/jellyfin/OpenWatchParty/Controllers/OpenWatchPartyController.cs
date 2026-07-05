@@ -1,12 +1,11 @@
 using System.Collections.Concurrent;
-using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
-using Microsoft.IdentityModel.Tokens;
 using OpenWatchParty.Plugin.Configuration;
+using OpenWatchParty.Plugin.Services;
 
 namespace OpenWatchParty.Plugin.Controllers;
 
@@ -30,18 +29,17 @@ public class OpenWatchPartyController : ControllerBase
     private static readonly Lazy<(string Content, string ETag)> _scriptCache = new(LoadScriptFromResource, LazyThreadSafetyMode.ExecutionAndPublication);
     private static readonly ConcurrentDictionary<string, (string Content, string ETag)> _clientModuleCache = new(StringComparer.OrdinalIgnoreCase);
 
-    // P-CS02 fix: Cache JWT signing credentials and handler to avoid repeated allocations
-    private static SigningCredentials? _cachedSigningCredentials;
-    private static string? _cachedJwtSecret;
-    private static readonly JwtSecurityTokenHandler _tokenHandler = new();
+    private readonly HostBridgeManager _hostBridgeManager;
 
     /// <summary>
     /// Initializes a new instance of the controller with logging support.
     /// </summary>
     /// <param name="logger">The logger instance for this controller.</param>
-    public OpenWatchPartyController(ILogger<OpenWatchPartyController> logger)
+    /// <param name="hostBridgeManager">Manages native-client host bridges.</param>
+    public OpenWatchPartyController(ILogger<OpenWatchPartyController> logger, HostBridgeManager hostBridgeManager)
     {
         _logger = logger;
+        _hostBridgeManager = hostBridgeManager;
     }
 
     /// <summary>
@@ -277,48 +275,68 @@ public class OpenWatchPartyController : ControllerBase
         });
     }
 
-    /// <summary>
-    /// Gets or creates cached signing credentials (P-CS02 fix).
-    /// Credentials are cached and reused until the JWT secret changes.
-    /// </summary>
-    private static SigningCredentials GetSigningCredentials(string jwtSecret)
-    {
-        if (_cachedSigningCredentials != null && _cachedJwtSecret == jwtSecret)
-        {
-            return _cachedSigningCredentials;
-        }
-
-        var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret));
-        _cachedSigningCredentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
-        _cachedJwtSecret = jwtSecret;
-        return _cachedSigningCredentials;
-    }
-
     private static string GenerateJwtToken(string userId, string userName, PluginConfiguration config)
     {
-        // P-CS02 fix: Use cached signing credentials instead of creating new ones each time
-        var credentials = GetSigningCredentials(config.JwtSecret);
+        return SessionServerAuth.CreateToken(userId, userName, config);
+    }
 
-        var claims = new[]
+    /// <summary>
+    /// Lists Jellyfin sessions eligible to be bridged in as an OpenWatchParty
+    /// room host (i.e. sessions currently playing something), for the admin
+    /// config page's host picker.
+    /// </summary>
+    [HttpGet("Bridge/Sessions")]
+    [Authorize(Policy = "RequiresElevation")]
+    [Produces("application/json")]
+    public ActionResult GetBridgeableSessions()
+    {
+        return Ok(_hostBridgeManager.GetEligibleSessions());
+    }
+
+    /// <summary>
+    /// Lists currently active host bridges, for the admin config page's
+    /// status display.
+    /// </summary>
+    [HttpGet("Bridge/Status")]
+    [Authorize(Policy = "RequiresElevation")]
+    [Produces("application/json")]
+    public ActionResult GetBridgeStatus()
+    {
+        return Ok(_hostBridgeManager.GetActiveBridges());
+    }
+
+    /// <summary>
+    /// Starts bridging the given Jellyfin session's playback into a new
+    /// OpenWatchParty room, with that session as the room's host.
+    /// </summary>
+    /// <param name="sessionId">The Jellyfin session identifier to bridge.</param>
+    [HttpPost("Bridge/{sessionId}/Start")]
+    [Authorize(Policy = "RequiresElevation")]
+    [Produces("application/json")]
+    public async Task<ActionResult> StartBridge([FromRoute] string sessionId)
+    {
+        try
         {
-            new Claim(JwtRegisteredClaimNames.Sub, userId),
-            new Claim(JwtRegisteredClaimNames.Name, userName),
-            new Claim(JwtRegisteredClaimNames.Iat, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
-            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-        };
+            var status = await _hostBridgeManager.StartBridgeAsync(sessionId);
+            return Ok(status);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
 
-        // Note: aud and iss are set via constructor parameters only — adding them
-        // to the claims array too would produce JSON arrays instead of strings,
-        // which breaks deserialization on the Rust session server.
-        var token = new JwtSecurityToken(
-            issuer: config.JwtIssuer,
-            audience: config.JwtAudience,
-            claims: claims,
-            expires: DateTime.UtcNow.AddSeconds(config.TokenTtlSeconds),
-            signingCredentials: credentials
-        );
-
-        // P-CS02 fix: Use cached token handler instead of creating new one each time
-        return _tokenHandler.WriteToken(token);
+    /// <summary>
+    /// Stops an active host bridge for the given Jellyfin session, closing
+    /// the OpenWatchParty room it was hosting.
+    /// </summary>
+    /// <param name="sessionId">The Jellyfin session identifier to stop bridging.</param>
+    [HttpPost("Bridge/{sessionId}/Stop")]
+    [Authorize(Policy = "RequiresElevation")]
+    [Produces("application/json")]
+    public async Task<ActionResult> StopBridge([FromRoute] string sessionId)
+    {
+        await _hostBridgeManager.StopBridgeAsync(sessionId);
+        return Ok();
     }
 }

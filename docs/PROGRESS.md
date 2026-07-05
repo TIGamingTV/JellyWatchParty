@@ -672,6 +672,11 @@ manually testing whether Neptune/Fladder even honor a remote Pause command
 via Jellyfin's Dashboard → Active Devices UI — was never confirmed as done.
 Worth revisiting if broadening client support becomes a priority again.
 
+**Superseded by Round 15** — the manual test above turned out to be
+unnecessary; source inspection proved Fladder can't receive Jellyfin's
+remote-control commands at all (no delivery channel exists client-side).
+See Round 15 for the actual findings and the current recommended path.
+
 ---
 
 ## Round 12 — Develop-first branching + a real develop build for both components
@@ -817,3 +822,253 @@ Updated `docs/technical/sync.md`, `docs/technical/client.md`, and
 multi-client watch session to confirm the correction bursts feel less
 jittery in practice and that `DRIFT_CORRECTION_ENTER_SEC`/`EXIT_SEC` (0.3s /
 0.1s) are reasonably tuned rather than too aggressive or too lax.
+
+---
+
+## Round 15 — Investigated native-client sync for Fladder (Android TV); no build started
+
+The user wants OpenWatchParty to eventually reach clients that don't run
+Jellyfin Web/injected JS, starting specifically with **Fladder on Android
+TV** (`DonutWare/Fladder`, GPLv3, Flutter, package `nl.jknaapen.fladder`,
+leanback/Android-TV support confirmed in its manifest). This round is pure
+investigation — no code was written, nothing shipped. Recorded here so a
+future session doesn't have to re-derive it.
+
+### Recommended path: wait for Fladder's own SyncPlay PR
+
+**[DonutWare/Fladder#735](https://github.com/DonutWare/Fladder/pull/735)**
+is an in-progress, unmerged PR implementing native Jellyfin SyncPlay support
+in Fladder itself — it adds a `web_socket_channel` dependency and a full
+`lib/providers/websocket/` + `lib/providers/syncplay/` stack. Once merged,
+Fladder (including its Android TV build) gets real cross-client sync for
+free, with better fidelity than anything we could bolt on externally
+(exact seek, no drift-correction hacks). **This is the preferred outcome
+— check whether it has merged/released before building any of the below.**
+Worth watching the PR / helping test it rather than duplicating the work.
+
+The user has pushed back on relying on Jellyfin's own SyncPlay before
+(reason: dissatisfaction with vanilla SyncPlay's UX is *why* OpenWatchParty
+exists as a separate plugin) — but that objection was about SyncPlay inside
+Jellyfin Web, not about Fladder's native implementation of it, so it's kept
+as the top recommendation here rather than discarded.
+
+### Why the originally-discussed "admin remote-control bridge" (see the
+cross-cutting note above) does not work for Fladder
+
+Confirmed by cloning `DonutWare/Fladder` and reading source, not by testing
+against a live device:
+
+- Fladder has **no WebSocket/SignalR connection to the Jellyfin server** at
+  all in the currently released app (`pubspec.yaml` has no such dependency;
+  confirmed by grep across `lib/`). It reports its own playback position via
+  one-way periodic `POST /Sessions/Playing/Progress`
+  (`lib/models/playback/direct_playback_model.dart:101`,
+  `transcode_playback_model.dart:100`), and its "control panel" screen
+  (`lib/providers/control_panel/control_activity_provider.dart`) only reads
+  `GET /Sessions` to display other users' activity — it never listens.
+- Jellyfin's remote-control commands (`Pause`/`Unpause`/`Seek`/
+  `GeneralCommand`) are delivered by the **server pushing them down that
+  same socket** the client is supposed to have open. No socket ⇒ no
+  delivery path. This isn't a permissions problem
+  (`EnableRemoteControlOfOtherUsers`) — the command has nowhere to land.
+- This is *exactly* the gap PR #735 closes (it adds the missing socket,
+  specifically to implement SyncPlay).
+
+### Fallback if #735 stalls: Fladder already exposes an OS-level media-session control surface
+
+Found in `lib/wrappers/media_control_wrapper.dart`: `MediaControlsWrapper
+extends BaseAudioHandler` (the `audio_service` package), and its
+`play()`/`pause()`/`seek(Duration)` overrides (lines 312, 333, 546) drive
+the real player and report position to Jellyfin — registered for **video
+playback**, not just audio. Concretely, on Android this surfaces as a
+standard `MediaSession` for the app (package `nl.jknaapen.fladder`),
+controllable by anything holding a `MediaController` for it. Two fallback
+designs were discussed, **not built**:
+
+1. **Companion Android TV app** ("OWP Bridge"): a small app installed
+   alongside Fladder, granted Notification Listener access (one-time,
+   Settings → Apps → Special app access), that resolves a `MediaController`
+   for `nl.jknaapen.fladder`, joins an OpenWatchParty room over the existing
+   Rust WS protocol like any other client, and translates host events to
+   `transportControls.play()/pause()/seekTo(ms)` (and the reverse via
+   `MediaController.Callback`). Gives frame-accurate seek and position
+   readback — same quality bar as the browser client. Cost: one install +
+   one permission grant per TV box.
+2. **ADB-only bridge, zero install**: with wireless debugging enabled once
+   on the TV (a device setting, not an app or a Fladder change), a
+   server-side service can `adb connect` and run
+   `adb shell cmd media_session dispatch play|pause` to drive Fladder's
+   media session directly (its `MEDIA_BUTTON` receiver is present in
+   `AndroidManifest.xml`), and parse `adb shell dumpsys media_session` for
+   approximate position. Real limitation: **no absolute-seek command exists
+   over ADB** — only stepped fast-forward/rewind nudges — so drift
+   correction/mid-episode joins would be coarse skips, not clean jumps, and
+   position readback means parsing semi-stable `dumpsys` text rather than a
+   real API.
+- **True zero-touch (no device-side enablement of any kind) is not
+  possible** — confirmed as an Android sandboxing boundary, not a design
+  gap: some minimal on-device step (the client opening a socket itself, an
+  installed bridge, or an enabled debug interface) is unavoidable for any
+  external process to reach another app's running playback session.
+
+### Other Android TV clients checked — none solve this out of the box
+
+- **Official `jellyfin/jellyfin-androidtv`**: SyncPlay has been an open,
+  unassigned feature request since August 2020
+  ([issue #538](https://github.com/jellyfin/jellyfin-androidtv/issues/538))
+  with no PR — effectively stalled. Jellyfin's own SyncPlay only works on
+  the web-wrapper-based clients (regular Android, iOS, desktop); Android TV
+  was explicitly excluded from that implementation.
+- **Findroid**: no evidence found of SyncPlay support either way.
+
+### Addendum: Fladder-as-host works today, with zero Fladder changes and no wait on #735
+
+Realized after the above was written: everything discussed so far assumed
+Fladder needed to *receive* something (a command, a bridge, ADB). But
+Fladder already *pushes* everything needed for it to act as a room **host**
+— it just needs to be observed, not controlled.
+
+Confirmed in `lib/providers/video_player_provider.dart:80-114`:
+- `updatePlaying(bool)` calls `model.updatePlaybackPosition(...)`
+  **immediately** on every play/pause toggle (event-driven, no polling
+  delay).
+- Position ticks (`updatePosition`) only forward to Jellyfin once drift
+  since the last reported position exceeds 10s — so during steady playback
+  Jellyfin's view of Fladder's position refreshes roughly every ~10s, but a
+  seek is picked up almost instantly (the jump itself blows past the 10s
+  gate on the very next player tick).
+
+All of this lands in Jellyfin core as a normal session/progress update. The
+Jellyfin plugin already runs **in-process** inside Jellyfin (see
+`ARCHITECTURE.md` §2), so it can subscribe directly to
+`ISessionManager.PlaybackProgress`/`PlaybackStart`/`PlaybackStopped` —
+no REST polling, no API key, just an event subscription — and get Fladder's
+position/pause-state the instant Jellyfin itself receives it.
+
+**Proposed design (not built):**
+1. Plugin admin page lets the user pick which active Jellyfin session is
+   "the host" for a given OpenWatchParty room (same session-list UI concept
+   as the earlier admin-bridge idea).
+2. Plugin subscribes to that session's progress events and translates them
+   into the *same* `play`/`pause`/`seek` messages the Rust WS server
+   already broadcasts to a room — Fladder looks like a normal host to every
+   existing guest (browsers, and any future native clients), since it's the
+   identical wire protocol on the guest side. No new client-side code
+   needed at all.
+3. Zero Fladder changes. Not blocked on `DonutWare/Fladder#735`.
+
+**The asymmetry that remains:** this only solves Fladder-as-*host*.
+Fladder-as-*guest* (following someone else's host) is still blocked for the
+reasons in the main Round 15 writeup above — Fladder has no channel to
+receive anything. So the practical shape this unlocks: someone watching via
+Fladder can host a room that browser users join and stay synced to, but
+Fladder itself can't yet be corrected by another host. Still a real,
+shippable win, and doesn't require waiting on anything.
+
+### Status / next action
+
+Nothing built this round. Two independent next steps, either of which can
+be picked up first:
+1. **Fladder-as-guest**: check whether `DonutWare/Fladder#735` has
+   merged/released before building the companion-app or ADB fallback — if
+   merged, those fallbacks are probably no longer worth building.
+2. **Fladder-as-host**: build the addendum design above (plugin subscribes
+   to `ISessionManager` progress events for a chosen session, bridges them
+   into an existing OpenWatchParty room as host broadcasts). Independent of
+   #735, ships today, zero Fladder changes.
+
+---
+
+## Round 16 — Built Fladder-as-host: `HostBridgeManager`/`SessionHostBridge`, admin-gated
+
+Implemented the Round 15 addendum design (host-only, per that round's own
+scoping — Fladder-as-guest is still untouched and still blocked on
+`DonutWare/Fladder#735`).
+
+**What was built** (all under
+`src/plugins/jellyfin/OpenWatchParty/Services/`):
+- `SessionServerAuth.cs` — JWT-minting logic extracted out of
+  `OpenWatchPartyController` (was private statics there) so it can be
+  reused for a session owner other than the current HTTP caller.
+- `SessionHostBridge.cs` — one `ClientWebSocket` per bridged Jellyfin
+  session, speaking the exact same `auth`/`create_room`/`player_event`/
+  `state_update` protocol a browser host uses (verified by reading
+  `src/server/src/ws/handlers/*.rs` — no Rust changes were needed or made).
+- `HostBridgeManager.cs` — an `IHostedService` singleton that subscribes to
+  `ISessionManager.PlaybackStart/PlaybackProgress/PlaybackStopped` for the
+  server's lifetime and owns all active bridges, keyed by Jellyfin session
+  id. `PlaybackStopped` auto-tears-down that session's bridge (closing its
+  room), mirroring "host disconnected."
+- Four new admin-only (`[Authorize(Policy = "RequiresElevation")]`)
+  endpoints on `OpenWatchPartyController`: `GET Bridge/Sessions`,
+  `GET Bridge/Status`, `POST Bridge/{sessionId}/Start`,
+  `POST Bridge/{sessionId}/Stop`.
+- A new "Native Client Bridge" section in `Web/configPage.html`: lists
+  currently-playing sessions with a "Start bridge" button, and active
+  bridges with a "Stop" button. Explicitly reference-only on the viewer
+  side per discussion with the user — it does **not** auto-join anyone's
+  browser into anything; there is no push channel to browsers and the
+  injected JS (`src/clients/jellyfin-web/`) was **not** touched at all.
+  Receivers still join the resulting room themselves from their own room
+  list, exactly as before.
+- `docs/ARCHITECTURE.md` updated: the "zero outbound network calls" claim
+  for the plugin backend now carries one named, deliberate exception
+  (this bridge), rather than being left contradicted by the code.
+
+**Verified against the actual Jellyfin 10.11.11 SDK, not assumed**: an
+initial pass wrote code against event-arg shapes pulled from GitHub's
+`master` branch, which turned out to not match the pinned 10.11.11 package
+at all (e.g. `PlaybackProgressEventArgs` actually lives in
+`MediaBrowser.Controller.Library`, not `.Session`, and its session-back-
+reference property is `.Session`, not `.SessionInfo`; `GeneralCommand.Name`
+is a closed `GeneralCommandType` enum with no custom/free-form slot, which
+is why receiver auto-join was scoped out rather than attempted via that
+route). This was caught by actually reflecting the real
+`MediaBrowser.Controller.dll`/`MediaBrowser.Model.dll` from the local NuGet
+cache with a throwaway console app, not by trusting web search results —
+worth repeating that verification step for any future Jellyfin SDK
+plugin work in this repo, since GitHub's `master` branch does not
+necessarily match whatever version is actually pinned in
+`OpenWatchPartyPlugin.csproj`.
+
+**Build/test status**: `dotnet build` on the plugin project is clean (0
+warnings, 0 errors). `dotnet test` on `OpenWatchParty.Tests` passes 48/48
+(the pre-existing 34 plus 14 new tests covering `SessionHostBridge`'s pure
+payload-builders and `HostBridgeManager.GetEligibleSessions` filtering).
+Note: this sandbox's installed runtimes only include
+`Microsoft.AspNetCore.App` 10.0.8, not the 9.0.x the plugin targets, so
+`dotnet test` needs `DOTNET_ROLL_FORWARD=LatestMajor` set to actually run
+here — an environment quirk, not a project-file change.
+
+**What is explicitly NOT verified — no live Jellyfin + Fladder environment
+was available in this sandbox**:
+- Whether a real Fladder session on Android TV actually gets bridged in
+  and stays in sync with a browser guest end-to-end.
+- Whether the `[Authorize(Policy = "RequiresElevation")]` string actually
+  resolves to Jellyfin's real admin-only policy at runtime (it's the
+  documented pattern real plugins use, per `PluginsController` in Jellyfin
+  core, but this repo has never exercised it before now).
+- Whether `SessionInfo.Id`/`UserId` and `BaseItemDto.Id` behave as expected
+  against a real running server (correct per SDK reflection, but reflection
+  confirms shape, not runtime values).
+
+**Known, accepted limitation carried into this round** (not a bug, a
+scoping choice): if a bridge's `ClientWebSocket` connection drops
+unexpectedly, there's no reconnect/backoff — it just goes silent until an
+admin notices and restarts it from the config page. The browser client's
+reconnect sophistication (`ws/connection.js`) was deliberately not
+replicated here.
+
+### Status / next action
+
+Fladder-as-host is code-complete and unit-tested but **unverified against
+a live Jellyfin server**. Before calling this done:
+1. Deploy to a real Jellyfin instance, start Fladder (or any client) on a
+   library item, use the admin config page to start a bridge, and confirm
+   a browser joining the resulting room actually sees synced playback.
+2. Confirm a non-admin user genuinely cannot hit
+   `/OpenWatchParty/Bridge/*` (verify the `RequiresElevation` policy
+   assumption above against a real server, not just by reading Jellyfin's
+   own source for precedent).
+3. Fladder-as-guest is still fully unaddressed — see Round 15's own
+   next-action list, unchanged by this round.
