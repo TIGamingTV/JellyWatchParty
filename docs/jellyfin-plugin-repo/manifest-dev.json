@@ -8,12 +8,12 @@
     "category": "General",
     "versions": [
       {
-        "version": "0.0.22",
-        "changelog": "fix(plugin): exclude Jellyfin Web/JMP sessions from the host-bridge picker\n\nSessions running JellyfinWeb or JellyfinMediaPlayer already run the\ninjected OWP script and can host a room via the normal Create Room button,\nso listing them in HostFromAnotherDevice was just clutter (and risked\na confusing double-connection if someone bridged one anyway). Filter them\nout of HostBridgeManager.GetEligibleSessions(), leaving only genuine\nnative-client candidates like Fladder.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+        "version": "0.0.23",
+        "changelog": "fix(plugin): match injected-client filter on prefix, not exact string\n\nThe exact-match filter added for Jellyfin Web/Media Player never matched\nin practice: real SessionInfo.Client values carry a trailing version\n(JellyfinWeb10.11.11, JellyfinDesktop3.0.0-dev — JMP appears\nrenamed to JellyfinDesktop), confirmed via Dashboard > Active Devices\non a live server. Switch to a prefix match so the version is effectively\na wildcard, and add JellyfinDesktop to the excluded list.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
         "targetAbi": "10.11.11.0",
         "sourceUrl": "https://github.com/TIGamingTV/OpenWatchParty/releases/download/develop-latest/OpenWatchParty-dev.zip",
-        "checksum": "f9b2aaf517e1f83917e82a5341aceabc",
-        "timestamp": "2026-07-05T19:20:29Z"
+        "checksum": "a6c19bfab76f0b0268086ec35f8ea4fb",
+        "timestamp": "2026-07-05T19:41:43Z"
       }
     ]
   }
