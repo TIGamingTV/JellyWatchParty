@@ -1220,3 +1220,110 @@ against the live deployment** (2026-07-05) — after updating to the
 rebuilt dev version and restarting, the Jellyfin Web/Desktop sessions no
 longer appear in the "Host From Another Device" list, leaving only
 Fladder.
+
+## Round 18 — Docs site rework: correctness pass, Host Bridge docs, de-clutter, restyle
+
+The published docs site (`docs/`, Jekyll + just-the-docs, deployed via
+`.github/workflows/docs.yml`) hadn't been touched since before most of
+Rounds 10-17 landed, so it had drifted from actively wrong to just plain
+missing in several places. This round didn't add any product features —
+it's a docs-only pass, verified fact-by-fact against the actual source
+rather than by cross-checking one doc page against another (several
+pages had already been silently copying each other's mistakes).
+
+**Wrong facts found and fixed** (not just missing — actively
+contradicted the code):
+- `product/faq.md` claimed drift correction was "0.95x-1.05x" with a
+  forced seek at "2.5 seconds". Neither number has ever matched the
+  real constants (`0.85x-2.0x` range, `2.0s` forced-seek threshold, plus
+  the Round 14 hysteresis enter/exit thresholds of 0.3s/0.1s that
+  `technical/sync.md` already documented correctly but `features.md` and
+  `user-guide.md` only had the bare range for, no hysteresis mention).
+- `technical/architecture.md`'s "Host Network Disconnect" section and
+  its "Reconnection Behavior" table both still described the
+  pre-Round-10 behavior — "room closes immediately", "host must create a
+  new room" — years after `room/reconnect.rs`'s 90s grace period and
+  persistent-`client_id` reattachment replaced that. `technical/server.md`
+  didn't even list `room/reconnect.rs` in its module tree.
+- `technical/api.md`'s "Configuration Fields Reference" table listed
+  `DefaultMaxBitrate`, `PreferDirectPlay`, `AllowHostQualityControl` as
+  plugin settings. These don't exist anywhere in
+  `PluginConfiguration.cs` — confirmed by reading the actual file, not
+  assumed. Removed, along with the example request body referencing them.
+- Jellyfin version claims were stale everywhere (README badge "10.9+",
+  `features.md`'s compatibility table topping out at "10.9.x") against
+  the real manifest target of `10.11.11.0`
+  (`docs/jellyfin-plugin-repo/manifest.json`).
+
+**Missing coverage added**:
+- `technical/host-bridge.md` (new page) — the Round 16/17 host-bridge
+  feature had zero docs anywhere on the public site, only in this file
+  and `ARCHITECTURE.md`. Covers `HostBridgeManager`/`SessionHostBridge`/
+  `SessionServerAuth`, the client-prefix eligibility filter, the four
+  REST endpoints (plain `[Authorize]`, not admin-gated — called out
+  explicitly since it differs from the config endpoints), and
+  `ui/bridge.js`'s lobby-panel integration. This also meant correcting
+  `features.md`'s "Known Limitations" #4 ("Web only... no native
+  mobile/TV apps planned"), which the bridge feature had quietly made
+  false.
+- The Round 14 native mpv/Jellyfin-Desktop adapter (`utils/video.js`)
+  was undocumented too — added to the rewritten `client.md` and to
+  `features.md`'s compatibility table.
+- `technical/client.md` was internally self-contradictory: its own
+  module-architecture tree at the top correctly listed the real
+  per-file split (verified against `infra/just/common.just`'s
+  `client_js_files`, the authoritative list), but every section below
+  it still documented four monolithic pre-split modules
+  (`playback.js`/`ws.js`/`ui.js`/`app.js`) that haven't existed in that
+  form since the split. Rewrote the whole per-module reference section
+  from scratch, one subsection per real file, by actually reading all
+  ~20 client files rather than trusting the old prose.
+- `technical/plugin.md`'s project structure was missing `Services/`
+  entirely and described `Web/plugin.js` as a "bundled client
+  JavaScript" — wrong, it's a loader; the individual-module endpoint
+  (`GET /OpenWatchParty/Client/{*path}`) wasn't documented anywhere,
+  alongside the older `ClientScript` endpoint.
+
+**De-cluttering** (separate ask from the user, mid-plan): folded
+`technical/jellyfin-syncplay-reference.md` (a dev-research page, not
+end-user content) and `development/file-transformation-integration.md`'s
+deep C# implementation detail into `ARCHITECTURE.md`, keeping only a
+short admin-facing summary of the latter in `operations/installation.md`
+(which already had it, briefly). Both standalone pages deleted, both
+`ARCHITECTURE.md` and `PROGRESS.md` (this file) added to `_config.yml`'s
+Jekyll `exclude:` list — neither has front matter, so undocumented they'd
+otherwise ship as raw, unstyled, unnavigable pages under the live site.
+Also trimmed the four section `index.md` stubs and the home page's
+"Documentation"/"Development" link tables down from hand-maintained
+duplicates of the sidebar nav to short one-paragraph intros.
+
+**Visual rework** (also user-requested): added
+`docs/_sass/color_schemes/owp.scss`, a small custom just-the-docs color
+scheme keyed off the logo's blue-to-purple gradient (with the logo's
+orange reserved for search-highlight only), replacing the stock
+`color_scheme: dark`. Deliberately not a layout rebuild — same
+sidebar/search/theme mechanics, just a different palette.
+
+**Verification**: actually built the site with
+`bundle exec jekyll build --baseurl ""` rather than just eyeballing
+Markdown — this sandbox's `bundle exec jekyll` needed a
+`LANG=C.utf8 LC_ALL=C.utf8` workaround for a Sass encoding crash (no
+`en_US.UTF-8` locale installed here), but once past that the build
+succeeded cleanly. Confirmed in `_site/`: the new host-bridge page
+renders and sits in the Technical nav, the two folded-in pages and
+`ARCHITECTURE.md`/`PROGRESS.md` don't appear anywhere in the output, and
+the custom color hex values show up in the compiled CSS. Repo-wide grep
+afterward for the old wrong numbers ("0.95x-1.05x", "2.5 second",
+stale "10.9" version claims, the fabricated config field names)
+confirmed no stale copies survived anywhere in `docs/`.
+
+### Status / next action
+
+Docs-only change, no product code touched — nothing to deploy/test
+beyond the docs site itself. Not done in this round: PR-preview builds
+for the docs site (discussed with the user — GitHub Pages via
+`actions/deploy-pages` only supports one live environment, so a real
+"beta" preview would need either a workflow change to upload PR builds
+as artifacts, or a separate third-party host like Cloudflare Pages/Netlify
+for shareable preview URLs — neither implemented yet, pending user
+decision).
