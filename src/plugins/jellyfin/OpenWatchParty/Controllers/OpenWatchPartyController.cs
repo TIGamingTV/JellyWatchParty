@@ -292,7 +292,20 @@ public class OpenWatchPartyController : ControllerBase
     [Produces("application/json")]
     public ActionResult GetBridgeableSessions()
     {
-        return Ok(_hostBridgeManager.GetEligibleSessions());
+        // Jellyfin's controllers do not auto-camelCase JSON output (see the
+        // existing /Token endpoint, which spells out user_id/auth_enabled
+        // literally) — project onto anonymous objects with the exact keys
+        // the injected JS (ui/bridge.js) expects, rather than relying on a
+        // naming policy that isn't actually applied.
+        var sessions = _hostBridgeManager.GetEligibleSessions().Select(s => new
+        {
+            sessionId = s.SessionId,
+            userName = s.UserName,
+            deviceName = s.DeviceName,
+            client = s.Client,
+            nowPlayingItemName = s.NowPlayingItemName
+        });
+        return Ok(sessions);
     }
 
     /// <summary>
@@ -304,7 +317,8 @@ public class OpenWatchPartyController : ControllerBase
     [Produces("application/json")]
     public ActionResult GetBridgeStatus()
     {
-        return Ok(_hostBridgeManager.GetActiveBridges());
+        var bridges = _hostBridgeManager.GetActiveBridges().Select(ToBridgeStatusJson);
+        return Ok(bridges);
     }
 
     /// <summary>
@@ -320,13 +334,21 @@ public class OpenWatchPartyController : ControllerBase
         try
         {
             var status = await _hostBridgeManager.StartBridgeAsync(sessionId);
-            return Ok(status);
+            return Ok(ToBridgeStatusJson(status));
         }
         catch (InvalidOperationException ex)
         {
             return BadRequest(new { error = ex.Message });
         }
     }
+
+    private static object ToBridgeStatusJson(BridgeStatus status) => new
+    {
+        sessionId = status.SessionId,
+        userName = status.UserName,
+        roomId = status.RoomId,
+        connected = status.Connected
+    };
 
     /// <summary>
     /// Stops an active host bridge for the given Jellyfin session, closing

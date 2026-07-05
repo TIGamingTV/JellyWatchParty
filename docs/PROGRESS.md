@@ -1131,3 +1131,47 @@ Same as Round 16's remaining items, minus the two superseded above:
    starting a bridge produces a joinable room — this has only been
    reviewed by reading the code, never executed in a browser.
 2. Fladder-as-guest is still fully unaddressed — unchanged from Round 15.
+
+**Update — item 1 was tried and hit a real bug, now fixed.** The user
+deployed the Round 17 build (dev plugin channel, Jellyfin restarted),
+opened the widget, saw Fladder's session in "Host From Another Device",
+and clicked Start. The session server logged a fresh client connecting and
+authenticating (`Client connected... identified as tom`), but then nothing
+— no `create_room`. Root cause, found via the session server logs plus
+confirming nothing showed in Jellyfin's own logs either: **`GetBridgeableSessions`
+and `GetBridgeStatus` returned JSON with PascalCase keys
+(`SessionId`, `UserName`, ...), not the camelCase (`sessionId`,
+`userName`, ...) `ui/bridge.js` was reading.** Jellyfin's controllers do
+**not** auto-camelCase JSON output — the existing `/OpenWatchParty/Token`
+endpoint already proved this (it manually spells out `user_id`,
+`auth_enabled` as literal anonymous-object keys precisely because there's
+no naming-policy conversion to lean on), but the new `BridgeableSessionInfo`/
+`BridgeStatus` C# records were returned directly via `Ok(...)`, keeping
+their PascalCase property names verbatim in the response. `ui/bridge.js`
+read `session.sessionId`, got `undefined`, and passed the literal string
+`"undefined"` as the session id — which is exactly what the Rust server's
+error (`No active session with id 'undefined'`) reported, and precisely
+matches the observed symptom (the WS client connected/authenticated fine,
+since that part doesn't depend on this JSON, but `create_room` never
+followed because `StartBridgeAsync("undefined")` threw before the bridge
+code ever got that far — which also explains why Jellyfin's own logs
+showed nothing: the exception was returned as a 400 response body, never
+logged).
+
+**Fix**: `OpenWatchPartyController`'s three affected endpoints now project
+onto anonymous objects with explicit camelCase keys
+(`sessionId`/`userName`/`deviceName`/`client`/`nowPlayingItemName` and
+`sessionId`/`userName`/`roomId`/`connected`) at the HTTP boundary, matching
+the existing `/Token` endpoint's convention, instead of serializing the
+internal DTOs directly. `dotnet build`/`dotnet test` re-verified clean
+(48/48) after the fix. **Not yet re-verified against the live deployment**
+— the user found this by testing the previous build; the fix itself still
+needs to go through another dev-build install + restart + click-Start
+cycle to confirm the room actually gets created this time.
+
+**Lesson for future work on this plugin**: never assume ASP.NET Core/
+Jellyfin auto-converts C# record/property casing for JSON responses.
+Either project explicit anonymous objects with literal keys (as done
+here and in `/Token`), or write a throwaway request against a real/dev
+instance and inspect the actual response body before wiring client JS
+against assumed field names.
