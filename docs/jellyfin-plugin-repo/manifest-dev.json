@@ -8,12 +8,12 @@
     "category": "General",
     "versions": [
       {
-        "version": "0.0.20",
-        "changelog": "feat(client): move host-bridge picker into the in-player widget, open to all users\n\nRelocates the Fladder-as-host bridge picker from the Jellyfin admin config\npage into the same lobby panel used to create/join a room, so it's where\nusers actually look for it. Drops the RequiresElevation gate on the\n/OpenWatchParty/Bridge/* endpoints in favor of plain [Authorize] — any\nlogged-in user can now see active sessions and start/stop a bridge, per\nexplicit sign-off that this info isn't considered private in this\ndeployment. Adds src/clients/jellyfin-web/ui/bridge.js and updates every\nplace the injected-client file list is duplicated (common.just, ci.yml,\npublish.yml) so the new module actually ships.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+        "version": "0.0.21",
+        "changelog": "fix(plugin): serialize Bridge endpoints with explicit camelCase keys\n\nGetBridgeableSessions/GetBridgeStatus/StartBridge were returning C# records\ndirectly, which keep their literal PascalCase property names in JSON since\nJellyfin's controllers don't auto-camelCase (the existing /Token endpoint\nalready relies on spelling keys out manually for the same reason). The\ninjected JS read session.sessionId as camelCase, got undefined, and sent\nthe literal string undefined as the session id when starting a bridge.\nProject onto anonymous objects with explicit camelCase keys instead.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
         "targetAbi": "10.11.11.0",
         "sourceUrl": "https://github.com/TIGamingTV/OpenWatchParty/releases/download/develop-latest/OpenWatchParty-dev.zip",
-        "checksum": "ecf55ec86af22325cccb5a72223b158a",
-        "timestamp": "2026-07-05T17:05:04Z"
+        "checksum": "95cae61d4d8fc597ef9ebb1cdbbb827c",
+        "timestamp": "2026-07-05T18:45:36Z"
       }
     ]
   }
