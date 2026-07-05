@@ -136,6 +136,15 @@ Even with perfect initial synchronization, clients drift over time (slightly dif
 
 ### Algorithm: syncLoop (non-hosts only)
 
+Drift correction uses **hysteresis** (a Schmitt trigger): a correction burst only
+*starts* once drift exceeds `DRIFT_CORRECTION_ENTER_SEC`, and once started, it only
+*stops* once drift falls back under the tighter `DRIFT_CORRECTION_EXIT_SEC`. Between
+bursts, playback sits untouched at exactly 1x. This is deliberate: a single static
+threshold re-evaluated every tick means the very act of correcting (which shrinks
+drift) can push drift back under the threshold and out again on jitter, causing
+constant tiny, visible speed flicker. Two thresholds with a gap between them mean the
+controller only reacts to real, sustained drift and stays quiet the rest of the time.
+
 ```javascript
 function syncLoop() {
     // Calculate expected position
@@ -146,8 +155,16 @@ function syncLoop() {
     const drift = expected - video.currentTime;
     const absDrift = Math.abs(drift);
 
-    // Dead zone: no correction
-    if (absDrift < DRIFT_DEADZONE_SEC) {  // 0.04s
+    if (!isDriftCorrecting) {
+        // Not currently correcting: ignore anything below the enter threshold
+        if (absDrift < DRIFT_CORRECTION_ENTER_SEC) {  // 0.3s
+            video.playbackRate = 1;
+            return;
+        }
+        isDriftCorrecting = true;  // crossed into correction territory
+    } else if (absDrift < DRIFT_CORRECTION_EXIT_SEC) {  // 0.1s
+        // Already correcting and caught back up: stop and go quiet
+        isDriftCorrecting = false;
         video.playbackRate = 1;
         return;
     }
@@ -156,6 +173,7 @@ function syncLoop() {
     if (absDrift >= DRIFT_SOFT_MAX_SEC) {  // 2.0s
         video.currentTime = expected;
         video.playbackRate = 1;
+        isDriftCorrecting = false;
         return;
     }
 
@@ -176,15 +194,18 @@ function syncLoop() {
                            │
     ◄─────────────────────┼────────────────────►
     │         │           │           │        │
-  SEEK     SLOW      DEADZONE     FAST      SEEK
- (<−2.0s) (−2.0s     (±0.04s)   (+0.04s   (>+2.0s)
-           to −0.04s)            to +2.0s)
-    │         │                     │          │
-    │    rate = 0.85           rate = 2.0      │
-    │     (min)                   (max)        │
-    └─────────┴──────────┬──────────┴──────────┘
+  SEEK     SLOW       QUIET ZONE     FAST     SEEK
+ (<−2.0s) (−2.0s      (hysteresis)  (+0.3s   (>+2.0s)
+           to −0.3s)   ±0.1-0.3s     to +2.0s)
+    │         │                         │        │
+    │    rate = 0.85               rate = 2.0     │
+    │     (min)                       (max)       │
+    └─────────┴──────────┬──────────────┴─────────┘
                          │
                     rate = 1.0
+
+Once a burst starts (|drift| crosses ±0.3s), it holds the rate-adjustment path
+until |drift| falls back under ±0.1s — not just until it re-crosses ±0.3s.
 ```
 
 ### Rate Formula (Progressive Sqrt Curve)
@@ -389,7 +410,8 @@ fn schedule_pending_play(room_id, created_at, rooms, clients) {
 | `SEEK_THRESHOLD` | 1.0s | Client | Min difference for seek broadcast |
 | `STATE_UPDATE_MS` | 1000ms | Client | State send interval |
 | `SYNC_LEAD_MS` | 300ms | Client | Compensation advance |
-| `DRIFT_DEADZONE_SEC` | 0.04s | Client | No-correction zone |
+| `DRIFT_CORRECTION_ENTER_SEC` | 0.3s | Client | Drift needed to start a correction burst |
+| `DRIFT_CORRECTION_EXIT_SEC` | 0.1s | Client | Drift must fall under this to stop correcting |
 | `DRIFT_SOFT_MAX_SEC` | 2.0s | Client | Forced seek threshold |
 | `PLAYBACK_RATE_MIN` | 0.85 | Client | Min catchup speed |
 | `PLAYBACK_RATE_MAX` | 2.0 | Client | Max catchup speed |

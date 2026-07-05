@@ -111,7 +111,8 @@ The client has built-in constants that control synchronization behavior. These a
 | `SEEK_THRESHOLD` | 1.0 | Position difference to trigger seek (s) |
 | `STATE_UPDATE_MS` | 1000 | State update interval (ms) |
 | `SYNC_LEAD_MS` | 300 | Latency compensation (ms) |
-| `DRIFT_DEADZONE_SEC` | 0.04 | No-correction zone (s) |
+| `DRIFT_CORRECTION_ENTER_SEC` | 0.3 | Drift needed to start a correction burst (s) |
+| `DRIFT_CORRECTION_EXIT_SEC` | 0.1 | Drift must fall under this to stop correcting (s) |
 | `DRIFT_SOFT_MAX_SEC` | 2.0 | Forced seek threshold (s) |
 | `PLAYBACK_RATE_MIN` | 0.85 | Minimum catchup speed |
 | `PLAYBACK_RATE_MAX` | 2.0 | Maximum catchup speed |
