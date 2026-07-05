@@ -213,3 +213,165 @@ Internet ──HTTPS/WSS──▶ nginx (DDNS domain, TLS) ──┬──▶ Je
 - Session server env: `ALLOWED_ORIGINS=https://jellyfin.homeserver-tom-tykwer.dedyn.io`
 - No port-forward needed for the session server itself once the nginx `/ws`
   proxy is in place — only nginx's 443 needs to be internet-reachable.
+
+## File-Transformation Integration (implementation detail)
+
+The public installation guide (`docs/operations/installation.md`, Option
+A) covers the admin-facing summary: install
+[jellyfin-plugin-file-transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation)
+and OpenWatchParty auto-injects its client `<script>` tag into
+`index.html`, no Custom HTML step needed. This section is the
+implementation detail behind that, for contributors.
+
+`FileTransformationIntegration.cs` detects whether file-transformation
+is installed and, if so, registers a transformation that injects the
+client `<script>` tag before `</body>`. If file-transformation isn't
+installed, `ScriptInjectionMiddleware` still handles injection the
+normal way and the admin can also always fall back to the manual
+Custom HTML method.
+
+**Registration payload:**
+
+```csharp
+var payload = new {
+    id = new Guid(Plugin.PluginGuid),
+    fileNamePattern = @"^index\.html$",
+    callbackAssembly = typeof(FileTransformationIntegration).Assembly.FullName,
+    callbackClass = typeof(FileTransformationIntegration).FullName,
+    callbackMethod = nameof(TransformIndexHtml)
+};
+```
+
+**Registration via reflection** — Jellyfin loads plugins in separate
+`AssemblyLoadContext`s, so direct type references to the
+file-transformation plugin are impossible:
+
+```csharp
+Assembly? ftAssembly = AssemblyLoadContext.All
+    .SelectMany(ctx => ctx.Assemblies)
+    .FirstOrDefault(asm => asm.FullName?.Contains(".FileTransformation") ?? false);
+
+if (ftAssembly != null)
+{
+    Type? pluginInterface = ftAssembly.GetType("Jellyfin.Plugin.FileTransformation.PluginInterface");
+    MethodInfo? registerMethod = pluginInterface?.GetMethod("RegisterTransformation");
+    registerMethod?.Invoke(null, new object?[] { payload });
+}
+```
+
+**Transformation callback** — idempotent (won't double-inject if the
+script tag is already present):
+
+```csharp
+public static string TransformIndexHtml(object payload)
+{
+    string? contents = payload?.GetType()
+        .GetProperty("contents")?
+        .GetValue(payload)?
+        .ToString();
+
+    if (string.IsNullOrEmpty(contents) || contents.Contains("/OpenWatchParty/ClientScript"))
+    {
+        return contents ?? string.Empty;
+    }
+
+    int bodyEndIndex = contents.LastIndexOf("</body>", StringComparison.OrdinalIgnoreCase);
+    if (bodyEndIndex >= 0)
+    {
+        return contents.Insert(bodyEndIndex, "<script src=\"/OpenWatchParty/ClientScript\"></script>\n");
+    }
+
+    return contents;
+}
+```
+
+**Files:** `src/plugins/jellyfin/OpenWatchParty/FileTransformationIntegration.cs`
+(registration + callback), `OpenWatchPartyPlugin.csproj` (Newtonsoft.Json
+dependency needed for the payload shape).
+
+**Error handling:** any failure (plugin not installed, incompatible
+version, exception during registration) is logged and falls back to the
+manual Custom HTML method — never a hard failure.
+
+## Jellyfin SyncPlay Reference
+
+Jellyfin's own built-in synchronized-playback feature, SyncPlay,
+informed some of OpenWatchParty's design decisions. Kept here as a
+reference for contributors, not published on the public docs site.
+
+**Key differences from OpenWatchParty:**
+
+| Aspect | Jellyfin SyncPlay | OpenWatchParty |
+|--------|-------------------|----------------|
+| Architecture | Integrated into Jellyfin | Standalone plugin + server |
+| Transport | REST API + Jellyfin messages | Dedicated WebSocket |
+| Time sync | Min-delay selection | EMA smoothing |
+| Server | C# (same as Jellyfin) | Rust |
+| Client support | All official clients | Browser/Jellyfin Desktop for guests; any client can host via Host Bridge |
+
+### Source code locations
+
+Server (C#, [jellyfin/jellyfin](https://github.com/jellyfin/jellyfin)):
+`Emby.Server.Implementations/SyncPlay/` (`SyncPlayManager.cs`,
+`Group.cs`), `MediaBrowser.Controller/SyncPlay/` (interfaces, group
+states, playback/queue requests).
+
+Client (JS/TS, [jellyfin/jellyfin-web](https://github.com/jellyfin/jellyfin-web)):
+`src/plugins/syncPlay/` — `Manager.js`/`Controller.js` (orchestration),
+`PlaybackCore.js`/`QueueCore.js`, `timeSync/{TimeSync,TimeSyncCore,TimeSyncServer}.js`.
+
+### Time synchronization: min-delay selection, not EMA
+
+SyncPlay uses an NTP-like algorithm but picks the **best** sample
+instead of smoothing across samples:
+
+```javascript
+// Four timestamps per ping: requestSent, requestReceived (server),
+// responseSent (server), responseReceived
+offset = ((requestReceived - requestSent) + (responseSent - responseReceived)) / 2;
+delay = (responseReceived - requestSent) - (responseSent - requestReceived);
+```
+
+It keeps a sliding window of 8 measurements, sorts by round-trip delay,
+and takes the lowest-delay sample as the best estimate (rationale:
+jitter adds delay, it doesn't reduce it — so the fastest sample is
+probably the least distorted one). Polling is greedy (1000ms) for the
+first 3 pings, then drops to 60000ms. OpenWatchParty instead uses
+continuous EMA smoothing (α=0.4) with 10s polling — simpler to reason
+about, trades off some resistance to single-sample outliers.
+
+### Drift correction: SpeedToSync + SkipToSync
+
+```javascript
+// SpeedToSync — smooth catch-up within thresholds
+if (drift >= minDelaySpeedToSync && drift <= maxDelaySpeedToSync) {
+    // adjust playback rate, 0.2x-2.0x range, over speedToSyncDuration
+}
+// SkipToSync — hard seek above threshold
+if (drift > minDelaySkipToSync) {
+    player.seek(estimatedServerPosition);
+}
+```
+
+Comparable in shape to OpenWatchParty's hysteresis + sqrt-curve rate
+adjustment (see `docs/technical/sync.md`), but SyncPlay's thresholds are
+user-configurable (`minDelaySpeedToSync`/`maxDelaySpeedToSync`/
+`minDelaySkipToSync` in `Settings.js`) rather than fixed constants, and
+its rate range (0.2x-2.0x) is wider on the low end than OpenWatchParty's
+(0.85x-2.0x).
+
+### Known SyncPlay limitations (from upstream GitHub issues)
+
+1. Transcoding delay — users requiring transcoding tend to run ~2s behind
+2. Sync correction can misfire when precise sync isn't actually needed
+3. Occasional further desync after a pause/resume cycle
+
+### References
+
+- [jellyfin/jellyfin](https://github.com/jellyfin/jellyfin),
+  [jellyfin/jellyfin-web](https://github.com/jellyfin/jellyfin-web)
+- Key PRs: [#1011](https://github.com/jellyfin/jellyfin-web/pull/1011)
+  (original implementation), [#3976](https://github.com/jellyfin/jellyfin-web/pull/3976)
+  (moved to plugin architecture)
+- Known issues: [#4972](https://github.com/jellyfin/jellyfin-web/issues/4972),
+  [#6210](https://github.com/jellyfin/jellyfin-web/issues/6210) (desync when transcoding)

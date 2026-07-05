@@ -43,7 +43,10 @@ The person who creates the room (the host) controls playback. Their play, pause,
 Not currently. Only the host can control playback. Democratic mode is planned for a future release.
 
 ### What happens if the host leaves?
-The room closes and all participants are disconnected. A participant cannot become the new host.
+If the host's connection just drops briefly (network blip, backgrounded app), the room stays open for 90 seconds waiting for them to reconnect — participants won't notice. Only if the host doesn't come back within that window does the room close and disconnect all participants. A participant cannot become the new host (automatic host transfer is planned).
+
+### Can I host from Fladder or another Android TV app?
+Yes, via [Host Bridge](../technical/host-bridge.md) — any logged-in user with browser access to the server can bridge a currently-playing native session in as the room host, even though that client can't run the Watch Party UI itself. Guests still join normally.
 
 ### Can I chat with other viewers?
 Yes! A text chat is available in the Watch Party panel. Messages are sent to all room participants in real time via the session server.
@@ -57,10 +60,10 @@ No. Each client transcodes independently based on their connection and device. S
 Typically within 100-200ms. The system uses clock synchronization and drift correction to maintain sync.
 
 ### Why do I see slight speed changes?
-OpenWatchParty adjusts playback speed (0.95x-1.05x) to gradually correct drift without jarring seeks. This is imperceptible in most cases.
+OpenWatchParty adjusts playback speed (0.85x-2.0x) to gradually correct drift without jarring seeks. It only starts adjusting once drift passes 0.3 seconds, and stops once it's back under 0.1 seconds, so small jitter doesn't cause constant flickering. This is imperceptible in most cases.
 
 ### What if I'm several seconds behind?
-If drift exceeds 2.5 seconds, the client automatically seeks to the correct position instead of adjusting speed.
+If drift exceeds 2.0 seconds, the client automatically seeks to the correct position instead of adjusting speed.
 
 ### Does buffering affect sync?
 Yes, buffering can cause temporary desync. The system waits for all clients to be "ready" before starting playback, and continuously corrects drift afterward.

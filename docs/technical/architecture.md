@@ -52,17 +52,30 @@ OpenWatchParty consists of three main components that work together to provide s
 The plugin integrates with Jellyfin's plugin system.
 
 **Responsibilities:**
-- Serve client JavaScript bundle via `/OpenWatchParty/ClientScript`
+- Serve the client JS loader (`/OpenWatchParty/ClientScript`) and each
+  individual module it fetches (`/OpenWatchParty/Client/{path}`)
 - Provide configuration UI for JWT settings
 - Generate JWT tokens for authenticated users
 - Handle HTTP caching with ETag support
+- Bridge native (non-browser) Jellyfin sessions in as room hosts — see
+  [Host Bridge](host-bridge.md)
 
 **Files:**
 - `Plugin.cs` - Plugin entry point, configuration loading
 - `OpenWatchPartyController.cs` - REST API endpoints
 - `PluginConfiguration.cs` - Configuration model
+- `Services/HostBridgeManager.cs`, `Services/SessionHostBridge.cs`,
+  `Services/SessionServerAuth.cs` - native-client host bridging (see
+  [Host Bridge](host-bridge.md))
 - `Web/configPage.html` - Admin configuration page
-- `Web/plugin.js` - Bundled client JavaScript
+- `Web/plugin.js` - Loader that dynamically fetches each client module
+  from `/OpenWatchParty/Client/{path}` (not a pre-bundled script)
+
+**Note:** the plugin backend itself makes no outbound network calls to
+the session server for the normal browser flow — it only ever hands the
+browser a token and a URL, and the browser does the talking. The one
+exception is the Host Bridge: `HostBridgeManager` opens its own
+WebSocket to the session server on behalf of a bridged native session.
 
 ### 2. Session Server (Rust)
 
@@ -165,23 +178,36 @@ Participant                      Server                       Host
   [Back to lobby]                   │                           │
 ```
 
-### Host Disconnect (Room Closure)
+### Host Disconnect (Grace Period, Then Closure)
+
+A dropped connection (Wi-Fi blip, tab throttling, app backgrounding)
+doesn't close the room right away — the server holds the host's slot
+open for a 90-second grace period before tearing anything down:
 
 ```
 Host                            Server                    Participants
   │                                │                            │
-  X (disconnect/leave)             │                            │
+  X (disconnect)                   │                            │
+  │                          [schedule_disconnect]               │
+  │                          [90s grace period starts]           │
   │                                │                            │
-                              [Detect disconnect]               │
-                              [Close room]                      │
-                                   │                            │
-                                   ├── room_closed ────────────►│
-                                   │                            │
-                                   ├── room_list ──────────────►│
-                                   │   (room removed)           │
-                                   │                            │
-                                   │                    [Show notification]
-                                   │                    [Return to lobby]
+  │   (reconnects within 90s)      │                            │
+  ├── WS connect ?client_id=... ──►│                            │
+  │                          [same client_id: reattach]         │
+  │◄── room_state (resent) ────────┤                            │
+  │   [host role, playback state restored, nothing broadcast    │
+  │    to participants — they never saw a disruption]           │
+  │                                │                            │
+  ────────────────────────────────────────────────────────────────
+           OR, if the host never reconnects within 90s:
+  │                          [grace period expires]              │
+  │                          [tear down room]                    │
+  │                                │                            │
+  │                                ├── room_closed ────────────►│
+  │                                ├── room_list ──────────────►│
+  │                                │   (room removed)           │
+  │                                │                    [Show notification]
+  │                                │                    [Return to lobby]
 ```
 
 ## Technology Stack
@@ -294,13 +320,20 @@ When several clients join a room in quick succession:
 When the host loses connection:
 
 ```
-Host disconnects
+Host disconnects (WebSocket close/error, or zombie-reaped)
        │
        ▼
-Server detects (60s timeout or WebSocket close)
+Server schedules a 90s grace period (does NOT close the room yet)
        │
-       ▼
-Room is closed immediately
+       ├── Host reconnects with the same persistent client_id ──► Reattached,
+       │   within 90s (see "Persistent Client ID" below)            room_state
+       │                                                            resent, no
+       │                                                            disruption
+       │                                                            visible to
+       │                                                            participants
+       │
+       ▼ (90s elapses, no reconnect)
+Room is closed
        │
        ▼
 All participants receive "room_closed" message
@@ -311,9 +344,29 @@ Playback continues locally (not synced)
 ```
 
 **Notes**:
-- Currently, rooms close when the host disconnects
-- Participants can create a new room to continue
-- Automatic host transfer is planned (see roadmap)
+- A brief disconnect (network blip, tab throttling, background app) is
+  invisible to participants as long as the host reconnects within 90
+  seconds (`RECONNECT_GRACE_SECS` in `src/server/src/room/reconnect.rs`)
+- Only after the grace period expires without a reconnect does the room
+  actually close
+- Participants can create a new room to continue if the host doesn't
+  come back
+- Automatic host transfer (to a different user, not just the same host
+  reconnecting) is planned (see roadmap)
+
+### Persistent Client ID
+
+Reconnection is matched by identity, not by luck: the client generates
+a UUID once and stores it in `localStorage`
+(`getPersistentClientId()`/`withClientId()` in
+`src/clients/jellyfin-web/ws/connection.js`), then sends it as
+`?client_id=<uuid>` on every WebSocket connection attempt
+(`src/server/src/routes.rs`). If the server sees a connection with a
+`client_id` that still has a live (or grace-period) entry, it swaps in
+the new transport and keeps the existing room/host state
+(`src/server/src/ws/connection.rs`) instead of registering a new client.
+A client-supplied ID is only trusted if it looks like a real UUIDv4 —
+anything else falls back to a freshly minted server-side ID.
 
 ### Clock Skew Tolerance
 
@@ -383,16 +436,18 @@ Client shows error message
 
 ### Reconnection Behavior
 
-When a client disconnects and reconnects:
+When a client disconnects and reconnects, using the same persistent
+`client_id` (see "Persistent Client ID" above):
 
 | Scenario | Behavior |
 |----------|----------|
-| Brief disconnect (< 60s) | Can rejoin same room |
-| Host reconnects | Must create new room (old room closed) |
-| Participant reconnects | Joins as new participant, re-syncs |
-| Server restart | All rooms lost, clients reconnect to empty server |
+| Any client reconnects within 90s | Reattaches to the same client entry; if they were in a room, `room_state` is resent and their host/guest role is restored |
+| Host reconnects within 90s | Room stays open the whole time; participants see no disruption |
+| Host does not reconnect within 90s | Room is torn down, `room_closed` broadcast to remaining participants |
+| Server restart | All rooms lost (in-memory only); clients reconnect to an empty server |
 
 **Auto-reconnect**:
-- Client retries every 3 seconds
+- Client retries with exponential backoff (`RECONNECT_BASE_MS` up to
+  `RECONNECT_MAX_MS`), not a fixed interval
 - Maintains `autoReconnect=true` state
 - Shows "Reconnecting..." in UI

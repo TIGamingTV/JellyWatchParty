@@ -36,26 +36,6 @@ See [Development Setup](development/setup) for the full workflow.
 
 ---
 
-## Documentation
-
-| Getting Started | Operations | Technical |
-|-----------------|------------|-----------|
-| [Overview](product/overview) | [Installation](operations/installation) | [Architecture](technical/architecture) |
-| [Features](product/features) | [Configuration](operations/configuration) | [Protocol](technical/protocol) |
-| [User Guide](product/user-guide) | [Deployment](operations/deployment) | [Server](technical/server) |
-| [FAQ](product/faq) | [Security](operations/security) | [Client](technical/client) |
-| | [Troubleshooting](operations/troubleshooting) | [Plugin](technical/plugin) |
-| | [Monitoring](operations/monitoring) | [Sync Algorithms](technical/sync) |
-| | | [REST API](technical/api) |
-
-## Development
-
-- [Development Setup](development/setup) - Get started contributing
-- [Contributing Guide](development/contributing) - Code style and PR process
-- [Testing](development/testing) - Running tests
-- [CI/CD](development/ci) - Automated workflows
-- [Release Process](development/release) - How releases are made
-
 ## Architecture Overview
 
 ```
@@ -69,7 +49,7 @@ See [Development Setup](development/setup) for the full workflow.
 ```
 
 **Components:**
-- **Jellyfin Plugin (C#)** - Serves client JavaScript, provides configuration UI
+- **Jellyfin Plugin (C#)** - Serves client JavaScript, provides configuration UI, and (via `Services/`) can bridge native/TV client sessions in as room hosts — see [Host Bridge](technical/host-bridge)
 - **Session Server (Rust)** - Manages rooms and relays sync messages via WebSocket
 - **Web Client (JavaScript)** - Injected into Jellyfin UI, handles playback synchronization
 
