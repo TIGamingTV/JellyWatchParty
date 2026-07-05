@@ -1327,3 +1327,111 @@ for the docs site (discussed with the user — GitHub Pages via
 as artifacts, or a separate third-party host like Cloudflare Pages/Netlify
 for shareable preview URLs — neither implemented yet, pending user
 decision).
+
+## Round 19 — Shipped the four roadmap features: chat history, democratic mode, host transfer, room passwords
+
+Asked to "think about improvements and additions", surveyed the repo
+(architecture, CI, `features.md`'s own Roadmap table, this file) and
+found the project's own stated roadmap — message history for late
+joiners, democratic mode, automatic host transfer, room passwords, all
+listed as "Planned" — was the highest-value, least-ambiguous thing to
+build, alongside two concrete gaps found while reading: `ci.yml`'s
+`js-lint` job only globbing top-level client JS (missing ~23 of ~25
+files), and `architecture.md` documenting a `MAX_ROOMS_PER_USER` server
+constant that doesn't exist anywhere in the code.
+
+**Changes:**
+- `ci.yml`: `js-lint`'s syntax-check step now recurses
+  (`find ... -name '*.js' -not -path '*/tests/*'`) instead of globbing
+  only the top-level directory.
+- `architecture.md`: "Rooms per user: 3, configurable via
+  `MAX_ROOMS_PER_USER`" corrected to describe the real, structural
+  1-hosted-room-per-user behavior in `ws/handlers/create.rs`.
+- `src/clients/jellyfin-web/tests/sync.test.js` (new): first automated
+  coverage for `playback/sync.js`'s hysteresis-gated drift-correction
+  math (previously zero tests existed for this file) — enter/exit
+  threshold behavior, rate clamping, hard-seek, host/non-room early exits.
+- **Chat history**: `Room.chat_history: VecDeque<ChatHistoryEntry>`
+  (capped at `MAX_CHAT_HISTORY = 50`, `ws/handlers/chat.rs` pushes/evicts
+  on each message), replayed via a new shared
+  `messaging::build_room_state_payload()` helper used by all three
+  `room_state`-sending sites (`create.rs`, `join.rs`,
+  `room/reconnect.rs`) — introduced now rather than left as 3x
+  duplicated `json!({...})` literals, since this round already needed to
+  add two new fields (`chat_history`, `democratic_mode`) to all three.
+  Client: `chat/messages.js` gets a `hydrate()` that replaces
+  `chat.messages` from server-replayed history without touching the
+  unread badge/toast (unlike live `receive()`).
+- **Democratic mode**: `Room.democratic_mode: bool`, one-line authority
+  change in `playback.rs`
+  (`room.host_id != client_id && !room.democratic_mode`), new
+  host-gated `toggle_democratic_mode` message →
+  `democratic_mode_changed` broadcast. Turned out the client also
+  gates: `playback/bind.js` never even *sends* a guest's playback
+  events today (`if (!state.isHost...) return` at every send site) —
+  fixed by adding `utils.canControlPlayback()` and using it in place of
+  the bare `state.isHost` checks, otherwise the server-side change alone
+  would have been silently ineffective for actual guests.
+- **Automatic host transfer**: `room/leave.rs`'s
+  `detach_client_from_room` only signals "close this room" when
+  `room.clients.is_empty()` now; if the host leaves with others still
+  present, `promote_new_host()` promotes `room.clients[0]` (the
+  Vec is already insertion-ordered — no new bookkeeping needed) and
+  broadcasts a new `host_changed` message instead. Both the explicit
+  `leave_room` path and the 90s-grace-period-expiry disconnect path
+  (`room/reconnect.rs::schedule_disconnect`) funnel through this same
+  function, so one change covers both. Client force-rerenders
+  (`ui.render(true)`) on `host_changed` since the fast-render path only
+  keys off `state.inRoom`, not `state.isHost`.
+- **Room passwords**: new `src/server/src/password.rs` (added `sha2`
+  dependency) — salted SHA-256, deliberately *not* argon2/bcrypt, with
+  the trade-off written down in both the module doc-comment and
+  `security.md`: rooms are in-memory/ephemeral, so there's no persisted
+  hash database to protect against offline cracking, and a slow KDF
+  would be solving a threat that doesn't exist here. `Room.password_hash:
+  Option<(salt, hash)>` (`#[serde(skip)]`, never leaves the server),
+  checked in `join.rs` (skipped for a client already in `room.clients`,
+  so reconnect-reattach is never re-challenged), room list gets a
+  derived `has_password` bool for a lock-icon affordance. Wrong password
+  reuses the generic `error` message type plus a `"reason":
+  "wrong_password"` field rather than inventing a new message type.
+- Docs: `protocol.md`, `architecture.md`, `features.md`, `security.md`,
+  `faq.md`, `client.md` all updated for the new message types
+  (`toggle_democratic_mode`, `host_changed`, `democratic_mode_changed`),
+  payload fields, and the corrected known-limitations/roadmap tables.
+
+**Verification**: `cargo fmt --check` / `cargo clippy --all-targets -- -D
+warnings` / `cargo test` all clean (106 tests, up from 75 — 31 new,
+covering both the pure logic and the async handler paths for each
+feature, including password-mismatch rejection, democratic-mode
+authority gating, and host-promotion vs. room-closure branching).
+`node --check` over every client JS file (the same corrected glob from
+the CI fix) and `node --test` (20 tests, up from 11) both clean. **Not
+verified**: no live Jellyfin instance was available in this sandbox, so
+none of this was exercised end-to-end in a real browser against a real
+session server — same category of gap as Round 17's original bridge
+picker work. The client-side wiring (password prompts via `window.prompt`,
+the democratic-mode toggle checkbox, lock icons on room cards) was
+written to closely mirror existing patterns in the same files rather
+than inventing new UI idioms, for the same reason Round 17 gave: to
+minimize the chance of an unexecuted mistake slipping through.
+
+**Also skipped, deliberately**: this sandbox has no .NET SDK installed,
+so the Host Bridge's `SessionHostBridge.cs` (its outbound `ClientWebSocket`
+has no reconnect/backoff, an accepted gap called out back in Round 16)
+was left untouched rather than writing C# that couldn't be
+compile-checked here.
+
+### Status / next action
+
+1. Deploy and manually verify each feature end-to-end against a real
+   Jellyfin + session server (chat history on a real late joiner,
+   democratic-mode toggle from an actual non-host client, a real host
+   disconnect/reconnect for the transfer path, wrong-password rejection
+   in the browser) — everything above is unit/integration-tested but not
+   browser-verified.
+2. Host Bridge reconnect/backoff (Round 16's original gap) is still
+   open — needs a .NET-capable environment.
+3. Tier-3 ideas discussed but not built: shareable room join links,
+   emoji reactions, a `/metrics` endpoint, subtitle/audio-track sync —
+   left as ideas in the plan, not committed work.
