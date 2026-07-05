@@ -8,12 +8,12 @@
     "category": "General",
     "versions": [
       {
-        "version": "0.0.17",
-        "changelog": "fix(ci): resolve rustfmt violation and missing test runtime assemblies\n\ntasks.rs had a warn! call exceeding rustfmt's line width. The test\nproject also inherited ExcludeAssets=runtime from the plugin's\nJellyfin package references, which is correct for the plugin (host\nprovides those DLLs) but left the test project unable to load\nMediaBrowser.Common/Model at run time.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+        "version": "0.0.19",
+        "changelog": "feat(plugin): bridge native-client sessions in as OpenWatchParty room hosts\n\nAdds an admin-gated hostbridge so sessions that can't run the injected\nbrowser client (e.g. Fladder on Android TV) can still host a watch party:\nHostBridgeManager subscribes to ISessionManager's playback events and\nSessionHostBridge speaks the normal browser-host WebSocket protocol to the\nsession server on that session's behalf. Host-only by design — receivers\nstill join the resulting room themselves through the existing OWP UI, no\nnew push channel to browsers. JWT minting extracted into SessionServerAuth\nso both the bridge and the existing /Token endpoint share it.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
         "targetAbi": "10.11.11.0",
         "sourceUrl": "https://github.com/TIGamingTV/OpenWatchParty/releases/download/develop-latest/OpenWatchParty-dev.zip",
-        "checksum": "d827a48459fff54fd3a0ab5ac9907784",
-        "timestamp": "2026-07-05T14:11:05Z"
+        "checksum": "81bab094b8024f364c06f13b3d2766ee",
+        "timestamp": "2026-07-05T16:27:40Z"
       }
     ]
   }
