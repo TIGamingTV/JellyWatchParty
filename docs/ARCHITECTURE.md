@@ -78,8 +78,8 @@ C# plugin targeting the Jellyfin plugin ABI. Key files:
   - serves the rest of the client JS files from **embedded resources only**
     (no disk fallback) — see `Web/` folder produced at build time, resource
     name pattern `OpenWatchParty.Plugin.Web.<path-with-dots-for-slashes>`
-  - `/OpenWatchParty/Bridge/*` (admin-only) — lists bridgeable/active
-    sessions and starts/stops a host bridge; see below
+  - `/OpenWatchParty/Bridge/*` (any logged-in user — see below) — lists
+    bridgeable/active sessions and starts/stops a host bridge
 - `ScriptInjectionMiddleware.cs` — intercepts requests for
   `/web/index.html` and injects a `<script>` tag pointing at
   `/OpenWatchParty/ClientScript` before the response is served. Its
@@ -105,22 +105,29 @@ time** — there is no way to "hot-patch" a running installation by dropping
 files next to the DLL; a genuine rebuild is required for any JS change to
 take effect (see Round 6's root cause).
 
-**One deliberate exception** (Round 16): `Services/HostBridgeManager.cs` and
-`Services/SessionHostBridge.cs` let an admin bridge a currently-playing
-Jellyfin session (e.g. Fladder on Android TV, which can't run the injected
-browser script at all) into a new OpenWatchParty room as its host. This *is*
-outbound network calls from the plugin backend — `HostBridgeManager` is a
-hosted service that subscribes to `ISessionManager`'s playback events, and
-for each bridged session `SessionHostBridge` opens its own `ClientWebSocket`
-to the session server and speaks the exact same client protocol a browser
-host would (`auth` → `create_room` → `player_event`/`state_update`). The
-resulting room is indistinguishable from a browser-hosted one to guests, who
-still join it themselves from their own Jellyfin Web room list exactly as
-before — nothing is pushed to guests, and this only makes the *host* side
-work for native clients. `Services/SessionServerAuth.cs` holds the shared
+**One deliberate exception** (Round 16, moved from the admin dashboard into
+the in-player widget in Round 17): `Services/HostBridgeManager.cs` and
+`Services/SessionHostBridge.cs` let any logged-in user bridge a
+currently-playing Jellyfin session (e.g. Fladder on Android TV, which can't
+run the injected browser script at all) into a new OpenWatchParty room as
+its host. This *is* outbound network calls from the plugin backend —
+`HostBridgeManager` is a hosted service that subscribes to
+`ISessionManager`'s playback events, and for each bridged session
+`SessionHostBridge` opens its own `ClientWebSocket` to the session server
+and speaks the exact same client protocol a browser host would (`auth` →
+`create_room` → `player_event`/`state_update`). The resulting room is
+indistinguishable from a browser-hosted one to guests, who still join it
+themselves from their own Jellyfin Web room list exactly as before —
+nothing is pushed to guests, and this only makes the *host* side work for
+native clients. `Services/SessionServerAuth.cs` holds the shared
 JWT-minting logic used by both this bridge and the `/OpenWatchParty/Token`
-endpoint. New endpoints under `/OpenWatchParty/Bridge/*` (admin-only,
-`RequiresElevation` policy) drive it from the config page.
+endpoint. The `/OpenWatchParty/Bridge/*` endpoints are gated with plain
+`[Authorize]` (not an admin-only policy) — session info (username, device,
+now-playing title) is deliberately not treated as private within a server,
+and any user can start/stop a bridge from the same panel where they'd
+create or join a room. Driven from `src/clients/jellyfin-web/ui/bridge.js`,
+rendered inside the existing lobby panel (`ui/render.js`'s `renderLobby`) —
+not the Jellyfin admin config page.
 
 ## 3. Injected JS client — `src/clients/jellyfin-web/`
 
@@ -160,6 +167,13 @@ Key files:
   recommended but not confirmed applied).
 - `ui/indicators.js` — renders the sync status dot/label (Round 11 — being
   reworked to not lie about unknown status).
+- `ui/bridge.js` (Round 17) — renders the "Host From Another Device"
+  section in the lobby panel (`ui/render.js`'s `renderLobby`); calls
+  `/OpenWatchParty/Bridge/*` directly with the user's own Jellyfin access
+  token (`ApiClient.accessToken()`), same pattern as `ws/auth.js`'s token
+  fetch. Reference-only for other sessions — starting/stopping a bridge
+  doesn't push anything to anyone; guests still join the resulting room
+  from the normal room list above it.
 - `chat/` — in-room text chat, separate from sync logic.
 
 ## Build & release pipeline

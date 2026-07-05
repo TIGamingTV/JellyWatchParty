@@ -51,31 +51,6 @@
                         </button>
                     </div>
                 </form>
-
-                <!-- Native Client Bridge -->
-                <div class="verticalSection">
-                    <h2 class="sectionTitle">Native Client Bridge (e.g. Fladder)</h2>
-                    <div class="fieldDescription" style="margin-bottom:1em">
-                        Clients that can't run the injected browser sync script (e.g. Fladder on
-                        Android TV) can still host a watch party: pick a currently-playing session
-                        below to bridge its playback into a new OpenWatchParty room, with that
-                        session as host. Anyone using Jellyfin Web joins the resulting room from
-                        their own room list, exactly as they would any other room — this page
-                        doesn't join anyone automatically.
-                    </div>
-
-                    <h3>Available sessions</h3>
-                    <div id="bridgeAvailableList" class="fieldDescription">Loading…</div>
-
-                    <h3>Active bridges</h3>
-                    <div id="bridgeActiveList" class="fieldDescription">Loading…</div>
-
-                    <div style="margin:.5em 0">
-                        <button is="emby-button" type="button" id="bridgeRefreshBtn" class="raised">
-                            <span>Refresh</span>
-                        </button>
-                    </div>
-                </div>
             </div>
         </div>
 
@@ -133,101 +108,6 @@
                     Dashboard.hideLoadingMsg();
                     Dashboard.alert('Failed to load configuration: ' + (err.message || 'Unknown error'));
                 });
-
-                refreshBridgeUI();
-            });
-
-            function escapeHtml(value) {
-                return String(value == null ? '' : value).replace(/[&<>"']/g, function (c) {
-                    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-                });
-            }
-
-            function refreshBridgeUI() {
-                var availableEl = document.getElementById('bridgeAvailableList');
-                var activeEl = document.getElementById('bridgeActiveList');
-                availableEl.textContent = 'Loading…';
-                activeEl.textContent = 'Loading…';
-
-                Promise.all([
-                    fetch(ApiClient.getUrl('OpenWatchParty/Bridge/Sessions')).then(function (r) { return r.json(); }),
-                    fetch(ApiClient.getUrl('OpenWatchParty/Bridge/Status')).then(function (r) { return r.json(); })
-                ]).then(function (results) {
-                    renderAvailableSessions(results[0] || []);
-                    renderActiveBridges(results[1] || []);
-                }).catch(function (err) {
-                    availableEl.textContent = 'Failed to load: ' + (err.message || 'Unknown error');
-                    activeEl.textContent = 'Failed to load: ' + (err.message || 'Unknown error');
-                });
-            }
-
-            function renderAvailableSessions(sessions) {
-                var el = document.getElementById('bridgeAvailableList');
-                if (!sessions.length) {
-                    el.textContent = 'No sessions are currently playing something.';
-                    return;
-                }
-
-                el.innerHTML = sessions.map(function (s) {
-                    return '<div style="display:flex;align-items:center;gap:1em;padding:.4em 0">' +
-                        '<span style="flex:1">' + escapeHtml(s.userName) + ' — ' + escapeHtml(s.deviceName) +
-                        ' (' + escapeHtml(s.client) + ')' +
-                        (s.nowPlayingItemName ? ': ' + escapeHtml(s.nowPlayingItemName) : '') + '</span>' +
-                        '<button is="emby-button" type="button" class="raised bridgeStartBtn" data-session-id="' +
-                        escapeHtml(s.sessionId) + '"><span>Start bridge</span></button>' +
-                        '</div>';
-                }).join('');
-            }
-
-            function renderActiveBridges(bridges) {
-                var el = document.getElementById('bridgeActiveList');
-                if (!bridges.length) {
-                    el.textContent = 'No active bridges.';
-                    return;
-                }
-
-                el.innerHTML = bridges.map(function (b) {
-                    return '<div style="display:flex;align-items:center;gap:1em;padding:.4em 0">' +
-                        '<span style="flex:1">' + escapeHtml(b.userName) +
-                        (b.roomId ? ' — room ' + escapeHtml(b.roomId) : ' — connecting…') +
-                        (b.connected ? '' : ' (disconnected)') + '</span>' +
-                        '<button is="emby-button" type="button" class="raised bridgeStopBtn" data-session-id="' +
-                        escapeHtml(b.sessionId) + '"><span>Stop</span></button>' +
-                        '</div>';
-                }).join('');
-            }
-
-            $('#bridgeRefreshBtn').on('click', function () {
-                refreshBridgeUI();
-            });
-
-            $(document).on('click', '.bridgeStartBtn', function () {
-                var sessionId = $(this).data('session-id');
-                Dashboard.showLoadingMsg();
-                fetch(ApiClient.getUrl('OpenWatchParty/Bridge/' + encodeURIComponent(sessionId) + '/Start'), { method: 'POST' })
-                    .then(function (r) {
-                        if (!r.ok) { return r.json().then(function (e) { throw new Error(e.error || 'Request failed'); }); }
-                        Dashboard.hideLoadingMsg();
-                        refreshBridgeUI();
-                    })
-                    .catch(function (err) {
-                        Dashboard.hideLoadingMsg();
-                        Dashboard.alert('Failed to start bridge: ' + (err.message || 'Unknown error'));
-                    });
-            });
-
-            $(document).on('click', '.bridgeStopBtn', function () {
-                var sessionId = $(this).data('session-id');
-                Dashboard.showLoadingMsg();
-                fetch(ApiClient.getUrl('OpenWatchParty/Bridge/' + encodeURIComponent(sessionId) + '/Stop'), { method: 'POST' })
-                    .then(function () {
-                        Dashboard.hideLoadingMsg();
-                        refreshBridgeUI();
-                    })
-                    .catch(function (err) {
-                        Dashboard.hideLoadingMsg();
-                        Dashboard.alert('Failed to stop bridge: ' + (err.message || 'Unknown error'));
-                    });
             });
 
             $('.openwatchpartyConfigurationForm').on('submit', function (e) {

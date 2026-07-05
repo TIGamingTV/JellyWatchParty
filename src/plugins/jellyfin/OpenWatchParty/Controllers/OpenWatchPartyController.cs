@@ -282,11 +282,13 @@ public class OpenWatchPartyController : ControllerBase
 
     /// <summary>
     /// Lists Jellyfin sessions eligible to be bridged in as an OpenWatchParty
-    /// room host (i.e. sessions currently playing something), for the admin
-    /// config page's host picker.
+    /// room host (i.e. sessions currently playing something), for the
+    /// in-player OpenWatchParty widget's host picker. Any logged-in user can
+    /// see this list and start/stop a bridge — session info (username,
+    /// device, now-playing title) is not treated as private within a server.
     /// </summary>
     [HttpGet("Bridge/Sessions")]
-    [Authorize(Policy = "RequiresElevation")]
+    [Authorize]
     [Produces("application/json")]
     public ActionResult GetBridgeableSessions()
     {
@@ -294,11 +296,11 @@ public class OpenWatchPartyController : ControllerBase
     }
 
     /// <summary>
-    /// Lists currently active host bridges, for the admin config page's
+    /// Lists currently active host bridges, for the in-player widget's
     /// status display.
     /// </summary>
     [HttpGet("Bridge/Status")]
-    [Authorize(Policy = "RequiresElevation")]
+    [Authorize]
     [Produces("application/json")]
     public ActionResult GetBridgeStatus()
     {
@@ -311,7 +313,7 @@ public class OpenWatchPartyController : ControllerBase
     /// </summary>
     /// <param name="sessionId">The Jellyfin session identifier to bridge.</param>
     [HttpPost("Bridge/{sessionId}/Start")]
-    [Authorize(Policy = "RequiresElevation")]
+    [Authorize]
     [Produces("application/json")]
     public async Task<ActionResult> StartBridge([FromRoute] string sessionId)
     {
@@ -332,7 +334,7 @@ public class OpenWatchPartyController : ControllerBase
     /// </summary>
     /// <param name="sessionId">The Jellyfin session identifier to stop bridging.</param>
     [HttpPost("Bridge/{sessionId}/Stop")]
-    [Authorize(Policy = "RequiresElevation")]
+    [Authorize]
     [Produces("application/json")]
     public async Task<ActionResult> StopBridge([FromRoute] string sessionId)
     {

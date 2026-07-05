@@ -1054,8 +1054,8 @@ was available in this sandbox**:
 
 **Known, accepted limitation carried into this round** (not a bug, a
 scoping choice): if a bridge's `ClientWebSocket` connection drops
-unexpectedly, there's no reconnect/backoff — it just goes silent until an
-admin notices and restarts it from the config page. The browser client's
+unexpectedly, there's no reconnect/backoff — it just goes silent until
+someone notices and restarts it from the widget. The browser client's
 reconnect sophistication (`ws/connection.js`) was deliberately not
 replicated here.
 
@@ -1072,3 +1072,62 @@ a live Jellyfin server**. Before calling this done:
    own source for precedent).
 3. Fladder-as-guest is still fully unaddressed — see Round 15's own
    next-action list, unchanged by this round.
+
+**Superseded by Round 17** — items 1 and 2 above no longer apply: the
+picker moved out of the admin config page into the in-player widget, and
+the endpoints are intentionally no longer admin-gated. See Round 17.
+
+---
+
+## Round 17 — Moved the host-bridge picker from the admin config page into the in-player widget
+
+The user tried the Round 16 admin config page and couldn't find a natural
+place for it in their actual workflow — the request was to move the
+picker into the same widget used to create/join a room (the lobby panel
+injected into Jellyfin Web), not keep it as a separate admin-dashboard
+page. The user also explicitly said it's fine for any user to see this
+list (session usernames/devices/now-playing titles are not treated as
+private within their deployment), so the admin-only gate was dropped too.
+
+**Changes:**
+- `Controllers/OpenWatchPartyController.cs`: all four
+  `/OpenWatchParty/Bridge/*` endpoints changed from
+  `[Authorize(Policy = "RequiresElevation")]` to plain `[Authorize]` — any
+  logged-in Jellyfin user can list sessions and start/stop a bridge now,
+  same access level as `/OpenWatchParty/Token`.
+- `Web/configPage.html`: the "Native Client Bridge" section added in
+  Round 16 was removed entirely (moved, not duplicated).
+- `src/clients/jellyfin-web/ui/bridge.js` (new): fetches
+  `/OpenWatchParty/Bridge/Sessions` and `/Status` using the user's own
+  Jellyfin `ApiClient.accessToken()` (same auth pattern `ws/auth.js`
+  already uses for `/OpenWatchParty/Token`), renders "Start"/"Stop" rows,
+  and POSTs to `/Bridge/{sessionId}/Start` or `/Stop`.
+- `ui/render.js`'s `renderLobby` now has a "Host From Another Device"
+  section under the existing "Available Rooms" list and "Create Room"
+  button, refreshed on the same triggers as the room list (panel open,
+  `render()` fast-path).
+- `plugin.js` and `infra/just/common.just`'s `client_js_files` both
+  updated to load/copy the new `ui/bridge.js` file — and, since that list
+  is (per Round 6's note) duplicated verbatim in three places, also
+  updated in `.github/workflows/ci.yml` and twice in
+  `.github/workflows/publish.yml`. All five locations verified to now
+  list `ui/bridge.js` consistently.
+
+**Verification**: `dotnet build`/`dotnet test` re-run clean (48/48) after
+the auth-attribute change. The new JS file was checked with `node --check`
+for syntax... except Node.js is not installed in this sandbox, so that
+could not actually be run — this is a genuine gap, not a "ran and passed"
+claim. `ui/bridge.js` was written to closely mirror the existing
+`ui/cards.js`/`ws/auth.js` patterns (same `ApiClient.accessToken()` fetch
+idiom, same `.owp-room-item`/`.owp-btn` CSS classes already defined in
+`ui/styles.js`) rather than inventing new patterns, to minimize the
+chance of a mistake slipping through without being able to execute it.
+
+### Status / next action
+
+Same as Round 16's remaining items, minus the two superseded above:
+1. Deploy to a real Jellyfin instance and confirm the widget actually
+   renders correctly in Jellyfin Web, the session list populates, and
+   starting a bridge produces a joinable room — this has only been
+   reviewed by reading the code, never executed in a browser.
+2. Fladder-as-guest is still fully unaddressed — unchanged from Round 15.
