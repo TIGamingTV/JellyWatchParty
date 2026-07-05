@@ -15,6 +15,10 @@
       state.clientId = msg.client;
     }
     state.isHost = (msg.payload.host_id === state.clientId);
+    state.democraticMode = !!msg.payload.democratic_mode;
+    if (OWP.chat && Array.isArray(msg.payload.chat_history)) {
+      OWP.chat.hydrate(msg.payload.chat_history);
+    }
     if (!state.hasTimeSync && typeof msg.server_ts === 'number') {
       state.serverOffsetMs = msg.server_ts - utils.nowMs();
       state.hasTimeSync = true;

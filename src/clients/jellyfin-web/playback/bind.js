@@ -7,7 +7,7 @@
 
   const sendStateUpdate = (video) => {
     const actions = OWP.actions;
-    if (!state.isHost || !actions || !actions.send) return;
+    if (!utils.canControlPlayback() || !actions || !actions.send) return;
     if (state.isSyncing) return;
     if (utils.isSeeking()) return;
     if (state.isBuffering || !utils.isVideoReady()) return;
@@ -19,7 +19,7 @@
 
   const onHostEvent = (action, video) => {
     const actions = OWP.actions;
-    if (!state.isHost || !actions || !actions.send || !utils.shouldSend()) return;
+    if (!utils.canControlPlayback() || !actions || !actions.send || !utils.shouldSend()) return;
     if (state.isSyncing) return;
     if (action === 'seek' && !utils.isVideoReady()) return;
     if (action === 'pause') {
@@ -51,7 +51,7 @@
       waiting: () => {
         state.isBuffering = true;
         utils.log('VIDEO', { event: 'buffering', pos: video.currentTime, readyState: video.readyState });
-        if (state.isHost && OWP.actions && OWP.actions.send) {
+        if (utils.canControlPlayback() && OWP.actions && OWP.actions.send) {
           OWP.actions.send('player_event', { action: 'buffering', position: video.currentTime });
         }
       },
@@ -65,7 +65,7 @@
         state.isBuffering = false;
         if (wasBuffering) {
           utils.log('VIDEO', { event: 'playing', pos: video.currentTime });
-          if (state.isHost && OWP.actions && OWP.actions.send) {
+          if (utils.canControlPlayback() && OWP.actions && OWP.actions.send) {
             OWP.actions.send('player_event', { action: 'play', position: video.currentTime });
           }
         }
@@ -101,7 +101,7 @@
       clearInterval(state.intervals.stateUpdate);
     }
     state.intervals.stateUpdate = setInterval(() => {
-      if (state.isHost) sendStateUpdate(video);
+      if (utils.canControlPlayback()) sendStateUpdate(video);
     }, STATE_UPDATE_MS);
   };
 

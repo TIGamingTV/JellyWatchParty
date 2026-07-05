@@ -16,25 +16,33 @@
     state.ws.send(JSON.stringify(message));
   };
 
-  const createRoom = () => {
+  const createRoom = (password = '') => {
     const v = utils.getVideo();
     const mediaId = utils.getCurrentItemId();
     const userName = state.userName
       || window.ApiClient?._currentUser?.Name
       || 'Anonymous';
-    send('create_room', {
+    const payload = {
       start_pos: v ? v.currentTime : 0,
       media_id: mediaId,
       user_name: userName
-    });
+    };
+    if (password) payload.password = password;
+    send('create_room', payload);
   };
 
-  const joinRoom = (id) => {
+  const joinRoom = (id, password = '') => {
     state.roomId = id;
     const userName = state.userName
       || window.ApiClient?._currentUser?.Name
       || 'Anonymous';
-    send('join_room', { user_name: userName }, id);
+    const payload = { user_name: userName };
+    if (password) payload.password = password;
+    send('join_room', payload, id);
+  };
+
+  const setDemocraticMode = (enabled) => {
+    send('toggle_democratic_mode', { enabled: !!enabled });
   };
 
   const leaveRoom = () => {
@@ -58,5 +66,5 @@
     if (panel) panel.classList.add('hide');
   };
 
-  Object.assign(actions, { send, createRoom, joinRoom, leaveRoom });
+  Object.assign(actions, { send, createRoom, joinRoom, leaveRoom, setDemocraticMode });
 })();

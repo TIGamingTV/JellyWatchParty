@@ -1,4 +1,4 @@
-use crate::messaging::send_to_client;
+use crate::messaging::{build_room_state_payload, send_to_client};
 use crate::types::{Clients, Rooms, WsMessage};
 use crate::utils::now_ms;
 use log::info;
@@ -73,13 +73,7 @@ pub async fn resend_room_state(client_id: &str, room_id: &str, clients: &Clients
             msg_type: "room_state".to_string(),
             room: Some(room.room_id.clone()),
             client: Some(client_id.to_string()),
-            payload: Some(serde_json::json!({
-                "name": room.name,
-                "host_id": room.host_id,
-                "state": room.state,
-                "participant_count": room.clients.len(),
-                "media_id": room.media_id
-            })),
+            payload: Some(build_room_state_payload(room, room.clients.len())),
             ts: now_ms(),
             server_ts: Some(now_ms()),
         },

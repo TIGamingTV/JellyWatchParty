@@ -1,7 +1,7 @@
 use super::super::constants::PLAY_SCHEDULE_MS;
 use super::super::dispatch::send_error;
 use super::super::pending_play::{all_ready, broadcast_scheduled_play};
-use crate::messaging::{broadcast_room_list, send_to_client};
+use crate::messaging::{broadcast_room_list, broadcast_to_room, send_to_client};
 use crate::room::handle_leave;
 use crate::types::{Clients, IncomingMessage, Rooms, WsMessage};
 use crate::utils::now_ms;
@@ -71,6 +71,52 @@ pub(in crate::ws) async fn handle_ready(
     }
 }
 
+pub(in crate::ws) async fn handle_toggle_democratic_mode(
+    client_id: &str,
+    parsed: &IncomingMessage,
+    clients: &Clients,
+    rooms: &Rooms,
+) {
+    let Some(ref room_id) = parsed.room else {
+        return;
+    };
+    let enabled = parsed
+        .payload
+        .as_ref()
+        .and_then(|p| p.get("enabled"))
+        .and_then(|v| v.as_bool());
+    let Some(enabled) = enabled else {
+        send_error(client_id, clients, "Missing 'enabled' boolean").await;
+        return;
+    };
+
+    let mut locked_rooms = rooms.write().await;
+    let Some(room) = locked_rooms.get_mut(room_id) else {
+        return;
+    };
+    if room.host_id != client_id {
+        drop(locked_rooms);
+        send_error(client_id, clients, "Only the host can change this setting").await;
+        return;
+    }
+
+    room.democratic_mode = enabled;
+    let locked_clients = clients.read().await;
+    broadcast_to_room(
+        room,
+        &locked_clients,
+        &WsMessage {
+            msg_type: "democratic_mode_changed".to_string(),
+            room: Some(room_id.clone()),
+            client: None,
+            payload: Some(serde_json::json!({ "enabled": enabled })),
+            ts: now_ms(),
+            server_ts: Some(now_ms()),
+        },
+        None,
+    );
+}
+
 pub(in crate::ws) async fn handle_leave_room(client_id: &str, clients: &Clients, rooms: &Rooms) {
     info!("Client {} leaving room", client_id);
     {
@@ -85,6 +131,61 @@ pub(in crate::ws) async fn handle_leave_room(client_id: &str, clients: &Clients,
 mod tests {
     use super::*;
     use crate::test_helpers;
+
+    #[tokio::test]
+    async fn handle_toggle_democratic_mode_host_can_enable() {
+        let clients = test_helpers::create_clients();
+        let rooms = test_helpers::create_rooms();
+        let (host, mut rx_h) = test_helpers::create_client_with_rx("uh", "Host", true);
+        clients.write().await.insert("host".to_string(), host);
+        rooms.write().await.insert(
+            "room-1".to_string(),
+            test_helpers::create_room("room-1", "host"),
+        );
+
+        let parsed = IncomingMessage {
+            msg_type: crate::types::ClientMessageType::ToggleDemocraticMode,
+            room: Some("room-1".to_string()),
+            client: Some("host".to_string()),
+            payload: Some(serde_json::json!({ "enabled": true })),
+            ts: 0,
+            server_ts: None,
+        };
+        handle_toggle_democratic_mode("host", &parsed, &clients, &rooms).await;
+
+        assert!(rooms.read().await.get("room-1").unwrap().democratic_mode);
+        let msg = test_helpers::recv_msg(&mut rx_h).unwrap();
+        assert_eq!(msg.msg_type, "democratic_mode_changed");
+    }
+
+    #[tokio::test]
+    async fn handle_toggle_democratic_mode_rejects_non_host() {
+        let clients = test_helpers::create_clients();
+        let rooms = test_helpers::create_rooms();
+        let (host, _rx_h) = test_helpers::create_client_with_rx("uh", "Host", true);
+        let (guest, mut rx_g) = test_helpers::create_client_with_rx("ug", "Guest", true);
+        clients.write().await.insert("host".to_string(), host);
+        clients.write().await.insert("guest".to_string(), guest);
+        {
+            let mut room = test_helpers::create_room("room-1", "host");
+            room.clients.push("guest".to_string());
+            rooms.write().await.insert("room-1".to_string(), room);
+        }
+
+        let parsed = IncomingMessage {
+            msg_type: crate::types::ClientMessageType::ToggleDemocraticMode,
+            room: Some("room-1".to_string()),
+            client: Some("guest".to_string()),
+            payload: Some(serde_json::json!({ "enabled": true })),
+            ts: 0,
+            server_ts: None,
+        };
+        handle_toggle_democratic_mode("guest", &parsed, &clients, &rooms).await;
+
+        assert!(!rooms.read().await.get("room-1").unwrap().democratic_mode);
+        let msg = test_helpers::recv_msg(&mut rx_g).unwrap();
+        assert_eq!(msg.msg_type, "error");
+    }
 
     #[tokio::test]
     async fn handle_ping_responds_pong() {

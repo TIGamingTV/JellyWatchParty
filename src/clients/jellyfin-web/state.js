@@ -83,6 +83,7 @@
     clientId: '',
     name: '',
     isHost: false,
+    democraticMode: false, // true once the host turns on democratic mode for this room
     followHost: true,
     suppressUntil: 0,
     rooms: [],

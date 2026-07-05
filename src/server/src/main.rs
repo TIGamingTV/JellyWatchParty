@@ -1,5 +1,6 @@
 mod auth;
 mod messaging;
+mod password;
 mod room;
 mod routes;
 mod tasks;

@@ -15,25 +15,58 @@ fn detach_client_from_room(
 
     room.clients.retain(|id| id != client_id);
     room.ready_clients.remove(client_id);
-    if room.host_id == client_id {
+    let was_host = room.host_id == client_id;
+    if was_host {
         room.pending_play = None;
     }
 
-    if room.clients.is_empty() || room.host_id == client_id {
+    if room.clients.is_empty() {
         let clients_to_notify = room.clients.clone();
-        Some((room_id, clients_to_notify))
-    } else {
-        let msg = WsMessage {
-            msg_type: "client_left".to_string(),
-            room: Some(room_id),
-            client: Some(client_id.to_string()),
-            payload: Some(serde_json::json!({ "participant_count": room.clients.len() })),
-            ts: now_ms(),
-            server_ts: Some(now_ms()),
-        };
-        broadcast_to_room(room, clients, &msg, None);
-        None
+        return Some((room_id, clients_to_notify));
     }
+
+    if was_host {
+        promote_new_host(&room_id, room, clients);
+        return None;
+    }
+
+    let msg = WsMessage {
+        msg_type: "client_left".to_string(),
+        room: Some(room_id),
+        client: Some(client_id.to_string()),
+        payload: Some(serde_json::json!({ "participant_count": room.clients.len() })),
+        ts: now_ms(),
+        server_ts: Some(now_ms()),
+    };
+    broadcast_to_room(room, clients, &msg, None);
+    None
+}
+
+/// Promotes the earliest-joined remaining participant to host, in place,
+/// and broadcasts `host_changed` instead of closing the room. `room.clients`
+/// is insertion-ordered, so the new host is simply the first entry left
+/// after the departing host was removed.
+fn promote_new_host(room_id: &str, room: &mut Room, clients: &HashMap<String, Client>) {
+    let new_host_id = room.clients[0].clone();
+    room.host_id = new_host_id.clone();
+    let new_host_name = clients
+        .get(&new_host_id)
+        .map(|c| c.user_name.clone())
+        .unwrap_or_else(|| "Someone".to_string());
+
+    let msg = WsMessage {
+        msg_type: "host_changed".to_string(),
+        room: Some(room_id.to_string()),
+        client: Some(new_host_id.clone()),
+        payload: Some(serde_json::json!({
+            "host_id": new_host_id,
+            "host_name": new_host_name,
+            "participant_count": room.clients.len()
+        })),
+        ts: now_ms(),
+        server_ts: Some(now_ms()),
+    };
+    broadcast_to_room(room, clients, &msg, None);
 }
 
 fn close_and_notify(
@@ -140,5 +173,54 @@ mod tests {
 
         let result = detach_client_from_room("c1", &mut clients, &mut rooms);
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn detach_host_with_remaining_guests_promotes_earliest_joined() {
+        let mut clients = HashMap::new();
+        let mut rooms = HashMap::new();
+        let _rx = test_helpers::setup_room_with_host(&mut clients, &mut rooms, "host-1");
+
+        let (guest_a, mut rx_a) = test_helpers::create_client_with_rx("ua", "GuestA", true);
+        let (guest_b, mut rx_b) = test_helpers::create_client_with_rx("ub", "GuestB", true);
+        clients.insert("guest-a".to_string(), guest_a);
+        clients.insert("guest-b".to_string(), guest_b);
+        {
+            let room = rooms.get_mut("room-1").unwrap();
+            room.clients.push("guest-a".to_string());
+            room.clients.push("guest-b".to_string());
+        }
+
+        let result = detach_client_from_room("host-1", &mut clients, &mut rooms);
+
+        // Room should NOT be signaled for closing — it was promoted instead.
+        assert!(result.is_none());
+        let room = rooms.get("room-1").unwrap();
+        assert_eq!(room.host_id, "guest-a"); // earliest-joined remaining client
+        assert!(room.clients.contains(&"guest-a".to_string()));
+        assert!(room.clients.contains(&"guest-b".to_string()));
+
+        let msg_a = test_helpers::recv_msg(&mut rx_a).unwrap();
+        assert_eq!(msg_a.msg_type, "host_changed");
+        assert_eq!(
+            msg_a.payload.as_ref().unwrap().get("host_id").unwrap(),
+            "guest-a"
+        );
+        let msg_b = test_helpers::recv_msg(&mut rx_b).unwrap();
+        assert_eq!(msg_b.msg_type, "host_changed");
+    }
+
+    #[test]
+    fn detach_host_with_no_remaining_clients_signals_close() {
+        let mut clients = HashMap::new();
+        let mut rooms = HashMap::new();
+        let _rx = test_helpers::setup_room_with_host(&mut clients, &mut rooms, "host-1");
+
+        let result = detach_client_from_room("host-1", &mut clients, &mut rooms);
+
+        assert!(result.is_some());
+        let (room_id, clients_to_notify) = result.unwrap();
+        assert_eq!(room_id, "room-1");
+        assert!(clients_to_notify.is_empty());
     }
 }
