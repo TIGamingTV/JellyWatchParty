@@ -39,7 +39,7 @@ jobs:
     name: Build (${{ matrix.platform }})
     runs-on: ${{ matrix.runner }}
     needs: changes
-    if: github.event_name == 'release' || needs.changes.outputs.server == 'true'
+    if: always() && (github.event_name == 'release' || needs.changes.outputs.server == 'true')
     strategy:
       fail-fast: false
       matrix:
