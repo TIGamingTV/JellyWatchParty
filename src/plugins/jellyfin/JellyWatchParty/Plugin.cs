@@ -3,9 +3,9 @@ using MediaBrowser.Common.Plugins;
 using MediaBrowser.Model.Plugins;
 using MediaBrowser.Model.Serialization;
 using Microsoft.Extensions.Logging;
-using OpenWatchParty.Plugin.Configuration;
+using JellyWatchParty.Plugin.Configuration;
 
-namespace OpenWatchParty.Plugin;
+namespace JellyWatchParty.Plugin;
 
 public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 {
@@ -30,21 +30,21 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 
         if (string.IsNullOrEmpty(Configuration.JwtSecret))
         {
-            _logger.LogWarning("[OpenWatchParty] JwtSecret is not configured. Authentication is DISABLED. " +
+            _logger.LogWarning("[JellyWatchParty] JwtSecret is not configured. Authentication is DISABLED. " +
                 "Set a JwtSecret (min 32 characters) in the plugin configuration to enable authentication.");
         }
         else if (Configuration.JwtSecret.Length < 32)
         {
-            _logger.LogWarning("[OpenWatchParty] JwtSecret is too short ({Length} chars). " +
+            _logger.LogWarning("[JellyWatchParty] JwtSecret is too short ({Length} chars). " +
                 "Use at least 32 characters for secure authentication.", Configuration.JwtSecret.Length);
         }
         else
         {
-            _logger.LogInformation("[OpenWatchParty] JWT authentication is enabled.");
+            _logger.LogInformation("[JellyWatchParty] JWT authentication is enabled.");
         }
     }
 
-    public override string Name => "OpenWatchParty";
+    public override string Name => "JellyWatchParty";
 
     public override Guid Id => new(PluginGuid);
 
@@ -64,7 +64,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         {
             new PluginPageInfo
             {
-                Name = "OpenWatchParty",
+                Name = "JellyWatchParty",
                 EmbeddedResourcePath = GetType().Namespace + ".Web.configPage.html"
             }
         };

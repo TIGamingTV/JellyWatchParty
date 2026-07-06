@@ -2,10 +2,10 @@ using MediaBrowser.Controller.Session;
 using MediaBrowser.Model.Dto;
 using Microsoft.Extensions.Logging;
 using Moq;
-using OpenWatchParty.Plugin.Services;
+using JellyWatchParty.Plugin.Services;
 using Xunit;
 
-namespace OpenWatchParty.Plugin.Tests;
+namespace JellyWatchParty.Plugin.Tests;
 
 /// <summary>
 /// Tests for HostBridgeManager's session-eligibility filtering — the pure

@@ -5,12 +5,12 @@
 ```
 ┌─────────────────────┐      injects <script>       ┌──────────────────────┐
 │  Jellyfin Server     │ ───────────────────────────▶│  Jellyfin Web (HTML)  │
-│  + OpenWatchParty     │   via ScriptInjectionMiddle- │  running in browser   │
+│  + JellyWatchParty     │   via ScriptInjectionMiddle- │  running in browser   │
 │  Plugin (C#)          │   ware, into index.html      │  (or JMP desktop app) │
 └──────────┬───────────┘                              └──────────┬───────────┘
            │ serves config page,                                  │ runs injected JS,
-           │ /OpenWatchParty/Token,                                │ opens WebSocket
-           │ /OpenWatchParty/ClientScript                          │
+           │ /JellyWatchParty/Token,                                │ opens WebSocket
+           │ /JellyWatchParty/ClientScript                          │
            │                                                       ▼
            │                                          ┌──────────────────────┐
            │  (for browsers: NO network calls           │  Session Server (Rust) │
@@ -61,28 +61,28 @@ Built with `warp`. Key files:
 State is `Arc<RwLock<HashMap<...>>>` for both `Clients` and `Rooms` — no
 external database, everything is in-memory and lost on restart.
 
-## 2. Jellyfin plugin — `src/plugins/jellyfin/OpenWatchParty/`
+## 2. Jellyfin plugin — `src/plugins/jellyfin/JellyWatchParty/`
 
 C# plugin targeting the Jellyfin plugin ABI. Key files:
 
-- `OpenWatchPartyPlugin.csproj` — package metadata, Jellyfin SDK version
+- `JellyWatchPartyPlugin.csproj` — package metadata, Jellyfin SDK version
   pins (`Jellyfin.Controller`, `Jellyfin.Model`, currently `10.11.11`).
 - `Plugin.cs` — plugin entry point, registers config page.
 - `Configuration/PluginConfiguration.cs` — plugin settings, notably
   `SessionServerUrl` (a plain string, e.g. `wss://host/ws` — used verbatim,
   no validation/transformation applied server-side).
-- `Controllers/OpenWatchPartyController.cs` — HTTP endpoints:
-  - `/OpenWatchParty/Token` — issues a JWT (or a no-auth response) and
+- `Controllers/JellyWatchPartyController.cs` — HTTP endpoints:
+  - `/JellyWatchParty/Token` — issues a JWT (or a no-auth response) and
     echoes back the configured `session_server_url` for the client JS to use
-  - `/OpenWatchParty/ClientScript` — serves `plugin.js` (the loader)
+  - `/JellyWatchParty/ClientScript` — serves `plugin.js` (the loader)
   - serves the rest of the client JS files from **embedded resources only**
     (no disk fallback) — see `Web/` folder produced at build time, resource
-    name pattern `OpenWatchParty.Plugin.Web.<path-with-dots-for-slashes>`
-  - `/OpenWatchParty/Bridge/*` (any logged-in user — see below) — lists
+    name pattern `JellyWatchParty.Plugin.Web.<path-with-dots-for-slashes>`
+  - `/JellyWatchParty/Bridge/*` (any logged-in user — see below) — lists
     bridgeable/active sessions and starts/stops a host bridge
 - `ScriptInjectionMiddleware.cs` — intercepts requests for
   `/web/index.html` and injects a `<script>` tag pointing at
-  `/OpenWatchParty/ClientScript` before the response is served. Its
+  `/JellyWatchParty/ClientScript` before the response is served. Its
   `ServiceRegistrator` also registers `HostBridgeManager` as a singleton +
   hosted service.
 - `Services/SessionServerAuth.cs` — JWT minting, shared by the `/Token`
@@ -115,7 +115,7 @@ take effect (see Round 6's root cause).
 the in-player widget in Round 17): `Services/HostBridgeManager.cs` and
 `Services/SessionHostBridge.cs` let any logged-in user bridge a
 currently-playing Jellyfin session (e.g. Fladder on Android TV, which can't
-run the injected browser script at all) into a new OpenWatchParty room as
+run the injected browser script at all) into a new JellyWatchParty room as
 its host. This *is* outbound network calls from the plugin backend —
 `HostBridgeManager` is a hosted service that subscribes to
 `ISessionManager`'s playback events, and for each bridged session
@@ -126,8 +126,8 @@ indistinguishable from a browser-hosted one to guests, who still join it
 themselves from their own Jellyfin Web room list exactly as before —
 nothing is pushed to guests, and this only makes the *host* side work for
 native clients. `Services/SessionServerAuth.cs` holds the shared
-JWT-minting logic used by both this bridge and the `/OpenWatchParty/Token`
-endpoint. The `/OpenWatchParty/Bridge/*` endpoints are gated with plain
+JWT-minting logic used by both this bridge and the `/JellyWatchParty/Token`
+endpoint. The `/JellyWatchParty/Bridge/*` endpoints are gated with plain
 `[Authorize]` (not an admin-only policy) — session info (username, device,
 now-playing title) is deliberately not treated as private within a server,
 and any user can start/stop a bridge from the same panel where they'd
@@ -139,7 +139,7 @@ not the Jellyfin admin config page.
 
 This is what actually creates the UI and drives sync in the browser. Not a
 bundled SPA — plain files, loaded dynamically by `plugin.js` fetching each
-one by path from `/OpenWatchParty/Client/{path}`. The authoritative list of
+one by path from `/JellyWatchParty/Client/{path}`. The authoritative list of
 files (and their load order) lives in `infra/just/common.just` as the
 `client_js_files` variable — **must be kept in sync** with whatever the
 publish workflow's copy step embeds (see Round 6).
@@ -147,18 +147,18 @@ publish workflow's copy step embeds (see Round 6).
 Key files:
 - `plugin.js` — the only file directly injected via `<script src=...>`; a
   loader that sequentially fetches and evals the rest.
-- `state.js` — global mutable state object (`OpenWatchParty.state`):
+- `state.js` — global mutable state object (`JellyWatchParty.state`):
   connection state, room state, `isHost`, `syncStatus`, etc.
 - `ws/connection.js` — opens/manages the WebSocket connection; as of
   Round 10, generates and persists a UUID (`localStorage`) and sends it as
   `?client_id=...` on every connection attempt.
 - `ws/auth.js` — fetches the JWT + session server URL from
-  `/OpenWatchParty/Token`.
+  `/JellyWatchParty/Token`.
 - `ws/handlers/*.js` — one file per incoming message type from the server
   (`room.js`, `sync.js`, `playback.js`, `clock.js`).
 - `playback/bind.js` — attaches listeners to the host's `<video>` element
   (play/pause/seek), emits them as outgoing WS messages (logged as
-  `[OWP:HOST] action=... pos=...`).
+  `[JWP:HOST] action=... pos=...`).
 - `playback/sync.js` — the non-host drift-correction loop: compares local
   video position against the host's broadcast state, sets `state.syncStatus`
   to `'synced'` or `'syncing'` accordingly. **This is the loop that must
@@ -175,7 +175,7 @@ Key files:
   reworked to not lie about unknown status).
 - `ui/bridge.js` (Round 17) — renders the "Host From Another Device"
   section in the lobby panel (`ui/render.js`'s `renderLobby`); calls
-  `/OpenWatchParty/Bridge/*` directly with the user's own Jellyfin access
+  `/JellyWatchParty/Bridge/*` directly with the user's own Jellyfin access
   token (`ApiClient.accessToken()`), same pattern as `ws/auth.js`'s token
   fetch. Reference-only for other sessions — starting/stopping a bridge
   doesn't push anything to anyone; guests still join the resulting room
@@ -219,7 +219,7 @@ Internet ──HTTPS/WSS──▶ nginx (DDNS domain, TLS) ──┬──▶ Je
 The public installation guide (`docs/operations/installation.md`, Option
 A) covers the admin-facing summary: install
 [jellyfin-plugin-file-transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation)
-and OpenWatchParty auto-injects its client `<script>` tag into
+and JellyWatchParty auto-injects its client `<script>` tag into
 `index.html`, no Custom HTML step needed. This section is the
 implementation detail behind that, for contributors.
 
@@ -270,7 +270,7 @@ public static string TransformIndexHtml(object payload)
         .GetValue(payload)?
         .ToString();
 
-    if (string.IsNullOrEmpty(contents) || contents.Contains("/OpenWatchParty/ClientScript"))
+    if (string.IsNullOrEmpty(contents) || contents.Contains("/JellyWatchParty/ClientScript"))
     {
         return contents ?? string.Empty;
     }
@@ -278,15 +278,15 @@ public static string TransformIndexHtml(object payload)
     int bodyEndIndex = contents.LastIndexOf("</body>", StringComparison.OrdinalIgnoreCase);
     if (bodyEndIndex >= 0)
     {
-        return contents.Insert(bodyEndIndex, "<script src=\"/OpenWatchParty/ClientScript\"></script>\n");
+        return contents.Insert(bodyEndIndex, "<script src=\"/JellyWatchParty/ClientScript\"></script>\n");
     }
 
     return contents;
 }
 ```
 
-**Files:** `src/plugins/jellyfin/OpenWatchParty/FileTransformationIntegration.cs`
-(registration + callback), `OpenWatchPartyPlugin.csproj` (Newtonsoft.Json
+**Files:** `src/plugins/jellyfin/JellyWatchParty/FileTransformationIntegration.cs`
+(registration + callback), `JellyWatchPartyPlugin.csproj` (Newtonsoft.Json
 dependency needed for the payload shape).
 
 **Error handling:** any failure (plugin not installed, incompatible
@@ -296,12 +296,12 @@ manual Custom HTML method — never a hard failure.
 ## Jellyfin SyncPlay Reference
 
 Jellyfin's own built-in synchronized-playback feature, SyncPlay,
-informed some of OpenWatchParty's design decisions. Kept here as a
+informed some of JellyWatchParty's design decisions. Kept here as a
 reference for contributors, not published on the public docs site.
 
-**Key differences from OpenWatchParty:**
+**Key differences from JellyWatchParty:**
 
-| Aspect | Jellyfin SyncPlay | OpenWatchParty |
+| Aspect | Jellyfin SyncPlay | JellyWatchParty |
 |--------|-------------------|----------------|
 | Architecture | Integrated into Jellyfin | Standalone plugin + server |
 | Transport | REST API + Jellyfin messages | Dedicated WebSocket |
@@ -336,7 +336,7 @@ It keeps a sliding window of 8 measurements, sorts by round-trip delay,
 and takes the lowest-delay sample as the best estimate (rationale:
 jitter adds delay, it doesn't reduce it — so the fastest sample is
 probably the least distorted one). Polling is greedy (1000ms) for the
-first 3 pings, then drops to 60000ms. OpenWatchParty instead uses
+first 3 pings, then drops to 60000ms. JellyWatchParty instead uses
 continuous EMA smoothing (α=0.4) with 10s polling — simpler to reason
 about, trades off some resistance to single-sample outliers.
 
@@ -353,11 +353,11 @@ if (drift > minDelaySkipToSync) {
 }
 ```
 
-Comparable in shape to OpenWatchParty's hysteresis + sqrt-curve rate
+Comparable in shape to JellyWatchParty's hysteresis + sqrt-curve rate
 adjustment (see `docs/technical/sync.md`), but SyncPlay's thresholds are
 user-configurable (`minDelaySpeedToSync`/`maxDelaySpeedToSync`/
 `minDelaySkipToSync` in `Settings.js`) rather than fixed constants, and
-its rate range (0.2x-2.0x) is wider on the low end than OpenWatchParty's
+its rate range (0.2x-2.0x) is wider on the low end than JellyWatchParty's
 (0.85x-2.0x).
 
 ### Known SyncPlay limitations (from upstream GitHub issues)

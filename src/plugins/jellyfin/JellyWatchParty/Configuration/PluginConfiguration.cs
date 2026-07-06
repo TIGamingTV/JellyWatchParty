@@ -1,9 +1,9 @@
 using MediaBrowser.Model.Plugins;
 
-namespace OpenWatchParty.Plugin.Configuration;
+namespace JellyWatchParty.Plugin.Configuration;
 
 /// <summary>
-/// Configuration for the OpenWatchParty plugin.
+/// Configuration for the JellyWatchParty plugin.
 /// Provides settings for JWT authentication and session server connection.
 /// </summary>
 public class PluginConfiguration : BasePluginConfiguration
@@ -27,9 +27,9 @@ public class PluginConfiguration : BasePluginConfiguration
     }
 
     /// <summary>
-    /// JWT audience claim. Defaults to "OpenWatchParty".
+    /// JWT audience claim. Defaults to "JellyWatchParty".
     /// </summary>
-    public string JwtAudience { get; set; } = "OpenWatchParty";
+    public string JwtAudience { get; set; } = "JellyWatchParty";
 
     /// <summary>
     /// JWT issuer claim. Defaults to "Jellyfin".

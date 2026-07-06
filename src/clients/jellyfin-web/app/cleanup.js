@@ -1,11 +1,11 @@
 (() => {
-  const OWP = window.OpenWatchParty = window.OpenWatchParty || {};
-  const state = OWP.state;
+  const JWP = window.JellyWatchParty = window.JellyWatchParty || {};
+  const state = JWP.state;
 
   const cleanupPanel = () => {
-    const lc = OWP._lifecycle;
+    const lc = JWP._lifecycle;
     if (lc && lc.panelStopPropagation) {
-      const panel = document.getElementById(OWP.constants.PANEL_ID);
+      const panel = document.getElementById(JWP.constants.PANEL_ID);
       if (panel) {
         panel.removeEventListener('click', lc.panelStopPropagation);
         panel.removeEventListener('mousedown', lc.panelStopPropagation);
@@ -33,7 +33,7 @@
   };
 
   const cleanup = () => {
-    const lc = OWP._lifecycle;
+    const lc = JWP._lifecycle;
     if (lc) lc.clearAllIntervals();
     if (state.pendingActionTimer) {
       clearTimeout(state.pendingActionTimer);
@@ -50,6 +50,6 @@
     state.initialized = false;
   };
 
-  OWP.app = OWP.app || {};
-  Object.assign(OWP.app, { cleanup });
+  JWP.app = JWP.app || {};
+  Object.assign(JWP.app, { cleanup });
 })();

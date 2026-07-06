@@ -1,6 +1,6 @@
 (() => {
-  const OWP = window.OpenWatchParty = window.OpenWatchParty || {};
-  if (OWP.state) return;
+  const JWP = window.JellyWatchParty = window.JellyWatchParty || {};
+  if (JWP.state) return;
 
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const host = window.location.hostname;
@@ -41,11 +41,11 @@
     }
   }
 
-  OWP.constants = {
-    PANEL_ID: 'owp-panel',
-    BTN_ID: 'owp-osd-btn',
-    STYLE_ID: 'owp-style',
-    HOME_SECTION_ID: 'owp-home-section',
+  JWP.constants = {
+    PANEL_ID: 'jwp-panel',
+    BTN_ID: 'jwp-osd-btn',
+    STYLE_ID: 'jwp-style',
+    HOME_SECTION_ID: 'jwp-home-section',
     protocol,
     host,
     DEFAULT_WS_URL: `${protocol}//${host}:3000/ws`,
@@ -77,7 +77,7 @@
     TIME_SYNC_EMA_ALPHA: 0.4     // EMA smoothing coefficient
   };
 
-  OWP.state = {
+  JWP.state = {
     ws: null,
     roomId: '',
     clientId: '',

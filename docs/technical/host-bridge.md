@@ -30,7 +30,7 @@ browser, or Jellyfin Desktop via its native player adapter — see
 ```
 Native session (e.g. Fladder on Android TV)
       │ (Jellyfin server-side playback events only —
-      │  the native client itself does nothing OWP-specific)
+      │  the native client itself does nothing JWP-specific)
       ▼
 ISessionManager (Jellyfin server)
       │ PlaybackStart / PlaybackProgress / PlaybackStopped
@@ -93,7 +93,7 @@ server sends back after `create_room`, and clears it on `room_closed`.
 
 Shared JWT-minting logic used by both the bridge (minting a token for
 the *bridged session's* owner, not the HTTP caller) and the normal
-`/OpenWatchParty/Token` endpoint.
+`/JellyWatchParty/Token` endpoint.
 
 ## REST Endpoints
 
@@ -105,10 +105,10 @@ room.
 
 | Method | Path | Description |
 |--------|------|--------------|
-| `GET` | `/OpenWatchParty/Bridge/Sessions` | Eligible sessions (`sessionId`, `userName`, `deviceName`, `client`, `nowPlayingItemName`) |
-| `GET` | `/OpenWatchParty/Bridge/Status` | Active bridges (`sessionId`, `userName`, `roomId`, `connected`) |
-| `POST` | `/OpenWatchParty/Bridge/{sessionId}/Start` | Start bridging a session in as host; returns the same shape as `Bridge/Status`'s entries |
-| `POST` | `/OpenWatchParty/Bridge/{sessionId}/Stop` | Stop an active bridge, closing its room |
+| `GET` | `/JellyWatchParty/Bridge/Sessions` | Eligible sessions (`sessionId`, `userName`, `deviceName`, `client`, `nowPlayingItemName`) |
+| `GET` | `/JellyWatchParty/Bridge/Status` | Active bridges (`sessionId`, `userName`, `roomId`, `connected`) |
+| `POST` | `/JellyWatchParty/Bridge/{sessionId}/Start` | Start bridging a session in as host; returns the same shape as `Bridge/Status`'s entries |
+| `POST` | `/JellyWatchParty/Bridge/{sessionId}/Stop` | Stop an active bridge, closing its room |
 
 Response fields are camelCase — Jellyfin's controllers don't
 auto-camelCase JSON output, so the controller projects onto anonymous

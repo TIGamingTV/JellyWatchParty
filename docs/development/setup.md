@@ -19,8 +19,8 @@ nav_order: 1
 
 ```bash
 # Clone the repository
-git clone https://github.com/TIGamingTV/OpenWatchParty.git
-cd OpenWatchParty
+git clone https://github.com/TIGamingTV/JellyWatchParty.git
+cd JellyWatchParty
 
 # Configure git hooks (required once after clone)
 just setup
@@ -48,7 +48,7 @@ After running `just up`:
 
 ### 2. Plugin Configuration (Optional)
 
-1. Go to Dashboard > Plugins > OpenWatchParty
+1. Go to Dashboard > Plugins > JellyWatchParty
 2. Configure JWT Secret if testing authentication
 3. Save and restart Jellyfin
 
@@ -61,7 +61,7 @@ After running `just up`:
 ## Project Structure
 
 ```
-OpenWatchParty/
+JellyWatchParty/
 ├── src/
 │   ├── clients/
 │   │   └── jellyfin-web/          # JavaScript client modules
@@ -87,7 +87,7 @@ OpenWatchParty/
 │   │
 │   ├── plugins/
 │   │   └── jellyfin/
-│   │       └── OpenWatchParty/    # C# Jellyfin plugin
+│   │       └── JellyWatchParty/    # C# Jellyfin plugin
 │   │           ├── Plugin.cs
 │   │           ├── Controllers/
 │   │           ├── Configuration/
@@ -229,7 +229,7 @@ Run `just` for a full list (with submodules). Key commands:
 
 ### C# Plugin
 
-1. **Edit files** in `src/plugins/jellyfin/OpenWatchParty/`
+1. **Edit files** in `src/plugins/jellyfin/JellyWatchParty/`
 2. **Build and restart**:
    ```bash
    just rebuild
@@ -269,19 +269,19 @@ just rebuild
 
 1. Open Developer Tools (F12)
 2. Go to Console tab
-3. Filter by "OWP"
+3. Filter by "JWP"
 4. Set breakpoints in Sources tab
 
 **Useful console commands:**
 ```javascript
 // View current state
-console.log(OWP.state);
+console.log(JWP.state);
 
 // Check WebSocket connection
-console.log(OWP.state.ws?.readyState);
+console.log(JWP.state.ws?.readyState);
 
 // View rooms
-console.log(OWP.state.rooms);
+console.log(JWP.state.rooms);
 ```
 
 ### Rust (Server)
@@ -336,7 +336,7 @@ Things to test:
 2. Hard refresh (Ctrl+F5)
 3. Check ETag is changing:
    ```bash
-   curl -I http://localhost:8096/OpenWatchParty/ClientScript
+   curl -I http://localhost:8096/JellyWatchParty/ClientScript
    ```
 
 **Tip:** Use `just watch` to automatically restart Jellyfin when JS files change, avoiding stale cache issues.

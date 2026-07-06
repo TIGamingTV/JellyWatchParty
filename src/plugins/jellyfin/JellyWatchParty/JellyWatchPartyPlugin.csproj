@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
-    <RootNamespace>OpenWatchParty.Plugin</RootNamespace>
+    <RootNamespace>JellyWatchParty.Plugin</RootNamespace>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <Version>1.0.0</Version>
@@ -9,13 +9,13 @@
     <FileVersion>1.0.0.0</FileVersion>
     <Authors>TIGamingTV</Authors>
     <Description>Watch movies together in sync with friends on Jellyfin</Description>
-    <RepositoryUrl>https://github.com/TIGamingTV/OpenWatchParty</RepositoryUrl>
+    <RepositoryUrl>https://github.com/TIGamingTV/JellyWatchParty</RepositoryUrl>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>CS1591</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="OpenWatchParty.Tests" />
+    <InternalsVisibleTo Include="JellyWatchParty.Tests" />
   </ItemGroup>
 
   <ItemGroup>

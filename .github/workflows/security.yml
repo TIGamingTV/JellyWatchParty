@@ -34,12 +34,12 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build Docker image
-        run: docker build -f infra/docker/server.Dockerfile -t owp-session-server:scan ./src/server
+        run: docker build -f infra/docker/server.Dockerfile -t jwp-session-server:scan ./src/server
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: 'owp-session-server:scan'
+          image-ref: 'jwp-session-server:scan'
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH'

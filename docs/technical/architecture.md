@@ -8,13 +8,13 @@ nav_order: 1
 
 ## System Overview
 
-OpenWatchParty consists of three main components that work together to provide synchronized media playback.
+JellyWatchParty consists of three main components that work together to provide synchronized media playback.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                           Jellyfin Server                                │
 │  ┌─────────────────────────────────────────────────────────────────┐    │
-│  │                    OpenWatchParty Plugin (C#)                    │    │
+│  │                    JellyWatchParty Plugin (C#)                    │    │
 │  │  ┌─────────────────┐  ┌─────────────────┐  ┌────────────────┐   │    │
 │  │  │  ClientScript   │  │  Configuration  │  │   JWT Token    │   │    │
 │  │  │    Endpoint     │  │      Page       │  │    Endpoint    │   │    │
@@ -52,8 +52,8 @@ OpenWatchParty consists of three main components that work together to provide s
 The plugin integrates with Jellyfin's plugin system.
 
 **Responsibilities:**
-- Serve the client JS loader (`/OpenWatchParty/ClientScript`) and each
-  individual module it fetches (`/OpenWatchParty/Client/{path}`)
+- Serve the client JS loader (`/JellyWatchParty/ClientScript`) and each
+  individual module it fetches (`/JellyWatchParty/Client/{path}`)
 - Provide configuration UI for JWT settings
 - Generate JWT tokens for authenticated users
 - Handle HTTP caching with ETag support
@@ -62,14 +62,14 @@ The plugin integrates with Jellyfin's plugin system.
 
 **Files:**
 - `Plugin.cs` - Plugin entry point, configuration loading
-- `OpenWatchPartyController.cs` - REST API endpoints
+- `JellyWatchPartyController.cs` - REST API endpoints
 - `PluginConfiguration.cs` - Configuration model
 - `Services/HostBridgeManager.cs`, `Services/SessionHostBridge.cs`,
   `Services/SessionServerAuth.cs` - native-client host bridging (see
   [Host Bridge](host-bridge.md))
 - `Web/configPage.html` - Admin configuration page
 - `Web/plugin.js` - Loader that dynamically fetches each client module
-  from `/OpenWatchParty/Client/{path}` (not a pre-bundled script)
+  from `/JellyWatchParty/Client/{path}` (not a pre-bundled script)
 
 **Note:** the plugin backend itself makes no outbound network calls to
 the session server for the normal browser flow — it only ever hands the
@@ -265,7 +265,7 @@ Room {
 ### Client State
 
 ```javascript
-OWP.state = {
+JWP.state = {
   ws: WebSocket,
   roomId: string,
   clientId: string,

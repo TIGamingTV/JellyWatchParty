@@ -4,20 +4,20 @@ using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
-using OpenWatchParty.Plugin.Configuration;
-using OpenWatchParty.Plugin.Services;
+using JellyWatchParty.Plugin.Configuration;
+using JellyWatchParty.Plugin.Services;
 
-namespace OpenWatchParty.Plugin.Controllers;
+namespace JellyWatchParty.Plugin.Controllers;
 
 /// <summary>
-/// Controller for OpenWatchParty plugin endpoints.
+/// Controller for JellyWatchParty plugin endpoints.
 /// Provides client script serving and JWT token generation for watch party sessions.
 /// </summary>
 [ApiController]
-[Route("OpenWatchParty")]
-public class OpenWatchPartyController : ControllerBase
+[Route("JellyWatchParty")]
+public class JellyWatchPartyController : ControllerBase
 {
-    private readonly ILogger<OpenWatchPartyController> _logger;
+    private readonly ILogger<JellyWatchPartyController> _logger;
 
     // Rate limiting: max 30 tokens per minute per user (allows for reconnections)
     private const int MaxTokensPerMinute = 30;
@@ -36,7 +36,7 @@ public class OpenWatchPartyController : ControllerBase
     /// </summary>
     /// <param name="logger">The logger instance for this controller.</param>
     /// <param name="hostBridgeManager">Manages native-client host bridges.</param>
-    public OpenWatchPartyController(ILogger<OpenWatchPartyController> logger, HostBridgeManager hostBridgeManager)
+    public JellyWatchPartyController(ILogger<JellyWatchPartyController> logger, HostBridgeManager hostBridgeManager)
     {
         _logger = logger;
         _hostBridgeManager = hostBridgeManager;
@@ -47,8 +47,8 @@ public class OpenWatchPartyController : ControllerBase
     /// </summary>
     private static (string Content, string ETag) LoadScriptFromResource()
     {
-        var assembly = typeof(OpenWatchPartyController).Assembly;
-        var resourceName = "OpenWatchParty.Plugin.Web.plugin.js";
+        var assembly = typeof(JellyWatchPartyController).Assembly;
+        var resourceName = "JellyWatchParty.Plugin.Web.plugin.js";
         using var stream = assembly.GetManifestResourceStream(resourceName);
         if (stream == null)
         {
@@ -62,7 +62,7 @@ public class OpenWatchPartyController : ControllerBase
     }
 
     /// <summary>
-    /// Returns the OpenWatchParty client JavaScript.
+    /// Returns the JellyWatchParty client JavaScript.
     /// Supports ETag caching for efficient client-side caching.
     /// </summary>
     /// <returns>The JavaScript client script.</returns>
@@ -88,7 +88,7 @@ public class OpenWatchPartyController : ControllerBase
     }
 
     /// <summary>
-    /// Returns an OpenWatchParty client module JavaScript file from embedded resources.
+    /// Returns an JellyWatchParty client module JavaScript file from embedded resources.
     /// This avoids relying on Jellyfin's /web/plugins static path.
     /// </summary>
     /// <param name="path">Relative module path, e.g. "state.js" or "ui/render.js".</param>
@@ -136,8 +136,8 @@ public class OpenWatchPartyController : ControllerBase
 
     private static (string Content, string ETag) LoadClientModuleFromResource(string normalizedPath)
     {
-        var assembly = typeof(OpenWatchPartyController).Assembly;
-        var resourceName = "OpenWatchParty.Plugin.Web." + normalizedPath.Replace('/', '.');
+        var assembly = typeof(JellyWatchPartyController).Assembly;
+        var resourceName = "JellyWatchParty.Plugin.Web." + normalizedPath.Replace('/', '.');
 
         using var stream = assembly.GetManifestResourceStream(resourceName)
             ?? throw new FileNotFoundException($"Embedded resource '{resourceName}' not found");
@@ -161,7 +161,7 @@ public class OpenWatchPartyController : ControllerBase
         return Ok(new
         {
             id = Plugin.PluginGuid,
-            name = Plugin.Instance?.Name ?? "OpenWatchParty",
+            name = Plugin.Instance?.Name ?? "JellyWatchParty",
             version = Plugin.PluginVersion
         });
     }
@@ -281,9 +281,9 @@ public class OpenWatchPartyController : ControllerBase
     }
 
     /// <summary>
-    /// Lists Jellyfin sessions eligible to be bridged in as an OpenWatchParty
+    /// Lists Jellyfin sessions eligible to be bridged in as an JellyWatchParty
     /// room host (i.e. sessions currently playing something), for the
-    /// in-player OpenWatchParty widget's host picker. Any logged-in user can
+    /// in-player JellyWatchParty widget's host picker. Any logged-in user can
     /// see this list and start/stop a bridge — session info (username,
     /// device, now-playing title) is not treated as private within a server.
     /// </summary>
@@ -323,7 +323,7 @@ public class OpenWatchPartyController : ControllerBase
 
     /// <summary>
     /// Starts bridging the given Jellyfin session's playback into a new
-    /// OpenWatchParty room, with that session as the room's host.
+    /// JellyWatchParty room, with that session as the room's host.
     /// </summary>
     /// <param name="sessionId">The Jellyfin session identifier to bridge.</param>
     [HttpPost("Bridge/{sessionId}/Start")]
@@ -352,7 +352,7 @@ public class OpenWatchPartyController : ControllerBase
 
     /// <summary>
     /// Stops an active host bridge for the given Jellyfin session, closing
-    /// the OpenWatchParty room it was hosting.
+    /// the JellyWatchParty room it was hosting.
     /// </summary>
     /// <param name="sessionId">The Jellyfin session identifier to stop bridging.</param>
     [HttpPost("Bridge/{sessionId}/Stop")]

@@ -15,13 +15,13 @@ nav_order: 1
 
 ## Quick Start (Docker)
 
-The easiest way to run OpenWatchParty is with Docker Compose.
+The easiest way to run JellyWatchParty is with Docker Compose.
 
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/TIGamingTV/OpenWatchParty.git
-cd OpenWatchParty
+git clone https://github.com/TIGamingTV/JellyWatchParty.git
+cd JellyWatchParty
 ```
 
 ### 2. Start Services
@@ -38,7 +38,7 @@ This starts:
 
 #### Option A: Automatic Injection (Recommended)
 
-Install [jellyfin-plugin-file-transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) and restart Jellyfin. OpenWatchParty will automatically register a transformation that injects the client script into `index.html` — no configuration needed.
+Install [jellyfin-plugin-file-transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) and restart Jellyfin. JellyWatchParty will automatically register a transformation that injects the client script into `index.html` — no configuration needed.
 
 #### Option B: Manual (Custom HTML)
 
@@ -47,14 +47,14 @@ Install [jellyfin-plugin-file-transformation](https://github.com/IAmParadox27/je
 3. Scroll to **Custom HTML** (Branding section)
 4. Add this line to the "Custom HTML body" field:
    ```html
-   <script src="../OpenWatchParty/ClientScript"></script>
+   <script src="../JellyWatchParty/ClientScript"></script>
    ```
 5. Click **Save**
 6. Hard refresh your browser (Ctrl+F5)
 
 ### 4. Configure the Plugin (Optional)
 
-1. Go to **Dashboard** > **Plugins** > **OpenWatchParty**
+1. Go to **Dashboard** > **Plugins** > **JellyWatchParty**
 2. Set a JWT Secret (min 32 characters) for authentication
 3. Click **Save**
 
@@ -69,36 +69,36 @@ Use the official image from GitHub Container Registry:
 ```bash
 # Latest stable release
 docker run -d \
-  --name owp-session \
+  --name jwp-session \
   -p 3000:3000 \
   -e ALLOWED_ORIGINS="http://localhost:8096" \
-  ghcr.io/tigamingtv/owp-session-server:latest
+  ghcr.io/tigamingtv/jwp-session-server:latest
 
 # Or use a specific version
 docker run -d \
-  --name owp-session \
+  --name jwp-session \
   -p 3000:3000 \
-  ghcr.io/tigamingtv/owp-session-server:v0.1.0
+  ghcr.io/tigamingtv/jwp-session-server:v0.1.0
 
 # Or use the beta (latest from main branch)
 docker run -d \
-  --name owp-session \
+  --name jwp-session \
   -p 3000:3000 \
-  ghcr.io/tigamingtv/owp-session-server:beta
+  ghcr.io/tigamingtv/jwp-session-server:beta
 ```
 
 #### Option B: Build from Source (Docker)
 
 ```bash
 # Build the image
-docker build -t owp-session-server ./src/server
+docker build -t jwp-session-server ./src/server
 
 # Run the container
 docker run -d \
-  --name owp-session \
+  --name jwp-session \
   -p 3000:3000 \
   -e ALLOWED_ORIGINS="http://localhost:8096" \
-  owp-session-server
+  jwp-session-server
 ```
 
 #### Option C: Build from Source (Native)
@@ -121,10 +121,10 @@ Install directly from Jellyfin's plugin interface:
 1. Go to **Dashboard** > **Plugins** > **Repositories**
 2. Click **Add** and enter:
    ```
-   https://tigamingtv.github.io/OpenWatchParty/jellyfin-plugin-repo/manifest.json
+   https://tigamingtv.github.io/JellyWatchParty/jellyfin-plugin-repo/manifest.json
    ```
 3. Go to **Catalog** tab
-4. Find **OpenWatchParty** and click **Install**
+4. Find **JellyWatchParty** and click **Install**
 5. Restart Jellyfin
 6. Enable the client script (see Quick Start step 3)
 
@@ -134,8 +134,8 @@ This method provides automatic update notifications when new versions are releas
 
 1. **Download the Plugin**
 
-   Get the latest release from the [releases page](https://github.com/TIGamingTV/OpenWatchParty/releases):
-   - `OpenWatchParty-vX.Y.Z.zip`
+   Get the latest release from the [releases page](https://github.com/TIGamingTV/JellyWatchParty/releases):
+   - `JellyWatchParty-vX.Y.Z.zip`
 
 2. **Install to Jellyfin**
 
@@ -143,14 +143,14 @@ This method provides automatic update notifications when new versions are releas
 
    ```bash
    # Linux (Docker)
-   unzip OpenWatchParty-v0.1.0.zip -d /tmp/owp
-   docker cp /tmp/owp/. jellyfin:/config/plugins/OpenWatchParty/
+   unzip JellyWatchParty-v0.1.0.zip -d /tmp/jwp
+   docker cp /tmp/jwp/. jellyfin:/config/plugins/JellyWatchParty/
 
    # Linux (native)
-   sudo unzip OpenWatchParty-v0.1.0.zip -d /var/lib/jellyfin/plugins/OpenWatchParty/
+   sudo unzip JellyWatchParty-v0.1.0.zip -d /var/lib/jellyfin/plugins/JellyWatchParty/
 
    # Windows
-   # Extract to: C:\ProgramData\Jellyfin\Server\plugins\OpenWatchParty\
+   # Extract to: C:\ProgramData\Jellyfin\Server\plugins\JellyWatchParty\
    ```
 
 3. **Restart Jellyfin**
@@ -181,14 +181,14 @@ curl http://localhost:3000/health
 ### Check Plugin
 
 1. Go to **Dashboard** > **Plugins**
-2. "OpenWatchParty" should appear in the plugin list
+2. "JellyWatchParty" should appear in the plugin list
 3. Check the logs for startup messages:
    ```
-   [OpenWatchParty] JWT authentication is enabled.
+   [JellyWatchParty] JWT authentication is enabled.
    ```
    or
    ```
-   [OpenWatchParty] JwtSecret is not configured. Authentication is DISABLED.
+   [JellyWatchParty] JwtSecret is not configured. Authentication is DISABLED.
    ```
 
 ### Test the UI
@@ -217,7 +217,7 @@ docker run -d \
   -e ALLOWED_ORIGINS="https://jellyfin.example.com" \
   -e JWT_SECRET="your-32-character-secret-key-here" \
   -e LOG_LEVEL="debug" \
-  ghcr.io/tigamingtv/owp-session-server:latest
+  ghcr.io/tigamingtv/jwp-session-server:latest
 ```
 
 ## Firewall Configuration

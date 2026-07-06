@@ -1,7 +1,7 @@
-using OpenWatchParty.Plugin.Configuration;
+using JellyWatchParty.Plugin.Configuration;
 using Xunit;
 
-namespace OpenWatchParty.Plugin.Tests;
+namespace JellyWatchParty.Plugin.Tests;
 
 /// <summary>
 /// Tests for PluginConfiguration validation and clamping behavior.
@@ -24,10 +24,10 @@ public class PluginConfigurationTests
     }
 
     [Fact]
-    public void JwtAudience_DefaultIsOpenWatchParty()
+    public void JwtAudience_DefaultIsJellyWatchParty()
     {
         var config = new PluginConfiguration();
-        Assert.Equal("OpenWatchParty", config.JwtAudience);
+        Assert.Equal("JellyWatchParty", config.JwtAudience);
     }
 
     [Fact]

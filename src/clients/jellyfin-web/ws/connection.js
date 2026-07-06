@@ -1,10 +1,10 @@
 (() => {
-  const OWP = window.OpenWatchParty = window.OpenWatchParty || {};
-  const actions = OWP.actions = OWP.actions || {};
-  const state = OWP.state;
-  const utils = OWP.utils;
-  const ui = OWP.ui;
-  const { DEFAULT_WS_URL, RECONNECT_BASE_MS, RECONNECT_MAX_MS, PING_INIT_MS, PING_STABLE_MS, PING_STABLE_AFTER } = OWP.constants;
+  const JWP = window.JellyWatchParty = window.JellyWatchParty || {};
+  const actions = JWP.actions = JWP.actions || {};
+  const state = JWP.state;
+  const utils = JWP.utils;
+  const ui = JWP.ui;
+  const { DEFAULT_WS_URL, RECONNECT_BASE_MS, RECONNECT_MAX_MS, PING_INIT_MS, PING_STABLE_MS, PING_STABLE_AFTER } = JWP.constants;
 
   const CLIENT_ID_STORAGE_KEY = 'owp_persistent_client_id';
 
@@ -39,7 +39,7 @@
   };
 
   const onWsOpen = (token) => {
-    console.log('[OpenWatchParty] WebSocket connected');
+    console.log('[JellyWatchParty] WebSocket connected');
     state.isConnecting = false;
     state.reconnectAttempts = 0;
     if (utils.flushLogBuffer) utils.flushLogBuffer();
@@ -56,7 +56,7 @@
   };
 
   const onWsClose = (e) => {
-    console.log('[OpenWatchParty] WebSocket closed:', e.code, e.reason);
+    console.log('[JellyWatchParty] WebSocket closed:', e.code, e.reason);
     state.isConnecting = false;
     state.successfulPings = 0;
     state.timeSyncSamples = [];
@@ -67,15 +67,15 @@
         RECONNECT_MAX_MS
       );
       state.reconnectAttempts++;
-      console.log(`[OpenWatchParty] Reconnecting in ${delay}ms (attempt ${state.reconnectAttempts})`);
+      console.log(`[JellyWatchParty] Reconnecting in ${delay}ms (attempt ${state.reconnectAttempts})`);
       setTimeout(connect, delay);
     }
   };
 
   const handleMessage = (msg) => {
     const video = utils.getVideo();
-    console.log('[OpenWatchParty] Received:', msg.type, msg);
-    const h = OWP._wsHandlers;
+    console.log('[JellyWatchParty] Received:', msg.type, msg);
+    const h = JWP._wsHandlers;
     switch (msg.type) {
       case 'room_list': h.handleRoomList(msg); break;
       case 'client_hello': h.handleClientHello(msg); break;
@@ -87,18 +87,18 @@
       case 'player_event': h.handlePlayerEvent(msg, video); break;
       case 'state_update': h.handleStateUpdate(msg, video); break;
       case 'pong': h.handlePong(msg); break;
-      case 'chat_message': if (OWP.chat && msg.payload) OWP.chat.receive(msg); break;
+      case 'chat_message': if (JWP.chat && msg.payload) JWP.chat.receive(msg); break;
       case 'error': h.handleError(msg); break;
     }
   };
 
   const connect = async () => {
     if (state.isConnecting) {
-      console.log('[OpenWatchParty] Connection already in progress, skipping');
+      console.log('[JellyWatchParty] Connection already in progress, skipping');
       return;
     }
     if (state.ws && state.ws.readyState === WebSocket.OPEN) {
-      console.log('[OpenWatchParty] Already connected, skipping');
+      console.log('[JellyWatchParty] Already connected, skipping');
       return;
     }
     state.isConnecting = true;
@@ -115,20 +115,20 @@
     }
     const wsUrl = state.wsUrl || DEFAULT_WS_URL;
     const fullWsUrl = withClientId(wsUrl, getPersistentClientId());
-    console.log('[OpenWatchParty] Connecting to WebSocket:', fullWsUrl);
+    console.log('[JellyWatchParty] Connecting to WebSocket:', fullWsUrl);
     if (wsUrl.startsWith('ws://') && window.location.protocol === 'https:') {
-      console.warn('[OpenWatchParty] WARNING: Using insecure WebSocket (ws://) on HTTPS page. Data may be intercepted.');
+      console.warn('[JellyWatchParty] WARNING: Using insecure WebSocket (ws://) on HTTPS page. Data may be intercepted.');
     }
     try {
       state.ws = new WebSocket(fullWsUrl);
     } catch (err) {
-      console.error('[OpenWatchParty] Failed to create WebSocket:', err);
+      console.error('[JellyWatchParty] Failed to create WebSocket:', err);
       state.isConnecting = false;
       return;
     }
     state.ws.onopen = () => onWsOpen(token);
     state.ws.onerror = (err) => {
-      console.error('[OpenWatchParty] WebSocket error:', err);
+      console.error('[JellyWatchParty] WebSocket error:', err);
       state.isConnecting = false;
     };
     state.ws.onclose = onWsClose;
@@ -139,7 +139,7 @@
           handleMessage(msg);
         }
       } catch (err) {
-        console.error('[OpenWatchParty] Failed to parse message:', err.message, 'Data:', e.data?.substring?.(0, 100));
+        console.error('[JellyWatchParty] Failed to parse message:', err.message, 'Data:', e.data?.substring?.(0, 100));
       }
     };
   };

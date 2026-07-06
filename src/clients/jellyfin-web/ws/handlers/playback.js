@@ -1,10 +1,10 @@
 (() => {
-  const OWP = window.OpenWatchParty = window.OpenWatchParty || {};
-  const h = OWP._wsHandlers = OWP._wsHandlers || {};
-  const state = OWP.state;
-  const utils = OWP.utils;
-  const ui = OWP.ui;
-  const { SEEK_THRESHOLD } = OWP.constants;
+  const JWP = window.JellyWatchParty = window.JellyWatchParty || {};
+  const h = JWP._wsHandlers = JWP._wsHandlers || {};
+  const state = JWP.state;
+  const utils = JWP.utils;
+  const ui = JWP.ui;
+  const { SEEK_THRESHOLD } = JWP.constants;
 
   const handlePlayerPlay = (msg, video) => {
     state.lastSyncPlayState = 'playing';
@@ -51,7 +51,7 @@
     const hostPlayState = msg.payload.play_state || 'paused';
     state.lastSyncPlayState = hostPlayState;
     if (hostPlayState === 'playing') {
-      video.currentTime = msg.payload.position + (OWP.constants.SYNC_LEAD_MS / 1000);
+      video.currentTime = msg.payload.position + (JWP.constants.SYNC_LEAD_MS / 1000);
       state.lastSyncServerTs = utils.getServerNow();
       state.lastSyncPosition = msg.payload.position;
       state.syncCooldownUntil = utils.nowMs() + 2000;

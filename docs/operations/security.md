@@ -8,7 +8,7 @@ nav_order: 4
 
 ## Overview
 
-OpenWatchParty includes several security features to protect your installation:
+JellyWatchParty includes several security features to protect your installation:
 
 - **JWT Authentication** - Token-based access control
 - **CORS Protection** - Origin validation
@@ -36,7 +36,7 @@ openssl rand -base64 32
 
 #### 2. Configure Plugin
 
-1. Go to **Dashboard** > **Plugins** > **OpenWatchParty**
+1. Go to **Dashboard** > **Plugins** > **JellyWatchParty**
 2. Enter the secret in **JWT Secret**
 3. Click **Save**
 
@@ -303,14 +303,14 @@ It's important to understand the scope of JWT authentication. While it verifies 
 JWT authentication operates on a **trust boundary at the Jellyfin level**:
 
 ```
-Internet → [Jellyfin Auth] → Trusted Zone → [OpenWatchParty]
+Internet → [Jellyfin Auth] → Trusted Zone → [JellyWatchParty]
                 ↑                               ↑
            Auth boundary              All users equally trusted
 ```
 
 **Implications:**
-- If a user can log into Jellyfin, they can use OpenWatchParty
-- There's no additional access control layer within OpenWatchParty
+- If a user can log into Jellyfin, they can use JellyWatchParty
+- There's no additional access control layer within JellyWatchParty
 - Restrict Jellyfin access to control who can use watch parties
 
 ### Recommendations
@@ -409,7 +409,7 @@ services:
 ## Security Updates
 
 Stay informed about security updates:
-- Watch the [GitHub repository](https://github.com/TIGamingTV/OpenWatchParty)
+- Watch the [GitHub repository](https://github.com/TIGamingTV/JellyWatchParty)
 - Check release notes for security fixes
 - Update promptly when security patches are available
 - Monitor the Security tab for vulnerability alerts

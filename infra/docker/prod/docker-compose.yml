@@ -5,7 +5,7 @@ services:
       dockerfile: ../../infra/docker/server.Dockerfile
       args:
         BUILD_MODE: release
-    container_name: owp-session-server
+    container_name: jwp-session-server
     ports:
       - "${SESSION_SERVER_PORT:-3000}:3000"
     environment:
@@ -13,7 +13,7 @@ services:
       - PORT=${PORT:-3000}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:8096,https://localhost:8096}
       - JWT_SECRET=${JWT_SECRET:-}
-      - JWT_AUDIENCE=${JWT_AUDIENCE:-OpenWatchParty}
+      - JWT_AUDIENCE=${JWT_AUDIENCE:-JellyWatchParty}
       - JWT_ISSUER=${JWT_ISSUER:-Jellyfin}
     deploy:
       resources:
@@ -36,8 +36,8 @@ services:
     profiles:
       - tools
     volumes:
-      - ../../../src/plugins/jellyfin/OpenWatchParty:/src
+      - ../../../src/plugins/jellyfin/JellyWatchParty:/src
     environment:
       - HOME=/tmp
       - DOTNET_CLI_HOME=/tmp/.dotnet
-    command: dotnet publish -c Release -o /src/dist OpenWatchPartyPlugin.csproj
+    command: dotnet publish -c Release -o /src/dist JellyWatchPartyPlugin.csproj

@@ -1,25 +1,25 @@
-title: OpenWatchParty
+title: JellyWatchParty
 description: Synchronized watch parties for Jellyfin
 remote_theme: just-the-docs/just-the-docs@v0.10.0
 
 # GitHub repository
-repository: TIGamingTV/OpenWatchParty
+repository: TIGamingTV/JellyWatchParty
 
 # For local development only (overridden by GitHub Actions)
-baseurl: "/OpenWatchParty"
+baseurl: "/JellyWatchParty"
 
 # Aux links (top right)
 aux_links:
   "GitHub":
-    - "https://github.com/TIGamingTV/OpenWatchParty"
+    - "https://github.com/TIGamingTV/JellyWatchParty"
 
 aux_links_new_tab: true
 
 # Footer
-footer_content: "OpenWatchParty - Synchronized watch parties for Jellyfin"
+footer_content: "JellyWatchParty - Synchronized watch parties for Jellyfin"
 
 # Color scheme (light/dark)
-color_scheme: owp
+color_scheme: jwp
 
 # Search
 search_enabled: true

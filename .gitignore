@@ -12,10 +12,10 @@ __pycache__/
 # .NET build artifacts
 bin/
 obj/
-src/plugins/jellyfin/OpenWatchParty/dist/
-src/plugins/jellyfin/OpenWatchParty/refs/
-src/plugins/jellyfin/OpenWatchParty/Web/*
-!src/plugins/jellyfin/OpenWatchParty/Web/configPage.html
+src/plugins/jellyfin/JellyWatchParty/dist/
+src/plugins/jellyfin/JellyWatchParty/refs/
+src/plugins/jellyfin/JellyWatchParty/Web/*
+!src/plugins/jellyfin/JellyWatchParty/Web/configPage.html
 
 # Rust build artifacts
 src/server/target/
