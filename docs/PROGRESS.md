@@ -1531,3 +1531,56 @@ verified**: live re-test against a real guest client actually
 controlling playback and the host's screen following — this fix is
 reasoned through carefully (see above) but, like the previous entry,
 hasn't been exercised in a real browser as of this writing.
+
+## Round 20 — Democratic mode pulled back out, kept in reserve for later
+
+The user decided not to carry democratic mode forward for now — chat
+history, room passwords, and automatic host transfer were confirmed
+working and stay; democratic mode is removed, not because it was
+proven broken (the isHost-gating fix above was reasoned through
+carefully but never got a live re-test), but because it's not
+something they want live right now.
+
+**What was removed**: `Room.democratic_mode`, the
+`toggle_democratic_mode`/`democratic_mode_changed` wire messages and
+their handler (`ws/handlers/misc.rs::handle_toggle_democratic_mode`),
+the one-line authority check in `ws/handlers/playback.rs`, the
+client-side toggle checkbox in `ui/render.js`, `utils/misc.js`'s
+`canControlPlayback()` and its five call sites in `playback/bind.js`,
+and — since it only existed to make democratic mode's guest-to-host
+follower direction work — the `isHost`-gate removal from
+`ws/handlers/playback.js::handlePlayerEvent`,
+`ws/handlers/sync.js::handleStateUpdate`, `playback/sync.js::syncLoop`,
+and the sync-loop interval gate in `app/lifecycle.js` (all reverted
+back to their pre-democratic-mode form). Docs (`protocol.md`,
+`architecture.md`, `client.md`) had the shipped-feature sections
+removed; `features.md` and `faq.md` moved democratic mode back to
+"Planned" in the roadmap, matching their original pre-Round-19 wording,
+rather than dropping it from the roadmap entirely.
+
+Several of the touched files (`playback/bind.js`, `utils/misc.js`,
+`ws/handlers/playback.js`, `app/lifecycle.js`, `playback/sync.js`,
+`state.js`, `tests/sync.test.js`) were diffed against their state
+immediately before Round 19's `4a22945` and confirmed byte-identical
+after this revert — this wasn't a partial/approximate rollback.
+
+**For whoever picks this back up later**: the full original design and
+implementation is not lost, just not currently deployed. See:
+- `4a22945` — original implementation (server authority check, toggle
+  message, client `canControlPlayback()` gating, toggle UI)
+- `212aaac` — the follow-up fix for the isHost-gating bug described in
+  this file's previous entry (needed for the guest-to-host follower
+  direction to actually work)
+- `624bcdc` — this removal, for the exact reverse diff
+
+Re-applying it should mean: re-add the removed pieces from `4a22945`
+and `212aaac` (`git show`/`git cherry-pick -n` against current `HEAD`
+rather than a blind revert-of-the-revert, since chat
+history/passwords/host-transfer have likely moved on by then), then
+actually exercise it end-to-end in a real browser before calling it
+done — that live verification never happened before this removal, and
+is the one gap worth closing on the next attempt.
+
+**Verification**: `cargo fmt --check`/`cargo clippy --all-targets -- -D
+warnings`/`cargo test` clean (102 tests — back to the exact pre-Round-19
+count). `node --check` and `node --test` clean (20/20 — same).
