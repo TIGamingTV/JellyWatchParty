@@ -25,7 +25,6 @@ pub fn build_room_state_payload(room: &Room, participant_count: usize) -> serde_
         "participant_count": participant_count,
         "media_id": room.media_id,
         "chat_history": chat_history,
-        "democratic_mode": room.democratic_mode,
     })
 }
 
@@ -158,7 +157,7 @@ mod tests {
     }
 
     #[test]
-    fn room_state_payload_includes_chat_history_and_democratic_mode() {
+    fn room_state_payload_includes_chat_history() {
         let mut room = test_helpers::create_room("r1", "host1");
         room.chat_history.push_back(crate::types::ChatHistoryEntry {
             client_id: "host1".to_string(),
@@ -166,11 +165,9 @@ mod tests {
             text: "hi".to_string(),
             server_ts: 123,
         });
-        room.democratic_mode = true;
 
         let payload = build_room_state_payload(&room, 2);
         assert_eq!(payload.get("participant_count").unwrap(), 2);
-        assert_eq!(payload.get("democratic_mode").unwrap(), true);
         let history = payload.get("chat_history").unwrap().as_array().unwrap();
         assert_eq!(history.len(), 1);
         assert_eq!(history[0].get("text").unwrap(), "hi");
@@ -206,7 +203,6 @@ mod tests {
                 last_state_ts: 0,
                 last_command_ts: 0,
                 chat_history: VecDeque::new(),
-                democratic_mode: false,
                 password_hash: None,
             },
         );
@@ -227,7 +223,6 @@ mod tests {
                 last_state_ts: 0,
                 last_command_ts: 0,
                 chat_history: VecDeque::new(),
-                democratic_mode: false,
                 password_hash: None,
             },
         );

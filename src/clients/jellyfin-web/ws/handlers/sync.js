@@ -15,7 +15,6 @@
       state.clientId = msg.client;
     }
     state.isHost = (msg.payload.host_id === state.clientId);
-    state.democraticMode = !!msg.payload.democratic_mode;
     if (OWP.chat && Array.isArray(msg.payload.chat_history)) {
       OWP.chat.hydrate(msg.payload.chat_history);
     }
@@ -78,11 +77,7 @@
   };
 
   h.handleStateUpdate = (msg, video) => {
-    // Same reasoning as handlePlayerEvent (ws/handlers/playback.js): the
-    // server never echoes state_update back to its sender, so no
-    // state.isHost gate is needed — the host must also follow a guest's
-    // updates once democratic mode is on.
-    if (!video) return;
+    if (state.isHost || !video) return;
     if (msg.payload) {
       state.lastSyncPlayState = msg.payload.play_state || state.lastSyncPlayState;
     }

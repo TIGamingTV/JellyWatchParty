@@ -70,7 +70,6 @@ fn build_room(client_id: &str, host_name: &str, payload: Option<&serde_json::Val
         last_state_ts: now_ms(),
         last_command_ts: 0,
         chat_history: VecDeque::new(),
-        democratic_mode: false,
         password_hash,
     }
 }
@@ -238,9 +237,8 @@ mod tests {
     }
 
     #[test]
-    fn build_room_starts_with_democratic_mode_off_and_empty_history() {
+    fn build_room_starts_with_empty_history() {
         let room = build_room("host-1", "Bob", Some(&serde_json::json!({})));
-        assert!(!room.democratic_mode);
         assert!(room.chat_history.is_empty());
     }
 

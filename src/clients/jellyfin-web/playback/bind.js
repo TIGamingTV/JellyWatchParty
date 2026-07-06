@@ -7,27 +7,19 @@
 
   const sendStateUpdate = (video) => {
     const actions = OWP.actions;
-    if (!utils.canControlPlayback() || !actions || !actions.send) return;
+    if (!state.isHost || !actions || !actions.send) return;
     if (state.isSyncing) return;
     if (utils.isSeeking()) return;
     if (state.isBuffering || !utils.isVideoReady()) return;
     const now = utils.nowMs();
     if (now - state.lastStateSentAt < STATE_UPDATE_MS) return;
     state.lastStateSentAt = now;
-    const playState = video.paused ? 'paused' : 'playing';
-    actions.send('state_update', { position: video.currentTime, play_state: playState });
-    // The server never echoes this back to us, so mirror it locally too —
-    // otherwise, in democratic mode, our own syncLoop() could try to
-    // drift-correct against stale state from whoever controlled playback
-    // before us.
-    state.lastSyncServerTs = utils.getServerNow();
-    state.lastSyncPosition = video.currentTime;
-    state.lastSyncPlayState = playState;
+    actions.send('state_update', { position: video.currentTime, play_state: video.paused ? 'paused' : 'playing' });
   };
 
   const onHostEvent = (action, video) => {
     const actions = OWP.actions;
-    if (!utils.canControlPlayback() || !actions || !actions.send || !utils.shouldSend()) return;
+    if (!state.isHost || !actions || !actions.send || !utils.shouldSend()) return;
     if (state.isSyncing) return;
     if (action === 'seek' && !utils.isVideoReady()) return;
     if (action === 'pause') {
@@ -46,17 +38,11 @@
       state.lastSeekSentAt = now;
       state.lastSentPosition = video.currentTime;
     }
-    const playState = video.paused ? 'paused' : 'playing';
     utils.log('HOST', { action, pos: video.currentTime, paused: video.paused });
-    actions.send('player_event', { action, position: video.currentTime, play_state: playState });
+    actions.send('player_event', { action, position: video.currentTime, play_state: video.paused ? 'paused' : 'playing' });
     if (action === 'play' || action === 'pause' || action === 'seek') {
-      actions.send('state_update', { position: video.currentTime, play_state: playState });
+      actions.send('state_update', { position: video.currentTime, play_state: video.paused ? 'paused' : 'playing' });
       state.lastStateSentAt = utils.nowMs();
-      // Mirror locally for the same reason as sendStateUpdate() above —
-      // the server won't echo this back to us.
-      state.lastSyncServerTs = utils.getServerNow();
-      state.lastSyncPosition = video.currentTime;
-      state.lastSyncPlayState = playState;
     }
   };
 
@@ -65,7 +51,7 @@
       waiting: () => {
         state.isBuffering = true;
         utils.log('VIDEO', { event: 'buffering', pos: video.currentTime, readyState: video.readyState });
-        if (utils.canControlPlayback() && OWP.actions && OWP.actions.send) {
+        if (state.isHost && OWP.actions && OWP.actions.send) {
           OWP.actions.send('player_event', { action: 'buffering', position: video.currentTime });
         }
       },
@@ -79,7 +65,7 @@
         state.isBuffering = false;
         if (wasBuffering) {
           utils.log('VIDEO', { event: 'playing', pos: video.currentTime });
-          if (utils.canControlPlayback() && OWP.actions && OWP.actions.send) {
+          if (state.isHost && OWP.actions && OWP.actions.send) {
             OWP.actions.send('player_event', { action: 'play', position: video.currentTime });
           }
         }
@@ -115,7 +101,7 @@
       clearInterval(state.intervals.stateUpdate);
     }
     state.intervals.stateUpdate = setInterval(() => {
-      if (utils.canControlPlayback()) sendStateUpdate(video);
+      if (state.isHost) sendStateUpdate(video);
     }, STATE_UPDATE_MS);
   };
 

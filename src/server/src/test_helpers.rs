@@ -50,7 +50,6 @@ pub fn create_room(room_id: &str, host_id: &str) -> Room {
         last_state_ts: 0,
         last_command_ts: 0,
         chat_history: VecDeque::new(),
-        democratic_mode: false,
         password_hash: None,
     }
 }

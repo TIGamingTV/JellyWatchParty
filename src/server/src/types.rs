@@ -37,9 +37,6 @@ pub struct Room {
     /// aren't missing context (bounded by `MAX_CHAT_HISTORY`).
     #[serde(skip)]
     pub chat_history: VecDeque<ChatHistoryEntry>,
-    /// When true, any room member (not just the host) may issue playback
-    /// commands. Toggled by the host only.
-    pub democratic_mode: bool,
     /// Salt + SHA-256 hash of an optional room password, checked on join.
     /// Never serialized to any client-facing payload.
     #[serde(skip)]
@@ -81,7 +78,6 @@ pub enum ClientMessageType {
     Ping,
     ClientLog,
     ChatMessage,
-    ToggleDemocraticMode,
     #[serde(other)]
     Unknown,
 }
@@ -104,7 +100,6 @@ pub enum ServerMessageType {
     RoomClosed,
     ChatMessage,
     HostChanged,
-    DemocraticModeChanged,
 }
 
 /// Incoming WebSocket message from client
@@ -181,9 +176,6 @@ mod tests {
 
         let json = serde_json::to_string(&ClientMessageType::CreateRoom).unwrap();
         assert_eq!(json, r#""create_room""#);
-
-        let json = serde_json::to_string(&ClientMessageType::ToggleDemocraticMode).unwrap();
-        assert_eq!(json, r#""toggle_democratic_mode""#);
     }
 
     #[test]

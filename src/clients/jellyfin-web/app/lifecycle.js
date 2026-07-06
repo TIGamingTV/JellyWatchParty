@@ -87,11 +87,7 @@
       }
     }, HOME_REFRESH_MS);
     state.intervals.sync = setInterval(() => {
-      // No !state.isHost gate: in democratic mode the host can also be a
-      // follower when someone else is driving playback. syncLoop() itself
-      // no-ops harmlessly when there's no follower-relevant state yet
-      // (see playback/sync.js).
-      if (state.inRoom) {
+      if (state.inRoom && !state.isHost) {
         playback.syncLoop();
       }
     }, SYNC_LOOP_MS);

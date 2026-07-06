@@ -258,7 +258,6 @@ Room {
   last_state_ts: u64
   last_command_ts: u64
   chat_history: VecDeque<ChatHistoryEntry>  // capped at 50, replayed on join/reattach
-  democratic_mode: bool                     // host-toggleable; true lets any participant control playback
   password_hash: Option<(String, String)>   // (salt, hash); never serialized to clients
 }
 ```
