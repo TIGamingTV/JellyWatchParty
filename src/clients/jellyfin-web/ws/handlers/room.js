@@ -62,15 +62,8 @@
       ui.showToast(`${msg.payload.host_name || 'Someone'} is now the host`);
     }
     // Force a full re-render: the fast-render path only checks
-    // state.inRoom, not state.isHost, so host-only UI (Close vs. Leave,
-    // the democratic-mode toggle) won't otherwise flip.
-    ui.render(true);
-  };
-
-  h.handleDemocraticModeChanged = (msg) => {
-    if (!msg.payload) return;
-    state.democraticMode = !!msg.payload.enabled;
-    ui.showToast(state.democraticMode ? 'Democratic mode enabled' : 'Democratic mode disabled');
+    // state.inRoom, not state.isHost, so host-only UI (the Close vs. Leave
+    // button) won't otherwise flip.
     ui.render(true);
   };
 

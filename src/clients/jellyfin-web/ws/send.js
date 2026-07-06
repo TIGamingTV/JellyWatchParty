@@ -41,10 +41,6 @@
     send('join_room', payload, id);
   };
 
-  const setDemocraticMode = (enabled) => {
-    send('toggle_democratic_mode', { enabled: !!enabled });
-  };
-
   const leaveRoom = () => {
     send('leave_room');
     state.inRoom = false;
@@ -66,5 +62,5 @@
     if (panel) panel.classList.add('hide');
   };
 
-  Object.assign(actions, { send, createRoom, joinRoom, leaveRoom, setDemocraticMode });
+  Object.assign(actions, { send, createRoom, joinRoom, leaveRoom });
 })();

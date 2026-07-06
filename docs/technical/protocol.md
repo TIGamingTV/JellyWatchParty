@@ -157,27 +157,6 @@ Leave the current room.
 - If a non-host leaves: broadcast `participants_update`
 - Broadcast `room_list` to all
 
-### `toggle_democratic_mode`
-
-Turn democratic mode on or off for the room (host only).
-
-```json
-{
-  "type": "toggle_democratic_mode",
-  "room": "uuid-room-id",
-  "payload": {
-    "enabled": true
-  },
-  "ts": 1678900000000
-}
-```
-
-| Payload Field | Type | Description |
-|---------------|------|-------------|
-| `enabled` | boolean | When `true`, any room participant may send `player_event`/`state_update` — not just the host. |
-
-**Response:** `democratic_mode_changed` broadcast to the room, or `error` if the sender isn't the host.
-
 ### `ready`
 
 Indicate client is ready to receive playback commands.
@@ -199,7 +178,7 @@ Indicate client is ready to receive playback commands.
 
 ### `player_event`
 
-Send a playback event. Requires being the room host, unless democratic mode is enabled for the room (see `toggle_democratic_mode`), in which case any participant may send this.
+Send a playback event (host only).
 
 ```json
 {
@@ -234,7 +213,7 @@ Send a playback event. Requires being the room host, unless democratic mode is e
 
 ### `state_update`
 
-Periodic playback state update. Same authority rule as `player_event`: host, or any participant once democratic mode is on.
+Periodic playback state update (host only).
 
 ```json
 {
@@ -361,7 +340,6 @@ Full room state. Sent after `create_room` or `join_room`.
       "position": 120.5,
       "play_state": "playing"
     },
-    "democratic_mode": false,
     "chat_history": [
       {
         "client_id": "uuid-sender-id",
@@ -378,7 +356,6 @@ Full room state. Sent after `create_room` or `join_room`.
 
 | Payload Field | Type | Description |
 |---------------|------|-------------|
-| `democratic_mode` | boolean | Whether any participant (not just host) may currently control playback |
 | `chat_history` | array | Up to the last 50 chat messages sent in this room, oldest first — empty for a freshly created room. Replayed on both initial join and reconnect-reattach so late joiners and reconnecting clients aren't missing context. |
 
 Sent after `create_room`, `join_room`, and on reattachment after a
@@ -501,25 +478,9 @@ than closing.
 ```
 
 **Client processing:** update `state.isHost` (compare `payload.host_id`
-to the local `client_id`) and force a full UI re-render — host-only
-affordances (the Close/Leave button, the democratic-mode toggle) only
-update on a forced render, not the normal fast-render path.
-
-### `democratic_mode_changed`
-
-Broadcast whenever the host toggles democratic mode for the room.
-
-```json
-{
-  "type": "democratic_mode_changed",
-  "room": "uuid-room-id",
-  "payload": {
-    "enabled": true
-  },
-  "ts": 1678900000000,
-  "server_ts": 1678900000000
-}
-```
+to the local `client_id`) and force a full UI re-render — the host-only
+Close/Leave button label only updates on a forced render, not the
+normal fast-render path.
 
 ### `pong`
 

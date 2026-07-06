@@ -40,7 +40,7 @@ Since Jellyfin 10.9, plugins cannot automatically inject scripts for security re
 The person who creates the room (the host) controls playback. Their play, pause, and seek actions are mirrored to all participants.
 
 ### Can participants control playback?
-By default, only the host can. The host can turn on "Let everyone control playback" (democratic mode) in the room panel to let any participant control play/pause/seek.
+Not currently. Only the host can control playback. Democratic mode is planned for a future release.
 
 ### What happens if the host leaves?
 If the host's connection just drops briefly (network blip, backgrounded app), the room stays open for 90 seconds waiting for them to reconnect — participants won't notice. If the host doesn't come back within that window (or explicitly leaves) and other participants are still in the room, the earliest-joined remaining participant is automatically promoted to host and the room stays open. The room only closes if no one is left.

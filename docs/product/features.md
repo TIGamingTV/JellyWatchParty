@@ -19,7 +19,6 @@ nav_order: 2
 
 ### Playback Synchronization
 - **Play/Pause sync** - Host controls playback state for all clients
-- **Democratic mode** - Host-toggleable setting letting all participants control playback, not just the host
 - **Seek sync** - Jumping to a position syncs everyone
 - **Position sync** - Continuous updates keep clients aligned
 - **Drift correction** - Automatic playback speed adjustment (0.85x-2.0x), using hysteresis so it only kicks in once drift exceeds 0.3s and stays quiet until it falls back under 0.1s (see [Sync Algorithms](../technical/sync.md))
@@ -115,10 +114,11 @@ Mobile browsers have reduced functionality due to platform restrictions:
 
 ## Known Limitations
 
-1. **Single media** - One media item per room (by design)
-2. **Ephemeral rooms** - Rooms are closed when the host leaves (with no other participants remaining) and doesn't reconnect within 90 seconds, or when the server restarts (by design); if other participants remain, host duties transfer automatically instead — see Automatic host transfer below
-3. **Guests need a browser or Jellyfin Media Player client** - The Watch Party UI (joining, chat, the room list) only exists in the injected web client and Jellyfin Desktop. Hosting is broader: a [Host Bridge](../technical/host-bridge.md) lets any native/TV client (e.g. Fladder on Android TV) act as room host even though it can't run the UI itself — but someone still has to join as a guest from a supported client to actually watch.
-4. **Chat history is capped and in-memory** - The last 50 messages are replayed to joining/reattaching clients, but history is lost when a room closes (rooms are ephemeral by design)
+1. **Host-only control** - Only the host can control playback (democratic mode planned)
+2. **Single media** - One media item per room (by design)
+3. **Ephemeral rooms** - Rooms are closed when the host leaves (with no other participants remaining) and doesn't reconnect within 90 seconds, or when the server restarts (by design); if other participants remain, host duties transfer automatically instead — see Automatic host transfer below
+4. **Guests need a browser or Jellyfin Media Player client** - The Watch Party UI (joining, chat, the room list) only exists in the injected web client and Jellyfin Desktop. Hosting is broader: a [Host Bridge](../technical/host-bridge.md) lets any native/TV client (e.g. Fladder on Android TV) act as room host even though it can't run the UI itself — but someone still has to join as a guest from a supported client to actually watch.
+5. **Chat history is capped and in-memory** - The last 50 messages are replayed to joining/reattaching clients, but history is lost when a room closes (rooms are ephemeral by design)
 
 ## Roadmap
 
@@ -128,14 +128,14 @@ Mobile browsers have reduced functionality due to platform restrictions:
 |---------|----------|--------|
 | Text chat | High | Done |
 | Message history for late joiners | Medium | Done |
-| Democratic mode | Medium | Done |
+| Democratic mode | Medium | Planned |
 | Automatic host transfer | Medium | Done |
 | Room passwords | Low | Done |
 
 ### Feature Descriptions
 
 - **Message history for late joiners** - The last 50 chat messages are replayed to clients joining or reattaching to a room
-- **Democratic mode** - Host-toggleable per-room setting that lets all participants control playback, not just the host
+- **Democratic mode** - Allow all participants to control playback, not just the host
 - **Automatic host transfer** - When the host leaves (or disconnects past the 90s reconnect grace period) with other participants still in the room, the earliest-joined remaining participant is promoted to host instead of closing the room
 - **Room passwords** - Optional password set at room creation; required to join
 
