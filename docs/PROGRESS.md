@@ -1435,3 +1435,50 @@ compile-checked here.
 3. Tier-3 ideas discussed but not built: shareable room join links,
    emoji reactions, a `/metrics` endpoint, subtitle/audio-track sync —
    left as ideas in the plan, not committed work.
+
+**Follow-up — item 1 was tried and hit a real bug, now fixed.** The user
+rebuilt and redeployed (`just rebuild`, confirmed — this round's
+"not browser-verified" caveat about a possible stale build was checked
+and ruled out) and reported that only the democratic-mode checkbox had
+any visible effect; room passwords appeared completely inert, with no
+dialog ever appearing on either create or join. Root cause, confirmed by
+asking what client was under test: **the user is testing in Jellyfin
+Desktop (CEF-based), and `window.prompt()` — used at all three password
+touchpoints (create-room, join-room, and the wrong-password retry) —
+is a silent no-op there.** `window.prompt(...) || ''` then evaluates to
+an empty string with no error and no visible sign anything happened,
+exactly matching the symptom. All server-side Rust code was re-read
+during the investigation and found correct/already tested — this was a
+client-only bug, isolated to the password-prompt UI. This is the same
+category of lesson as Round 17's JSON-casing bug: a change that looks
+correct in code review can still silently fail in one specific client
+this project explicitly supports (Jellyfin Desktop already gets special
+treatment elsewhere, for the native mpv video adapter in
+`utils/video.js`, for exactly the same reason — it isn't a standard
+browser).
+
+**Fix**: added `src/clients/jellyfin-web/ui/modal.js`, a small
+promise-based in-DOM text-entry modal (`ui.promptText()`) following the
+existing toast-overlay pattern in `ui/toasts.js`, and switched all three
+`window.prompt()` call sites onto it (`ui/render.js`'s create-room
+handler, `ui/cards.js`'s `promptJoinWithPassword`, and the
+wrong-password retry it's shared with). Also fixed two smaller gaps
+found in the same pass: home-page room cards (`ui/cards.js::buildCardHtml`)
+had no lock icon for password-protected rooms (the panel's room list
+already had one); and the home-page auto-join flow
+(`app/lifecycle.js`'s `pendingJoinRoomId` handling) called `joinRoom`
+with no password at all, always eating one failed round-trip before the
+wrong-password retry kicked in — it now checks `has_password` up front.
+Being a new file, `ui/modal.js` needed registering in all four places
+this project's client-file list is duplicated (`plugin.js`'s loader,
+`infra/just/common.just`, and both copies in `ci.yml`/`publish.yml`) —
+exactly the Round 6/17 lesson about that duplication, applied again.
+
+**Verification**: `node --check` over every client file (unaffected,
+still clean) and `node --test` (still 20/20, unaffected by this
+UI-only change). **Not verified**: this fix's entire premise is
+"works in an environment where `window.prompt()` didn't" — that
+specifically requires re-testing in Jellyfin Desktop (or another
+CEF-based client), which hasn't happened yet as of this entry. Confirming
+a normal desktop browser still works is a much weaker test and doesn't
+validate the actual fix.
