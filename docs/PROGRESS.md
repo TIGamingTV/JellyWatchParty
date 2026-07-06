@@ -1482,3 +1482,52 @@ specifically requires re-testing in Jellyfin Desktop (or another
 CEF-based client), which hasn't happened yet as of this entry. Confirming
 a normal desktop browser still works is a much weaker test and doesn't
 validate the actual fix.
+
+**Follow-up — confirmed working, and a second real bug found/fixed.**
+The user rebuilt and retested: room passwords, chat history, and
+automatic host transfer all confirmed working end-to-end. Democratic
+mode did not — the toggle itself round-tripped fine (checkbox checks,
+a toast confirms it, `democratic_mode_changed` reaches every client),
+but a guest's playback commands had no visible effect anywhere.
+
+**Root cause**: the client-side code that *applies* an incoming playback
+command — `ws/handlers/playback.js::handlePlayerEvent`,
+`ws/handlers/sync.js::handleStateUpdate`, and the drift-correction loop
+(`playback/sync.js::syncLoop`, plus the interval gate in
+`app/lifecycle.js` that only ever called it for non-hosts) — all
+special-cased `state.isHost` to bail out immediately. That assumption
+predates democratic mode: when only a host could ever send a command,
+the host never needed to also be a follower, and the server's own
+sender-exclusion (it never echoes a message back to whoever sent it)
+meant the host would never receive one anyway, so the gate was
+harmless dead code. Democratic mode broke the assumption — now a guest
+can be the one sending, and the host (along with any other guest) needs
+to actually follow it, which this gate silently prevented. Found by
+re-reading all three client-side receive/sync-loop paths after the
+toggle-roundtrip was confirmed working, which narrowed the bug to
+"something after the message arrives," not the message itself.
+
+**Fix**: removed the `state.isHost` gate from all three receive-side
+locations above — none of them actually need it, since simply
+*receiving* a `player_event`/`state_update` already guarantees someone
+else sent it. Also updated `playback/bind.js` so a client mirrors its
+own sent state (`lastSyncPosition`/`lastSyncServerTs`/`lastSyncPlayState`)
+locally immediately after sending, for the same reason (no echo of your
+own broadcast) — otherwise, taking control back after someone else had
+been driving for a while would briefly drift-correct against stale
+follower state instead of what was just sent. `tests/sync.test.js`'s
+`syncLoop` test that asserted "does nothing when the host" no longer
+held (it was testing the exact assumption just removed) — replaced with
+a test confirming a host now follows another participant's playback
+identically to a guest, plus one confirming the gate removal is a
+no-op for a plain host-only room (no follower state exists yet to
+correct against, so it still stays quiet there — this is what keeps the
+fix a no-behavior-change for the pre-existing, common case).
+
+**Verification**: `node --check` clean, `node --test` 21/21 (up from
+20 — one test split into two to cover both the new and preserved
+behavior), run three times back-to-back with no flakiness. **Not yet
+verified**: live re-test against a real guest client actually
+controlling playback and the host's screen following — this fix is
+reasoned through carefully (see above) but, like the previous entry,
+hasn't been exercised in a real browser as of this writing.

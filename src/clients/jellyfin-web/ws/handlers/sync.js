@@ -78,7 +78,11 @@
   };
 
   h.handleStateUpdate = (msg, video) => {
-    if (state.isHost || !video) return;
+    // Same reasoning as handlePlayerEvent (ws/handlers/playback.js): the
+    // server never echoes state_update back to its sender, so no
+    // state.isHost gate is needed — the host must also follow a guest's
+    // updates once democratic mode is on.
+    if (!video) return;
     if (msg.payload) {
       state.lastSyncPlayState = msg.payload.play_state || state.lastSyncPlayState;
     }

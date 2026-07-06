@@ -14,7 +14,15 @@
     const now = utils.nowMs();
     if (now - state.lastStateSentAt < STATE_UPDATE_MS) return;
     state.lastStateSentAt = now;
-    actions.send('state_update', { position: video.currentTime, play_state: video.paused ? 'paused' : 'playing' });
+    const playState = video.paused ? 'paused' : 'playing';
+    actions.send('state_update', { position: video.currentTime, play_state: playState });
+    // The server never echoes this back to us, so mirror it locally too —
+    // otherwise, in democratic mode, our own syncLoop() could try to
+    // drift-correct against stale state from whoever controlled playback
+    // before us.
+    state.lastSyncServerTs = utils.getServerNow();
+    state.lastSyncPosition = video.currentTime;
+    state.lastSyncPlayState = playState;
   };
 
   const onHostEvent = (action, video) => {
@@ -38,11 +46,17 @@
       state.lastSeekSentAt = now;
       state.lastSentPosition = video.currentTime;
     }
+    const playState = video.paused ? 'paused' : 'playing';
     utils.log('HOST', { action, pos: video.currentTime, paused: video.paused });
-    actions.send('player_event', { action, position: video.currentTime, play_state: video.paused ? 'paused' : 'playing' });
+    actions.send('player_event', { action, position: video.currentTime, play_state: playState });
     if (action === 'play' || action === 'pause' || action === 'seek') {
-      actions.send('state_update', { position: video.currentTime, play_state: video.paused ? 'paused' : 'playing' });
+      actions.send('state_update', { position: video.currentTime, play_state: playState });
       state.lastStateSentAt = utils.nowMs();
+      // Mirror locally for the same reason as sendStateUpdate() above —
+      // the server won't echo this back to us.
+      state.lastSyncServerTs = utils.getServerNow();
+      state.lastSyncPosition = video.currentTime;
+      state.lastSyncPlayState = playState;
     }
   };
 

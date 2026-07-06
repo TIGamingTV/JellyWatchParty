@@ -74,7 +74,12 @@
   };
 
   h.handlePlayerEvent = (msg, video) => {
-    if (state.isHost || !video) return;
+    // No `state.isHost` gate here: the server never echoes a player_event
+    // back to the client that sent it (see ws/handlers/playback.rs), so
+    // simply receiving one always means "someone else sent this, follow
+    // it" — true for a guest and, since democratic mode, also for the
+    // host, who can now be a follower to another participant's command.
+    if (!video) return;
     utils.startSyncing();
     if (msg.payload && typeof msg.payload.position === 'number') {
       const action = msg.payload.action;
