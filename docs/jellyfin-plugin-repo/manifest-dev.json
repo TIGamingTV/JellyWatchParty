@@ -8,12 +8,12 @@
     "category": "General",
     "versions": [
       {
-        "version": "0.0.30",
-        "changelog": "Merge pull request #12 from TIGamingTV/claude/project-improvements-additions-br8ilt\n\nci: fix js-lint glob to check all client JS files; add sync.js drift-correction tests",
+        "version": "0.0.31",
+        "changelog": "Merge pull request #13 from TIGamingTV/claude/project-improvements-additions-br8ilt\n\nClaude/project improvements additions br8ilt",
         "targetAbi": "10.11.11.0",
         "sourceUrl": "https://github.com/TIGamingTV/OpenWatchParty/releases/download/develop-latest/OpenWatchParty-dev.zip",
-        "checksum": "9d8b80ebf48ef900b4ab31ebd3e52f17",
-        "timestamp": "2026-07-06T08:57:36Z"
+        "checksum": "81e682ba08f4cf56b375e1a00a2a424d",
+        "timestamp": "2026-07-06T09:59:17Z"
       }
     ]
   }
