@@ -15,6 +15,7 @@
 ---
 
 JellyWatchParty enables synchronized media playback for [Jellyfin](https://jellyfin.org/). It consists of a **Jellyfin Plugin** (C#) that integrates the UI and a **Session Server** (Rust) that manages rooms and synchronization via WebSocket.
+Forked from https://github.com/mhbxyz/OpenWatchParty
 
 ## Quick Start
 
