@@ -8,12 +8,12 @@
     "category": "General",
     "versions": [
       {
-        "version": "0.0.32",
-        "changelog": "Merge pull request #15 from TIGamingTV/claude/project-improvements-additions-br8ilt\n\nClaude/project improvements additions br8ilt",
+        "version": "0.0.33",
+        "changelog": "Merge pull request #16 from TIGamingTV/claude/project-improvements-additions-br8ilt\n\nClaude/project improvements additions br8ilt",
         "targetAbi": "10.11.11.0",
         "sourceUrl": "https://github.com/TIGamingTV/OpenWatchParty/releases/download/develop-latest/OpenWatchParty-dev.zip",
-        "checksum": "602d7119f8bbcb070df66b8b92af455f",
-        "timestamp": "2026-07-06T11:06:51Z"
+        "checksum": "ccaf1a14b3ef9d87ccb6aad93bdfc9b0",
+        "timestamp": "2026-07-06T11:39:07Z"
       }
     ]
   }
