@@ -64,7 +64,14 @@
             state.pendingJoinRoomId = '';
             setTimeout(() => {
               console.log('[OpenWatchParty] Auto-joining room:', roomId);
-              OWP.actions.joinRoom(roomId);
+              const room = state.rooms.find(r => r.id === roomId);
+              if (room && room.has_password && ui.promptJoinWithPassword) {
+                // Ask up front instead of relying on the wrong_password
+                // error-retry fallback for a room we already know needs one.
+                ui.promptJoinWithPassword(roomId);
+              } else {
+                OWP.actions.joinRoom(roomId);
+              }
             }, 500);
           }
         }

@@ -6,11 +6,16 @@
 
   // Always prompts for a password and joins. Used to retry after the
   // server rejects a join with "wrong_password" (e.g. the room list's
-  // cached has_password was stale, or the user mistyped it).
-  const promptJoinWithPassword = (roomId) => {
+  // cached has_password was stale, or the user mistyped it), and
+  // proactively wherever a room is already known to require one.
+  const promptJoinWithPassword = async (roomId) => {
     if (!OWP.actions || !OWP.actions.joinRoom) return;
-    const password = window.prompt('This room is password-protected. Enter password:') || '';
-    if (!password) return; // user cancelled
+    const password = await ui.promptText({
+      title: 'This room is password-protected. Enter password:',
+      placeholder: 'Password',
+      submitLabel: 'Join'
+    });
+    if (!password) return; // user cancelled or left it blank
     OWP.actions.joinRoom(roomId, password);
   };
 
@@ -45,6 +50,9 @@
   };
 
   const buildCardHtml = (room) => {
+    const lockIcon = room.has_password
+      ? '<span class="material-icons" style="font-size:14px;vertical-align:middle;" aria-hidden="true">lock</span> '
+      : '';
     return `
       <div class="cardBox cardBox-bottompadded">
         <div class="cardScalable">
@@ -66,7 +74,7 @@
           </div>
         </div>
         <div class="cardText cardTextCentered cardText-first owp-card-name">
-          <bdi>${utils.escapeHtml(room.name)}</bdi>
+          <bdi>${lockIcon}${utils.escapeHtml(room.name)}</bdi>
         </div>
         <div class="cardText cardTextCentered cardText-secondary owp-card-media">
           <bdi class="owp-media-title">${room.media_id ? 'Loading...' : 'No media'}</bdi>

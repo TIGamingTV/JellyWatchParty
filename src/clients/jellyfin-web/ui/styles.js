@@ -123,6 +123,21 @@
       from { opacity: 1; transform: translate(-50%, -50%) scale(1); }
       to { opacity: 0; transform: translate(-50%, -50%) scale(0.9); }
     }
+    /* Modal (in-DOM window.prompt() replacement — see ui/modal.js) */
+    .owp-modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+      z-index: 40000; display: flex; align-items: center; justify-content: center;
+      animation: owp-toast-system-in 0.2s ease-out;
+    }
+    .owp-modal {
+      background: rgba(20, 20, 20, 0.98); backdrop-filter: blur(20px);
+      border: 1px solid rgba(255,255,255,0.1); border-radius: 12px;
+      padding: 20px; width: 280px; box-shadow: 0 12px 40px rgba(0,0,0,0.8);
+      color: #fff; font-family: sans-serif;
+    }
+    .owp-modal-title { font-size: 14px; font-weight: bold; margin-bottom: 12px; }
+    .owp-modal-actions { display: flex; gap: 8px; margin-top: 12px; }
+    .owp-modal-actions .owp-btn { flex: 1; }
   `;
 
   const injectStyles = () => {
