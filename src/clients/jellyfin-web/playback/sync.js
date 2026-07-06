@@ -130,11 +130,17 @@
   const syncLoop = () => {
     const video = state.currentVideoElement || utils.getVideo();
     if (!video) return;
-    if (!state.inRoom || state.isHost) {
+    if (!state.inRoom) {
       state.isDriftCorrecting = false;
       if (video.playbackRate !== 1) video.playbackRate = 1;
       return;
     }
+    // No state.isHost gate: in democratic mode the host can be a follower
+    // too. The check below (no follower state yet, or not currently
+    // "playing" per the last message this client received) is what
+    // actually keeps this a no-op for a host that's never received a
+    // broadcast from anyone else — which is every host in non-democratic
+    // rooms, so this is a no-behavior-change no-op for the existing case.
     if (!state.lastSyncServerTs || state.lastSyncPlayState !== 'playing') {
       state.isDriftCorrecting = false;
       if (video.playbackRate !== 1) video.playbackRate = 1;

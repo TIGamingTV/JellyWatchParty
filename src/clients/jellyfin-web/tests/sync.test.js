@@ -118,8 +118,28 @@ describe('playback/sync syncLoop drift correction', () => {
     assert.equal(OWP.state.syncStatus, 'synced');
   });
 
-  it('does nothing when the host (no follower sync applies)', () => {
+  it('a host follows drift correction too, once democratic mode gives it follower state', () => {
+    // Regression test: syncLoop() used to bail out unconditionally whenever
+    // state.isHost was true, which meant a host's own screen never applied
+    // another participant's playback commands once democratic mode let
+    // someone else drive. There's no longer an isHost gate — a host with
+    // valid follower state (set here exactly like a guest's beforeEach
+    // baseline) should drift-correct identically to a non-host.
     OWP.state.isHost = true;
+    video.currentTime = 10.0 - 1.0; // 1s behind -> drift = +1.0
+    OWP.playback.syncLoop();
+    assert.ok(video.playbackRate > 1, 'host should still catch up to another participant\'s playback');
+    assert.equal(OWP.state.isDriftCorrecting, true);
+  });
+
+  it('a host with no follower state yet stays quiet (the ordinary host-only-room case)', () => {
+    // A host that has never received a broadcast from anyone else (true of
+    // every host in a non-democratic room, since the server never echoes a
+    // client's own messages back to it) has no lastSyncServerTs to drift
+    // against, so syncLoop() still safely no-ops — this is what keeps the
+    // isHost-gate removal a no-behavior-change for the existing, common case.
+    OWP.state.isHost = true;
+    OWP.state.lastSyncServerTs = 0;
     video.currentTime = 10.0 - 5.0;
     OWP.playback.syncLoop();
     assert.equal(video.playbackRate, 1);
