@@ -25,7 +25,7 @@ feature/fix branches ──PR──> develop ──PR──> main ──tag─�
 
 ## Versioning
 
-OpenWatchParty uses [Semantic Versioning](https://semver.org/):
+JellyWatchParty uses [Semantic Versioning](https://semver.org/):
 
 ```
 MAJOR.MINOR.PATCH
@@ -107,7 +107,7 @@ cd src/server
 cargo build --release
 
 # C# plugin
-cd src/plugins/jellyfin/OpenWatchParty
+cd src/plugins/jellyfin/JellyWatchParty
 dotnet build -c Release
 ```
 
@@ -116,7 +116,7 @@ dotnet build -c Release
 | Component | Output Location |
 |-----------|-----------------|
 | Session Server | `src/server/target/release/session-server` |
-| Plugin DLL | `src/plugins/jellyfin/OpenWatchParty/bin/Release/net9.0/OpenWatchParty.dll` |
+| Plugin DLL | `src/plugins/jellyfin/JellyWatchParty/bin/Release/net9.0/JellyWatchParty.dll` |
 
 ## Release Steps
 
@@ -216,22 +216,22 @@ Docker images are automatically built and pushed to GitHub Container Registry (G
 
 ```bash
 # Latest stable
-docker pull ghcr.io/tigamingtv/owp-session-server:latest
+docker pull ghcr.io/tigamingtv/jwp-session-server:latest
 
 # Specific version
-docker pull ghcr.io/tigamingtv/owp-session-server:v0.1.0
+docker pull ghcr.io/tigamingtv/jwp-session-server:v0.1.0
 
 # Latest from main
-docker pull ghcr.io/tigamingtv/owp-session-server:beta
+docker pull ghcr.io/tigamingtv/jwp-session-server:beta
 
 # Latest from develop
-docker pull ghcr.io/tigamingtv/owp-session-server:dev
+docker pull ghcr.io/tigamingtv/jwp-session-server:dev
 ```
 
 ### Build Locally (optional)
 
 ```bash
-docker build -t owp-session-server:local ./src/server
+docker build -t jwp-session-server:local ./src/server
 ```
 
 ## Develop Builds
@@ -242,8 +242,8 @@ components without waiting for a tagged release.
 
 | Component | Where it lands | Version scheme |
 |-----------|-----------------|----------------|
-| Session Server | Docker image `ghcr.io/tigamingtv/owp-session-server:dev` | Tag stays `dev`, content changes each push |
-| Jellyfin Plugin | Rolling pre-release [`develop-latest`](https://github.com/TIGamingTV/OpenWatchParty/releases/tag/develop-latest), tracked via `manifest-dev.json` | `0.0.<GitHub run number>` (always increasing, always below `1.0`) |
+| Session Server | Docker image `ghcr.io/tigamingtv/jwp-session-server:dev` | Tag stays `dev`, content changes each push |
+| Jellyfin Plugin | Rolling pre-release [`develop-latest`](https://github.com/TIGamingTV/JellyWatchParty/releases/tag/develop-latest), tracked via `manifest-dev.json` | `0.0.<GitHub run number>` (always increasing, always below `1.0`) |
 
 ### Develop Plugin Channel
 
@@ -252,8 +252,8 @@ plugin repository so they can be installed/updated like a beta channel,
 without touching the stable `manifest.json` feed:
 
 1. Go to Dashboard > Plugins > Repositories
-2. Add: `https://tigamingtv.github.io/OpenWatchParty/jellyfin-plugin-repo/manifest-dev.json`
-3. Go to Catalog > Find "OpenWatchParty (Develop)" > Install
+2. Add: `https://tigamingtv.github.io/JellyWatchParty/jellyfin-plugin-repo/manifest-dev.json`
+3. Go to Catalog > Find "JellyWatchParty (Develop)" > Install
 4. Restart Jellyfin
 
 Because dev versions are always `0.0.x` (below any real `1.x` release), it's
@@ -299,8 +299,8 @@ Users can install the plugin in three ways:
 #### Via Jellyfin UI (Recommended, stable)
 
 1. Go to Dashboard > Plugins > Repositories
-2. Add: `https://tigamingtv.github.io/OpenWatchParty/jellyfin-plugin-repo/manifest.json`
-3. Go to Catalog > Find "OpenWatchParty" > Install
+2. Add: `https://tigamingtv.github.io/JellyWatchParty/jellyfin-plugin-repo/manifest.json`
+3. Go to Catalog > Find "JellyWatchParty" > Install
 4. Restart Jellyfin
 
 #### Via Jellyfin UI (develop/beta channel)
@@ -309,8 +309,8 @@ See [Develop Plugin Channel](#develop-plugin-channel) above.
 
 #### Via Direct Download
 
-1. Go to [Releases](https://github.com/TIGamingTV/OpenWatchParty/releases)
-2. Download `OpenWatchParty-vX.Y.Z.zip`
+1. Go to [Releases](https://github.com/TIGamingTV/JellyWatchParty/releases)
+2. Download `JellyWatchParty-vX.Y.Z.zip`
 3. Extract to Jellyfin plugins folder
 4. Restart Jellyfin
 

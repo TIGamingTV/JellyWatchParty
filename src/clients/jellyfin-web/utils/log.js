@@ -1,7 +1,7 @@
 (() => {
-  const OWP = window.OpenWatchParty = window.OpenWatchParty || {};
-  const utils = OWP.utils = OWP.utils || {};
-  const state = OWP.state;
+  const JWP = window.JellyWatchParty = window.JellyWatchParty || {};
+  const utils = JWP.utils = JWP.utils || {};
+  const state = JWP.state;
 
   const formatLogValue = (k, v) => {
     if (typeof v === 'number') {
@@ -29,7 +29,7 @@
       }));
       return true;
     } catch (e) {
-      console.warn('[OWP] Failed to send log:', e.message);
+      console.warn('[JWP] Failed to send log:', e.message);
       return false;
     }
   };
@@ -48,7 +48,7 @@
   const log = (category, data) => {
     const parts = Object.entries(data).map(([k, v]) => formatLogValue(k, v));
     const message = parts.join(' ');
-    console.log(`[OWP:${category}] ${message}`);
+    console.log(`[JWP:${category}] ${message}`);
 
     const logEntry = { category, message, ts: utils.nowMs() };
 

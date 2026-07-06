@@ -8,17 +8,17 @@ nav_order: 5
 
 ## Overview
 
-The OpenWatchParty plugin integrates with Jellyfin's plugin architecture to serve the client JavaScript and provide configuration management.
+The JellyWatchParty plugin integrates with Jellyfin's plugin architecture to serve the client JavaScript and provide configuration management.
 
 ## Project Structure
 
 ```
 src/plugins/jellyfin/
-├── OpenWatchParty/
+├── JellyWatchParty/
 │   ├── Plugin.cs                     # Plugin entry point
-│   ├── OpenWatchPartyPlugin.csproj   # Project file
+│   ├── JellyWatchPartyPlugin.csproj   # Project file
 │   ├── Controllers/
-│   │   └── OpenWatchPartyController.cs  # REST API endpoints
+│   │   └── JellyWatchPartyController.cs  # REST API endpoints
 │   ├── Configuration/
 │   │   └── PluginConfiguration.cs    # Configuration model
 │   ├── Services/                     # Host Bridge (see host-bridge.md)
@@ -29,7 +29,7 @@ src/plugins/jellyfin/
 │       ├── configPage.html           # Admin configuration page
 │       └── plugin.js                 # Client JS loader (fetches modules
 │                                      # individually, not a pre-bundled script)
-└── OpenWatchParty.Tests/              # xUnit/Moq test project
+└── JellyWatchParty.Tests/              # xUnit/Moq test project
 ```
 
 ## Plugin.cs
@@ -53,11 +53,11 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         // Log JWT configuration status
         if (string.IsNullOrEmpty(Configuration.JwtSecret))
         {
-            _logger.LogWarning("[OpenWatchParty] JwtSecret not configured. Authentication DISABLED.");
+            _logger.LogWarning("[JellyWatchParty] JwtSecret not configured. Authentication DISABLED.");
         }
     }
 
-    public override string Name => "OpenWatchParty";
+    public override string Name => "JellyWatchParty";
     public override Guid Id => new("0f2fd0fd-09ff-4f49-9f1c-4a8f421a4b7d");
 
     public IEnumerable<PluginPageInfo> GetPages()
@@ -66,7 +66,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         {
             new PluginPageInfo
             {
-                Name = "OpenWatchParty",
+                Name = "JellyWatchParty",
                 EmbeddedResourcePath = GetType().Namespace + ".Web.configPage.html"
             }
         };
@@ -78,18 +78,18 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 
 The `Instance` static property follows Jellyfin's standard plugin pattern. It's set once during plugin initialization and provides access to the plugin configuration from controllers.
 
-## OpenWatchPartyController.cs
+## JellyWatchPartyController.cs
 
 ### Description
 ASP.NET Core controller providing REST API endpoints.
 
 ### Endpoints
 
-#### `GET /OpenWatchParty/ClientScript`
+#### `GET /JellyWatchParty/ClientScript`
 
 Serves the client JS *loader* (`plugin.js`) with caching support. The
 loader then fetches each individual module via
-`GET /OpenWatchParty/Client/{*path}` (`GetClientModule`, same embedded-
+`GET /JellyWatchParty/Client/{*path}` (`GetClientModule`, same embedded-
 resource/ETag caching model) — the client is not shipped as one
 pre-bundled file. See [Client](client.md) for the module list, and
 [REST API](api.md) for the full endpoint reference, including the
@@ -110,8 +110,8 @@ public async Task<ActionResult> GetClientScript()
     // Load from embedded resource (cached after first load)
     if (_cachedScript == null)
     {
-        var assembly = typeof(OpenWatchPartyController).Assembly;
-        var resourceName = "OpenWatchParty.Plugin.Web.plugin.js";
+        var assembly = typeof(JellyWatchPartyController).Assembly;
+        var resourceName = "JellyWatchParty.Plugin.Web.plugin.js";
         using var stream = assembly.GetManifestResourceStream(resourceName);
         if (stream == null) return NotFound();
         using var reader = new StreamReader(stream);
@@ -133,7 +133,7 @@ public async Task<ActionResult> GetClientScript()
 - HTTP 304 Not Modified support
 - 1-hour cache lifetime
 
-#### `GET /OpenWatchParty/Token`
+#### `GET /JellyWatchParty/Token`
 
 Generates JWT tokens for authenticated users.
 
@@ -240,9 +240,9 @@ public class PluginConfiguration : BasePluginConfiguration
     }
 
     /// <summary>
-    /// JWT audience claim. Defaults to "OpenWatchParty".
+    /// JWT audience claim. Defaults to "JellyWatchParty".
     /// </summary>
-    public string JwtAudience { get; set; } = "OpenWatchParty";
+    public string JwtAudience { get; set; } = "JellyWatchParty";
 
     /// <summary>
     /// JWT issuer claim. Defaults to "Jellyfin".
@@ -309,7 +309,7 @@ The project file configures embedded resources:
 
 Resources are accessed via:
 ```csharp
-assembly.GetManifestResourceStream("OpenWatchParty.Plugin.Web.plugin.js");
+assembly.GetManifestResourceStream("JellyWatchParty.Plugin.Web.plugin.js");
 ```
 
 ## Dependencies

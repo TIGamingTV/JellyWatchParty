@@ -1,13 +1,13 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>OpenWatchParty Configuration</title>
+    <title>JellyWatchParty Configuration</title>
 </head>
 <body>
     <div data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox,emby-select">
         <div data-role="content">
             <div class="content-primary">
-                <form class="openwatchpartyConfigurationForm">
+                <form class="jellywatchpartyConfigurationForm">
                     <!-- Authentication Settings -->
                     <div class="verticalSection">
                         <h2 class="sectionTitle">Authentication</h2>
@@ -55,21 +55,21 @@
         </div>
 
         <script type="text/javascript">
-            var OpenWatchPartyConfigurationPage = {
+            var JellyWatchPartyConfigurationPage = {
                 // Fallback GUID (should match Plugin.PluginGuid constant)
                 pluginId: "0f2fd0fd-09ff-4f49-9f1c-4a8f421a4b7d",
 
                 // Fetch plugin ID from API (preferred) to avoid GUID desync
                 init: function() {
                     var self = this;
-                    return fetch(ApiClient.getUrl('OpenWatchParty/Info'))
+                    return fetch(ApiClient.getUrl('JellyWatchParty/Info'))
                         .then(function(response) { return response.json(); })
                         .then(function(info) {
                             self.pluginId = info.id;
                         })
                         .catch(function() {
                             // Fallback to hardcoded GUID if API fails
-                            console.warn('OpenWatchParty: Could not fetch plugin info, using fallback GUID');
+                            console.warn('JellyWatchParty: Could not fetch plugin info, using fallback GUID');
                         });
                 }
             };
@@ -91,12 +91,12 @@
                 Dashboard.showLoadingMsg();
 
                 // Initialize plugin ID then load configuration
-                OpenWatchPartyConfigurationPage.init().then(function() {
-                    return ApiClient.getPluginConfiguration(OpenWatchPartyConfigurationPage.pluginId);
+                JellyWatchPartyConfigurationPage.init().then(function() {
+                    return ApiClient.getPluginConfiguration(JellyWatchPartyConfigurationPage.pluginId);
                 }).then(function (config) {
                     // Authentication settings
                     $('#JwtSecret', page).val(config.JwtSecret || '');
-                    $('#JwtAudience', page).val(config.JwtAudience || 'OpenWatchParty');
+                    $('#JwtAudience', page).val(config.JwtAudience || 'JellyWatchParty');
                     $('#JwtIssuer', page).val(config.JwtIssuer || 'Jellyfin');
                     $('#TokenTtlSeconds', page).val(config.TokenTtlSeconds || 3600);
 
@@ -110,12 +110,12 @@
                 });
             });
 
-            $('.openwatchpartyConfigurationForm').on('submit', function (e) {
+            $('.jellywatchpartyConfigurationForm').on('submit', function (e) {
                 e.preventDefault();
                 Dashboard.showLoadingMsg();
                 var page = $(this).parents('.pluginConfigurationPage')[0];
 
-                ApiClient.getPluginConfiguration(OpenWatchPartyConfigurationPage.pluginId).then(function (config) {
+                ApiClient.getPluginConfiguration(JellyWatchPartyConfigurationPage.pluginId).then(function (config) {
                     // Authentication settings
                     config.JwtSecret = $('#JwtSecret', page).val();
                     config.JwtAudience = $('#JwtAudience', page).val();
@@ -125,7 +125,7 @@
                     // Server settings
                     config.SessionServerUrl = $('#SessionServerUrl', page).val();
 
-                    return ApiClient.updatePluginConfiguration(OpenWatchPartyConfigurationPage.pluginId, config);
+                    return ApiClient.updatePluginConfiguration(JellyWatchPartyConfigurationPage.pluginId, config);
                 }).then(function () {
                     Dashboard.processPluginConfigurationUpdateResult();
                 }).catch(function (err) {

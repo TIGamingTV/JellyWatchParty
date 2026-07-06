@@ -1,12 +1,12 @@
 (() => {
-  const OWP = window.OpenWatchParty = window.OpenWatchParty || {};
-  const playback = OWP.playback = OWP.playback || {};
-  const state = OWP.state;
-  const utils = OWP.utils;
-  const { STATE_UPDATE_MS, SEEK_THRESHOLD } = OWP.constants;
+  const JWP = window.JellyWatchParty = window.JellyWatchParty || {};
+  const playback = JWP.playback = JWP.playback || {};
+  const state = JWP.state;
+  const utils = JWP.utils;
+  const { STATE_UPDATE_MS, SEEK_THRESHOLD } = JWP.constants;
 
   const sendStateUpdate = (video) => {
-    const actions = OWP.actions;
+    const actions = JWP.actions;
     if (!state.isHost || !actions || !actions.send) return;
     if (state.isSyncing) return;
     if (utils.isSeeking()) return;
@@ -18,7 +18,7 @@
   };
 
   const onHostEvent = (action, video) => {
-    const actions = OWP.actions;
+    const actions = JWP.actions;
     if (!state.isHost || !actions || !actions.send || !utils.shouldSend()) return;
     if (state.isSyncing) return;
     if (action === 'seek' && !utils.isVideoReady()) return;
@@ -51,8 +51,8 @@
       waiting: () => {
         state.isBuffering = true;
         utils.log('VIDEO', { event: 'buffering', pos: video.currentTime, readyState: video.readyState });
-        if (state.isHost && OWP.actions && OWP.actions.send) {
-          OWP.actions.send('player_event', { action: 'buffering', position: video.currentTime });
+        if (state.isHost && JWP.actions && JWP.actions.send) {
+          JWP.actions.send('player_event', { action: 'buffering', position: video.currentTime });
         }
       },
       canplay: () => {
@@ -65,8 +65,8 @@
         state.isBuffering = false;
         if (wasBuffering) {
           utils.log('VIDEO', { event: 'playing', pos: video.currentTime });
-          if (state.isHost && OWP.actions && OWP.actions.send) {
-            OWP.actions.send('player_event', { action: 'play', position: video.currentTime });
+          if (state.isHost && JWP.actions && JWP.actions.send) {
+            JWP.actions.send('player_event', { action: 'play', position: video.currentTime });
           }
         }
       },

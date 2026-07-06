@@ -1,8 +1,8 @@
 (() => {
-  const OWP = window.OpenWatchParty = window.OpenWatchParty || {};
-  const utils = OWP.utils = OWP.utils || {};
-  const state = OWP.state;
-  const { SUPPRESS_MS, SYNC_LEAD_MS } = OWP.constants;
+  const JWP = window.JellyWatchParty = window.JellyWatchParty || {};
+  const utils = JWP.utils = JWP.utils || {};
+  const state = JWP.state;
+  const { SUPPRESS_MS, SYNC_LEAD_MS } = JWP.constants;
 
   let syncingTimer = null;
 

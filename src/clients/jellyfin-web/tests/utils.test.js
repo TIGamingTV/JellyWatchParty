@@ -1,9 +1,9 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const OWP = require('./setup.js');
+const JWP = require('./setup.js');
 
 describe('escapeHtml', () => {
-  const { escapeHtml } = OWP.utils;
+  const { escapeHtml } = JWP.utils;
 
   it('escapes special characters', () => {
     assert.equal(escapeHtml('<script>"a"&\'b\''), '&lt;script&gt;&quot;a&quot;&amp;&#39;b&#39;');
@@ -25,7 +25,7 @@ describe('escapeHtml', () => {
 });
 
 describe('suppress / shouldSend', () => {
-  const { suppress, shouldSend } = OWP.utils;
+  const { suppress, shouldSend } = JWP.utils;
 
   it('shouldSend returns false during suppression', () => {
     suppress(1000);
@@ -34,7 +34,7 @@ describe('suppress / shouldSend', () => {
 
   it('shouldSend returns true after suppression expires', () => {
     // Set suppressUntil to the past so shouldSend() returns true
-    OWP.state.suppressUntil = 0;
+    JWP.state.suppressUntil = 0;
     assert.equal(shouldSend(), true);
   });
 });

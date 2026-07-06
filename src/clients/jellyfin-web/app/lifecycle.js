@@ -1,10 +1,10 @@
 (() => {
-  const OWP = window.OpenWatchParty = window.OpenWatchParty || {};
-  const state = OWP.state;
-  const ui = OWP.ui;
-  const utils = OWP.utils;
-  const playback = OWP.playback;
-  const { UI_CHECK_MS, HOME_REFRESH_MS, SYNC_LOOP_MS } = OWP.constants;
+  const JWP = window.JellyWatchParty = window.JellyWatchParty || {};
+  const state = JWP.state;
+  const ui = JWP.ui;
+  const utils = JWP.utils;
+  const playback = JWP.playback;
+  const { UI_CHECK_MS, HOME_REFRESH_MS, SYNC_LOOP_MS } = JWP.constants;
 
   let panelStopPropagation = null;
   let hadVideoElement = false;
@@ -18,22 +18,22 @@
   };
 
   const onVideoPlayerExit = () => {
-    console.log('[OpenWatchParty] Video player closed, cleaning up...');
-    const panel = document.getElementById(OWP.constants.PANEL_ID);
+    console.log('[JellyWatchParty] Video player closed, cleaning up...');
+    const panel = document.getElementById(JWP.constants.PANEL_ID);
     if (panel) panel.classList.add('hide');
-    if (state.inRoom && OWP.actions && OWP.actions.leaveRoom) {
-      OWP.actions.leaveRoom();
+    if (state.inRoom && JWP.actions && JWP.actions.leaveRoom) {
+      JWP.actions.leaveRoom();
     }
-    if (OWP.playback && OWP.playback.cleanupVideoListeners) {
-      OWP.playback.cleanupVideoListeners();
+    if (JWP.playback && JWP.playback.cleanupVideoListeners) {
+      JWP.playback.cleanupVideoListeners();
     }
     state.bound = false;
   };
 
   const createPanel = () => {
-    if (document.getElementById(OWP.constants.PANEL_ID)) return;
+    if (document.getElementById(JWP.constants.PANEL_ID)) return;
     const panel = document.createElement('div');
-    panel.id = OWP.constants.PANEL_ID;
+    panel.id = JWP.constants.PANEL_ID;
     panel.className = 'hide';
     document.body.appendChild(panel);
     panelStopPropagation = (e) => e.stopPropagation();
@@ -58,19 +58,19 @@
         ui.injectOsdButton();
         playback.bindVideo();
         if (state.pendingJoinRoomId) {
-          console.log('[OpenWatchParty] Video detected, pendingJoinRoomId:', state.pendingJoinRoomId);
-          if (OWP.actions && OWP.actions.joinRoom) {
+          console.log('[JellyWatchParty] Video detected, pendingJoinRoomId:', state.pendingJoinRoomId);
+          if (JWP.actions && JWP.actions.joinRoom) {
             const roomId = state.pendingJoinRoomId;
             state.pendingJoinRoomId = '';
             setTimeout(() => {
-              console.log('[OpenWatchParty] Auto-joining room:', roomId);
+              console.log('[JellyWatchParty] Auto-joining room:', roomId);
               const room = state.rooms.find(r => r.id === roomId);
               if (room && room.has_password && ui.promptJoinWithPassword) {
                 // Ask up front instead of relying on the wrong_password
                 // error-retry fallback for a room we already know needs one.
                 ui.promptJoinWithPassword(roomId);
               } else {
-                OWP.actions.joinRoom(roomId);
+                JWP.actions.joinRoom(roomId);
               }
             }, 500);
           }
@@ -95,25 +95,25 @@
 
   const init = () => {
     if (state.initialized) {
-      console.log('[OpenWatchParty] Already initialized, skipping');
+      console.log('[JellyWatchParty] Already initialized, skipping');
       return;
     }
     state.initialized = true;
-    console.log('%c OpenWatchParty Plugin Loaded (OSD Mode) ', 'background: #2e7d32; color: #fff; font-size: 12px; padding: 2px; border-radius: 2px;');
+    console.log('%c JellyWatchParty Plugin Loaded (OSD Mode) ', 'background: #2e7d32; color: #fff; font-size: 12px; padding: 2px; border-radius: 2px;');
     clearAllIntervals();
     ui.injectStyles();
     createPanel();
-    if (OWP.actions && OWP.actions.connect) {
-      console.log('[OpenWatchParty] Initiating WebSocket connection...');
-      OWP.actions.connect();
+    if (JWP.actions && JWP.actions.connect) {
+      console.log('[JellyWatchParty] Initiating WebSocket connection...');
+      JWP.actions.connect();
     } else {
-      console.error('[OpenWatchParty] OWP.actions.connect not available!');
+      console.error('[JellyWatchParty] JWP.actions.connect not available!');
     }
     startIntervals();
   };
 
   // Expose lifecycle internals for cleanup module
-  OWP._lifecycle = {
+  JWP._lifecycle = {
     get panelStopPropagation() { return panelStopPropagation; },
     set panelStopPropagation(v) { panelStopPropagation = v; },
     get hadVideoElement() { return hadVideoElement; },
@@ -121,6 +121,6 @@
     clearAllIntervals
   };
 
-  OWP.app = OWP.app || {};
-  Object.assign(OWP.app, { init });
+  JWP.app = JWP.app || {};
+  Object.assign(JWP.app, { init });
 })();

@@ -42,7 +42,7 @@ services:
       - ./config:/config
       - ./cache:/cache
       - /path/to/media:/media:ro
-      - ./plugins/OpenWatchParty.dll:/config/plugins/OpenWatchParty/OpenWatchParty.dll:ro
+      - ./plugins/JellyWatchParty.dll:/config/plugins/JellyWatchParty/JellyWatchParty.dll:ro
     environment:
       - JELLYFIN_PublishedServerUrl=https://jellyfin.example.com
     restart: unless-stopped
@@ -50,8 +50,8 @@ services:
       - internal
 
   session-server:
-    image: owp-session-server
-    container_name: owp-session
+    image: jwp-session-server
+    container_name: jwp-session
     environment:
       - ALLOWED_ORIGINS=https://jellyfin.example.com
       - JWT_SECRET=${JWT_SECRET}
@@ -167,9 +167,9 @@ services:
   session-server:
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.owp-ws.rule=Host(`jellyfin.example.com`) && PathPrefix(`/ws`)"
-      - "traefik.http.routers.owp-ws.tls.certresolver=letsencrypt"
-      - "traefik.http.services.owp-ws.loadbalancer.server.port=3000"
+      - "traefik.http.routers.jwp-ws.rule=Host(`jellyfin.example.com`) && PathPrefix(`/ws`)"
+      - "traefik.http.routers.jwp-ws.tls.certresolver=letsencrypt"
+      - "traefik.http.services.jwp-ws.loadbalancer.server.port=3000"
 ```
 
 ### Cloudflare Tunnel
@@ -188,7 +188,7 @@ ingress:
   - hostname: jellyfin.example.com
     service: http://jellyfin:8096
   # Session server WebSocket
-  - hostname: owp.example.com
+  - hostname: jwp.example.com
     service: http://session-server:3000
   - service: http_status:404
 ```
@@ -198,7 +198,7 @@ Session server environment:
 ```yaml
 services:
   session-server:
-    image: owp-session-server
+    image: jwp-session-server
     environment:
       - ALLOWED_ORIGINS=https://jellyfin.example.com
       - JWT_SECRET=${JWT_SECRET}
@@ -207,7 +207,7 @@ services:
 ```
 
 Plugin settings:
-- **Session Server URL**: `wss://owp.example.com/ws`
+- **Session Server URL**: `wss://jwp.example.com/ws`
 
 If `cloudflared` runs on the Docker host (not in a container), use the host IP or `host.docker.internal` instead of the service name.
 
@@ -260,7 +260,7 @@ Set JWT Secret in both:
 
 When using a reverse proxy, set the WebSocket URL in the plugin settings so the client connects through the proxy instead of directly to port 3000:
 
-1. Go to **Dashboard > Plugins > OpenWatchParty**
+1. Go to **Dashboard > Plugins > JellyWatchParty**
 2. Set **Session Server URL** to `wss://jellyfin.example.com/ws`
 3. Click **Save**
 
@@ -277,7 +277,7 @@ environment:
 
 ```yaml
 volumes:
-  - ./plugins/OpenWatchParty.dll:/config/plugins/OpenWatchParty/OpenWatchParty.dll:ro
+  - ./plugins/JellyWatchParty.dll:/config/plugins/JellyWatchParty/JellyWatchParty.dll:ro
   - /path/to/media:/media:ro
 ```
 
@@ -380,10 +380,10 @@ docker compose pull
 
 ```bash
 # Download new plugin version
-wget https://github.com/TIGamingTV/OpenWatchParty/releases/latest/download/OpenWatchParty.dll
+wget https://github.com/TIGamingTV/JellyWatchParty/releases/latest/download/JellyWatchParty.dll
 
 # Replace plugin
-mv OpenWatchParty.dll ./plugins/OpenWatchParty/
+mv JellyWatchParty.dll ./plugins/JellyWatchParty/
 ```
 
 ### 4. Restart

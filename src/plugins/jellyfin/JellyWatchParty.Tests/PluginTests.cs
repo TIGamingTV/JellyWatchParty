@@ -1,6 +1,6 @@
 using Xunit;
 
-namespace OpenWatchParty.Plugin.Tests;
+namespace JellyWatchParty.Plugin.Tests;
 
 /// <summary>
 /// Tests for the Plugin class constants and static members.

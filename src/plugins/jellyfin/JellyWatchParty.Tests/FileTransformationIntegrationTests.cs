@@ -1,10 +1,10 @@
 using Xunit;
 
-namespace OpenWatchParty.Plugin.Tests;
+namespace JellyWatchParty.Plugin.Tests;
 
 public class FileTransformationIntegrationTests
 {
-    private const string ScriptTag = "<script src=\"../OpenWatchParty/ClientScript\" defer></script>";
+    private const string ScriptTag = "<script src=\"../JellyWatchParty/ClientScript\" defer></script>";
 
     private class FakePayload
     {
@@ -47,7 +47,7 @@ public class FileTransformationIntegrationTests
     [Fact]
     public void InjectScript_SkipsInjection_WhenAbsolutePathPresent()
     {
-        var html = "<html><body><script src=\"/OpenWatchParty/ClientScript\"></script></body></html>";
+        var html = "<html><body><script src=\"/JellyWatchParty/ClientScript\"></script></body></html>";
         var result = FileTransformationIntegration.InjectScript(html);
 
         Assert.Equal(html, result);

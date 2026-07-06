@@ -8,7 +8,7 @@ nav_order: 3
 
 ## Overview
 
-The OpenWatchParty session server is an asynchronous Rust application using Warp for WebSocket handling and Tokio as the async runtime. It manages rooms, clients, and playback synchronization in memory.
+The JellyWatchParty session server is an asynchronous Rust application using Warp for WebSocket handling and Tokio as the async runtime. It manages rooms, clients, and playback synchronization in memory.
 
 ## Module Structure
 

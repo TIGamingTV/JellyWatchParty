@@ -6,15 +6,15 @@ nav_order: 2
 
 # Contributing Guide
 
-Thank you for your interest in contributing to OpenWatchParty!
+Thank you for your interest in contributing to JellyWatchParty!
 
 ## Getting Started
 
 1. **Fork the repository** on GitHub
 2. **Clone your fork**:
    ```bash
-   git clone https://github.com/YOUR-USERNAME/OpenWatchParty.git
-   cd OpenWatchParty
+   git clone https://github.com/YOUR-USERNAME/JellyWatchParty.git
+   cd JellyWatchParty
    ```
 3. **Set up development environment**:
    ```bash
@@ -208,7 +208,7 @@ cargo test
 
 # C# tests
 cd src/plugins/jellyfin
-dotnet test OpenWatchParty.Tests/OpenWatchParty.Tests.csproj
+dotnet test JellyWatchParty.Tests/JellyWatchParty.Tests.csproj
 ```
 
 ## Continuous Integration
@@ -301,4 +301,4 @@ By contributing, you agree that your contributions will be licensed under the sa
 
 ## Thank You!
 
-Every contribution matters - from fixing typos to implementing features. Thank you for helping make OpenWatchParty better!
+Every contribution matters - from fixing typos to implementing features. Thank you for helping make JellyWatchParty better!

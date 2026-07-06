@@ -1,5 +1,5 @@
-// Test setup: creates the global OWP namespace expected by client modules.
-// Modules are IIFEs that attach to window.OpenWatchParty, so we simulate
+// Test setup: creates the global JWP namespace expected by client modules.
+// Modules are IIFEs that attach to window.JellyWatchParty, so we simulate
 // the browser environment minimally with globalThis.
 
 globalThis.window = globalThis;
@@ -8,13 +8,13 @@ globalThis.document = { querySelector: () => null };
 globalThis.setTimeout = setTimeout;
 globalThis.clearTimeout = clearTimeout;
 
-// Load state.js first (defines OWP.constants and OWP.state)
+// Load state.js first (defines JWP.constants and JWP.state)
 require('../state.js');
 
-// Load time.js (defines OWP.utils.nowMs, getServerNow, adjustedPosition)
+// Load time.js (defines JWP.utils.nowMs, getServerNow, adjustedPosition)
 require('../utils/time.js');
 
-// Load misc.js (defines OWP.utils.escapeHtml, suppress, shouldSend)
+// Load misc.js (defines JWP.utils.escapeHtml, suppress, shouldSend)
 require('../utils/misc.js');
 
-module.exports = globalThis.OpenWatchParty;
+module.exports = globalThis.JellyWatchParty;

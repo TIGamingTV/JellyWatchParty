@@ -3,10 +3,10 @@ using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Session;
 using Microsoft.Extensions.Logging;
 using Moq;
-using OpenWatchParty.Plugin.Services;
+using JellyWatchParty.Plugin.Services;
 using Xunit;
 
-namespace OpenWatchParty.Plugin.Tests;
+namespace JellyWatchParty.Plugin.Tests;
 
 /// <summary>
 /// Tests for SessionHostBridge's pure payload-building helpers — the parts

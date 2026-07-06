@@ -8,13 +8,13 @@ nav_order: 7
 
 ## Overview
 
-The OpenWatchParty plugin exposes REST API endpoints through Jellyfin's web server.
+The JellyWatchParty plugin exposes REST API endpoints through Jellyfin's web server.
 
-**Base URL:** `http(s)://<jellyfin-host>:<port>/OpenWatchParty`
+**Base URL:** `http(s)://<jellyfin-host>:<port>/JellyWatchParty`
 
 ## Endpoints
 
-### GET /OpenWatchParty/ClientScript
+### GET /JellyWatchParty/ClientScript
 
 Serves the client JS loader (`plugin.js`), which then fetches each
 individual module via the `Client/{*path}` endpoint below.
@@ -41,14 +41,14 @@ individual module via the `Client/{*path}` endpoint below.
 **Example:**
 ```bash
 # First request
-curl -i "http://localhost:8096/OpenWatchParty/ClientScript"
+curl -i "http://localhost:8096/JellyWatchParty/ClientScript"
 
 # Subsequent request with caching
 curl -i -H "If-None-Match: \"abc123...\"" \
-  "http://localhost:8096/OpenWatchParty/ClientScript"
+  "http://localhost:8096/JellyWatchParty/ClientScript"
 ```
 
-### GET /OpenWatchParty/Client/{*path}
+### GET /JellyWatchParty/Client/{*path}
 
 Serves an individual client module by path (e.g.
 `Client/playback/sync.js`), used by the `plugin.js` loader instead of
@@ -59,7 +59,7 @@ shipping one monolithic bundle. Same content-type and caching model as
 
 **Example:**
 ```bash
-curl -i "http://localhost:8096/OpenWatchParty/Client/playback/sync.js"
+curl -i "http://localhost:8096/JellyWatchParty/Client/playback/sync.js"
 ```
 
 ### Host Bridge Endpoints
@@ -73,12 +73,12 @@ is deliberately not treated as private within a server. Full detail:
 
 | Method | Path | Description |
 |--------|------|--------------|
-| `GET` | `/OpenWatchParty/Bridge/Sessions` | List sessions eligible to be bridged |
-| `GET` | `/OpenWatchParty/Bridge/Status` | List currently active bridges |
-| `POST` | `/OpenWatchParty/Bridge/{sessionId}/Start` | Start bridging a session in as a room host |
-| `POST` | `/OpenWatchParty/Bridge/{sessionId}/Stop` | Stop an active bridge |
+| `GET` | `/JellyWatchParty/Bridge/Sessions` | List sessions eligible to be bridged |
+| `GET` | `/JellyWatchParty/Bridge/Status` | List currently active bridges |
+| `POST` | `/JellyWatchParty/Bridge/{sessionId}/Start` | Start bridging a session in as a room host |
+| `POST` | `/JellyWatchParty/Bridge/{sessionId}/Stop` | Stop an active bridge |
 
-### GET /OpenWatchParty/Token
+### GET /JellyWatchParty/Token
 
 Generates a JWT token for the authenticated user.
 
@@ -121,7 +121,7 @@ Generates a JWT token for the authenticated user.
 ```bash
 # With Jellyfin API key
 curl -H "X-Emby-Token: YOUR_API_KEY" \
-  "http://localhost:8096/OpenWatchParty/Token"
+  "http://localhost:8096/JellyWatchParty/Token"
 
 # Response
 {
@@ -150,7 +150,7 @@ When authentication is enabled, the generated token contains:
 {
   "sub": "user-uuid",
   "name": "username",
-  "aud": "OpenWatchParty",
+  "aud": "JellyWatchParty",
   "iss": "Jellyfin",
   "iat": 1678900000,
   "exp": 1678903600
@@ -192,7 +192,7 @@ All error responses follow this format:
 ```javascript
 // Get token
 async function getToken() {
-  const response = await fetch('/OpenWatchParty/Token', {
+  const response = await fetch('/JellyWatchParty/Token', {
     credentials: 'include'  // Include Jellyfin auth cookies
   });
 
@@ -206,7 +206,7 @@ async function getToken() {
 // Load client script
 function loadClientScript() {
   const script = document.createElement('script');
-  script.src = '/OpenWatchParty/ClientScript';
+  script.src = '/JellyWatchParty/ClientScript';
   document.head.appendChild(script);
 }
 ```
@@ -220,9 +220,9 @@ TOKEN=$(curl -s -X POST "http://localhost:8096/Users/AuthenticateByName" \
   -H "Content-Type: application/json" \
   -d '{"Username":"admin","Pw":"password"}' | jq -r '.AccessToken')
 
-# Get OpenWatchParty token
+# Get JellyWatchParty token
 curl -H "X-Emby-Token: $TOKEN" \
-  "http://localhost:8096/OpenWatchParty/Token"
+  "http://localhost:8096/JellyWatchParty/Token"
 ```
 
 ## Configuration API
@@ -248,7 +248,7 @@ curl -X POST \
   -H "Content-Type: application/json" \
   -d '{
     "JwtSecret": "your-secret-key-at-least-32-characters",
-    "JwtAudience": "OpenWatchParty",
+    "JwtAudience": "JellyWatchParty",
     "JwtIssuer": "Jellyfin",
     "TokenTtlSeconds": 3600,
     "InviteTtlSeconds": 3600,
@@ -264,7 +264,7 @@ curl -X POST \
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `JwtSecret` | string | `""` | Secret key for signing JWT tokens. **Must be at least 32 characters** with high entropy. When empty, authentication is disabled and any client can connect. |
-| `JwtAudience` | string | `"OpenWatchParty"` | The `aud` (audience) claim in generated tokens. Must match the session server's expected audience if configured. |
+| `JwtAudience` | string | `"JellyWatchParty"` | The `aud` (audience) claim in generated tokens. Must match the session server's expected audience if configured. |
 | `JwtIssuer` | string | `"Jellyfin"` | The `iss` (issuer) claim in generated tokens. Must match the session server's expected issuer if configured. |
 | `TokenTtlSeconds` | int | `3600` | Token lifetime in seconds. Valid range: 60-86400 (1 min to 24 hours). Values outside this range are clamped. |
 | `InviteTtlSeconds` | int | `3600` | *Reserved for future use.* Intended for room invite link expiration. Currently not implemented. |

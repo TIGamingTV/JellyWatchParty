@@ -1,7 +1,7 @@
 (() => {
-  if (window.OpenWatchParty && window.OpenWatchParty.__loaded) return;
-  const OWP = window.OpenWatchParty = window.OpenWatchParty || {};
-  OWP.__loaded = true;
+  if (window.JellyWatchParty && window.JellyWatchParty.__loaded) return;
+  const JWP = window.JellyWatchParty = window.JellyWatchParty || {};
+  JWP.__loaded = true;
 
   const currentScript = document.currentScript;
   let cacheBust = '';
@@ -10,7 +10,7 @@
     try {
       const url = new URL(currentScript.src, window.location.href);
       cacheBust = url.searchParams.get('v') || '';
-      const suffix = '/OpenWatchParty/ClientScript';
+      const suffix = '/JellyWatchParty/ClientScript';
       if (url.pathname.endsWith(suffix)) {
         basePrefix = url.pathname.slice(0, -suffix.length);
       }
@@ -18,7 +18,7 @@
   }
   if (!cacheBust) cacheBust = String(Date.now());
 
-  const base = `${basePrefix}/OpenWatchParty/Client`;
+  const base = `${basePrefix}/JellyWatchParty/Client`;
 
   const SCRIPT_TIMEOUT_MS = 10000;  // 10 seconds timeout per script
 
@@ -81,11 +81,11 @@
 
   loadAll()
     .then(() => {
-      if (window.OpenWatchParty && window.OpenWatchParty.app && typeof window.OpenWatchParty.app.init === 'function') {
-        window.OpenWatchParty.app.init();
+      if (window.JellyWatchParty && window.JellyWatchParty.app && typeof window.JellyWatchParty.app.init === 'function') {
+        window.JellyWatchParty.app.init();
       }
     })
     .catch((err) => {
-      console.error('[OpenWatchParty] Loader error:', err);
+      console.error('[JellyWatchParty] Loader error:', err);
     });
 })();

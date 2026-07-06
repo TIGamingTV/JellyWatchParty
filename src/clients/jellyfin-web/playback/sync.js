@@ -1,8 +1,8 @@
 (() => {
-  const OWP = window.OpenWatchParty = window.OpenWatchParty || {};
-  const playback = OWP.playback = OWP.playback || {};
-  const state = OWP.state;
-  const utils = OWP.utils;
+  const JWP = window.JellyWatchParty = window.JellyWatchParty || {};
+  const playback = JWP.playback = JWP.playback || {};
+  const state = JWP.state;
+  const utils = JWP.utils;
   const {
     DRIFT_CORRECTION_ENTER_SEC,
     DRIFT_CORRECTION_EXIT_SEC,
@@ -12,11 +12,11 @@
     DRIFT_GAIN,
     INITIAL_SYNC_DRIFT_THRESHOLD,
     INITIAL_SYNC_MAX_DRIFT
-  } = OWP.constants;
+  } = JWP.constants;
 
   const notifyReady = () => {
     if (!state.inRoom || !state.roomId || state.readyRoomId === state.roomId) return;
-    const actions = OWP.actions;
+    const actions = JWP.actions;
     if (!actions || !actions.send) return;
     state.readyRoomId = state.roomId;
     actions.send('ready', { room: state.roomId, media_id: utils.getCurrentItemId() });
@@ -81,7 +81,7 @@
     if (state.syncStatus !== 'synced') {
       state.syncStatus = 'synced';
       state.currentDrift = 0;
-      if (OWP.ui && OWP.ui.updateSyncIndicator) OWP.ui.updateSyncIndicator();
+      if (JWP.ui && JWP.ui.updateSyncIndicator) JWP.ui.updateSyncIndicator();
     }
   };
 
@@ -93,7 +93,7 @@
       }
       state.isDriftCorrecting = true;
       state.syncStatus = 'syncing';
-      if (OWP.ui && OWP.ui.updateSyncIndicator) OWP.ui.updateSyncIndicator();
+      if (JWP.ui && JWP.ui.updateSyncIndicator) JWP.ui.updateSyncIndicator();
     } else if (abs < DRIFT_CORRECTION_EXIT_SEC) {
       goQuiet(video);
       return;

@@ -1,10 +1,10 @@
 (() => {
-  const OWP = window.OpenWatchParty = window.OpenWatchParty || {};
-  const ui = OWP.ui = OWP.ui || {};
-  const utils = OWP.utils;
+  const JWP = window.JellyWatchParty = window.JellyWatchParty || {};
+  const ui = JWP.ui = JWP.ui || {};
+  const utils = JWP.utils;
 
   // Bridges a native-client Jellyfin session (e.g. Fladder, which can't run
-  // this injected script at all) in as an OpenWatchParty room host. See
+  // this injected script at all) in as an JellyWatchParty room host. See
   // docs/ARCHITECTURE.md "Native Client Bridge" — this only sets up the
   // *host* side; other users still join the resulting room themselves from
   // the normal room list below, exactly as any other room.
@@ -31,9 +31,9 @@
 
   const buildActionRow = (label, buttonText, buttonClass, onClick) => {
     const row = document.createElement('div');
-    row.className = 'owp-room-item';
+    row.className = 'jwp-room-item';
     row.style.cursor = 'default';
-    row.innerHTML = `<div>${label}</div><button class="owp-btn ${buttonClass}">${buttonText}</button>`;
+    row.innerHTML = `<div>${label}</div><button class="jwp-btn ${buttonClass}">${buttonText}</button>`;
     row.querySelector('button').onclick = onClick;
     return row;
   };
@@ -52,18 +52,18 @@
 
   const updateBridgeListUI = () => {
     Promise.all([
-      apiFetch('/OpenWatchParty/Bridge/Sessions').then((r) => (r.ok ? r.json() : [])),
-      apiFetch('/OpenWatchParty/Bridge/Status').then((r) => (r.ok ? r.json() : []))
+      apiFetch('/JellyWatchParty/Bridge/Sessions').then((r) => (r.ok ? r.json() : [])),
+      apiFetch('/JellyWatchParty/Bridge/Status').then((r) => (r.ok ? r.json() : []))
     ]).then(([sessions, bridges]) => {
-      renderList('owp-bridge-active', bridges, 'No active bridges.', buildActiveRow);
-      renderList('owp-bridge-available', sessions, 'No other sessions are playing something.', buildSessionRow);
+      renderList('jwp-bridge-active', bridges, 'No active bridges.', buildActiveRow);
+      renderList('jwp-bridge-available', sessions, 'No other sessions are playing something.', buildSessionRow);
     }).catch((err) => {
-      console.warn('[OpenWatchParty] Failed to load bridge sessions:', err);
+      console.warn('[JellyWatchParty] Failed to load bridge sessions:', err);
     });
   };
 
   const startBridge = (sessionId) => {
-    apiFetch(`/OpenWatchParty/Bridge/${encodeURIComponent(sessionId)}/Start`, { method: 'POST' })
+    apiFetch(`/JellyWatchParty/Bridge/${encodeURIComponent(sessionId)}/Start`, { method: 'POST' })
       .then((r) => {
         if (!r.ok) return r.json().then((e) => { throw new Error(e.error || 'Failed to start bridge'); });
         updateBridgeListUI();
@@ -72,7 +72,7 @@
   };
 
   const stopBridge = (sessionId) => {
-    apiFetch(`/OpenWatchParty/Bridge/${encodeURIComponent(sessionId)}/Stop`, { method: 'POST' })
+    apiFetch(`/JellyWatchParty/Bridge/${encodeURIComponent(sessionId)}/Stop`, { method: 'POST' })
       .then(() => updateBridgeListUI())
       .catch((err) => ui.showToast(err.message || 'Failed to stop bridge'));
   };

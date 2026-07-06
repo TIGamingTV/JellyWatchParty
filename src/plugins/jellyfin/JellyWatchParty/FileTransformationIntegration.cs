@@ -4,23 +4,23 @@ using MediaBrowser.Model.Tasks;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;
 
-namespace OpenWatchParty.Plugin;
+namespace JellyWatchParty.Plugin;
 
 /// <summary>
-/// Scheduled task that injects the OpenWatchParty client script into index.html.
+/// Scheduled task that injects the JellyWatchParty client script into index.html.
 /// First attempts to register with the File Transformation plugin (if installed).
 /// Falls back to direct injection into the physical index.html file.
 /// </summary>
 public class FileTransformationIntegration : IScheduledTask
 {
-    private const string ClientScriptPath = "../OpenWatchParty/ClientScript";
+    private const string ClientScriptPath = "../JellyWatchParty/ClientScript";
     private const string ScriptTag = $"<script src=\"{ClientScriptPath}\" defer></script>";
     private readonly ILogger<FileTransformationIntegration> _logger;
 
-    public string Name => "OpenWatchParty File Transformation Registration";
-    public string Key => "OpenWatchPartyFileTransformation";
+    public string Name => "JellyWatchParty File Transformation Registration";
+    public string Key => "JellyWatchPartyFileTransformation";
     public string Description => "Registers automatic script injection with the File Transformation plugin";
-    public string Category => "OpenWatchParty";
+    public string Category => "JellyWatchParty";
 
     public FileTransformationIntegration(ILogger<FileTransformationIntegration> logger)
     {
@@ -71,7 +71,7 @@ public class FileTransformationIntegration : IScheduledTask
             var pluginInterface = ftAssembly.GetType("Jellyfin.Plugin.FileTransformation.PluginInterface");
             if (pluginInterface == null)
             {
-                _logger.LogWarning("[OpenWatchParty] File Transformation plugin found but PluginInterface type not available. "
+                _logger.LogWarning("[JellyWatchParty] File Transformation plugin found but PluginInterface type not available. "
                     + "The installed version may be incompatible.");
                 return false;
             }
@@ -79,7 +79,7 @@ public class FileTransformationIntegration : IScheduledTask
             var registerMethod = pluginInterface.GetMethod("RegisterTransformation", BindingFlags.Public | BindingFlags.Static);
             if (registerMethod == null)
             {
-                _logger.LogWarning("[OpenWatchParty] File Transformation plugin found but RegisterTransformation method not available. "
+                _logger.LogWarning("[JellyWatchParty] File Transformation plugin found but RegisterTransformation method not available. "
                     + "The installed version may be incompatible.");
                 return false;
             }
@@ -95,12 +95,12 @@ public class FileTransformationIntegration : IScheduledTask
 
             registerMethod.Invoke(null, new object?[] { payload });
 
-            _logger.LogInformation("[OpenWatchParty] Registered index.html transformation with File Transformation plugin.");
+            _logger.LogInformation("[JellyWatchParty] Registered index.html transformation with File Transformation plugin.");
             return true;
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[OpenWatchParty] Failed to register with File Transformation plugin. "
+            _logger.LogWarning(ex, "[JellyWatchParty] Failed to register with File Transformation plugin. "
                 + "Falling back to direct index.html injection.");
             return false;
         }
@@ -116,7 +116,7 @@ public class FileTransformationIntegration : IScheduledTask
         var webDir = Environment.GetEnvironmentVariable("JELLYFIN_WEB_DIR");
         if (string.IsNullOrEmpty(webDir))
         {
-            _logger.LogInformation("[OpenWatchParty] File Transformation plugin not available and JELLYFIN_WEB_DIR not set. "
+            _logger.LogInformation("[JellyWatchParty] File Transformation plugin not available and JELLYFIN_WEB_DIR not set. "
                 + "Script injection will not be automatic — use Custom HTML instead.");
             return;
         }
@@ -124,7 +124,7 @@ public class FileTransformationIntegration : IScheduledTask
         var indexPath = Path.Combine(webDir, "index.html");
         if (!File.Exists(indexPath))
         {
-            _logger.LogWarning("[OpenWatchParty] index.html not found at '{Path}'. "
+            _logger.LogWarning("[JellyWatchParty] index.html not found at '{Path}'. "
                 + "Script injection will not be automatic — use Custom HTML instead.", indexPath);
             return;
         }
@@ -136,21 +136,21 @@ public class FileTransformationIntegration : IScheduledTask
 
             if (modified == html)
             {
-                _logger.LogInformation("[OpenWatchParty] Client script already present in {Path}.", indexPath);
+                _logger.LogInformation("[JellyWatchParty] Client script already present in {Path}.", indexPath);
                 return;
             }
 
             await File.WriteAllTextAsync(indexPath, modified, cancellationToken).ConfigureAwait(false);
-            _logger.LogInformation("[OpenWatchParty] Injected client script into {Path} (direct fallback).", indexPath);
+            _logger.LogInformation("[JellyWatchParty] Injected client script into {Path} (direct fallback).", indexPath);
         }
         catch (UnauthorizedAccessException)
         {
-            _logger.LogInformation("[OpenWatchParty] No write permission to {Path}. "
+            _logger.LogInformation("[JellyWatchParty] No write permission to {Path}. "
                 + "Using controller-level index.html interception instead.", indexPath);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[OpenWatchParty] Failed to inject script into {Path}. "
+            _logger.LogWarning(ex, "[JellyWatchParty] Failed to inject script into {Path}. "
                 + "Using controller-level index.html interception instead.", indexPath);
         }
     }
@@ -161,7 +161,7 @@ public class FileTransformationIntegration : IScheduledTask
     /// </summary>
     internal static string InjectScript(string contents)
     {
-        if (string.IsNullOrEmpty(contents) || contents.Contains("OpenWatchParty/ClientScript", StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrEmpty(contents) || contents.Contains("JellyWatchParty/ClientScript", StringComparison.OrdinalIgnoreCase))
         {
             return contents ?? string.Empty;
         }
@@ -183,7 +183,7 @@ public class FileTransformationIntegration : IScheduledTask
 
     /// <summary>
     /// Callback invoked by the File Transformation plugin to inject the
-    /// OpenWatchParty script tag into index.html.
+    /// JellyWatchParty script tag into index.html.
     /// </summary>
     public static string TransformIndexHtml(object payload)
     {
