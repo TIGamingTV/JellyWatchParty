@@ -37,7 +37,16 @@
       <div class="owp-footer">Server: ${DEFAULT_WS_URL.replace(/^wss?:\/\//, '').replace('/ws', '')}</div>
     `;
     const btn = panel.querySelector('#owp-btn-create');
-    if (btn) btn.onclick = () => OWP.actions && OWP.actions.createRoom && OWP.actions.createRoom();
+    if (btn) btn.onclick = async () => {
+      if (!OWP.actions || !OWP.actions.createRoom) return;
+      const password = await ui.promptText({
+        title: 'Room password (optional, leave blank for none):',
+        placeholder: 'Password',
+        submitLabel: 'Create Room'
+      });
+      if (password === null) return; // cancelled — don't create a room
+      OWP.actions.createRoom(password);
+    };
     ui.updateRoomListUI();
     ui.updateBridgeListUI();
   };

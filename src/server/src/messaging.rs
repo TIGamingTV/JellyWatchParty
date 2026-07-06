@@ -2,11 +2,43 @@ use crate::types::{Client, Clients, Room, Rooms, WsMessage};
 use crate::utils::now_ms;
 use std::collections::HashMap;
 
+/// Builds the payload shared by every place a client needs to be told (or
+/// reminded) of a room's full state: initial create, join, and reattach
+/// after a dropped-connection reconnect.
+pub fn build_room_state_payload(room: &Room, participant_count: usize) -> serde_json::Value {
+    let chat_history: Vec<serde_json::Value> = room
+        .chat_history
+        .iter()
+        .map(|entry| {
+            serde_json::json!({
+                "client_id": entry.client_id,
+                "username": entry.username,
+                "text": entry.text,
+                "server_ts": entry.server_ts,
+            })
+        })
+        .collect();
+    serde_json::json!({
+        "name": room.name,
+        "host_id": room.host_id,
+        "state": room.state,
+        "participant_count": participant_count,
+        "media_id": room.media_id,
+        "chat_history": chat_history,
+    })
+}
+
 fn build_room_list_msg(rooms: &HashMap<String, Room>) -> WsMessage {
     let list: Vec<serde_json::Value> = rooms
         .values()
         .map(|r| {
-            serde_json::json!({ "id": r.room_id, "name": r.name, "count": r.clients.len(), "media_id": r.media_id })
+            serde_json::json!({
+                "id": r.room_id,
+                "name": r.name,
+                "count": r.clients.len(),
+                "media_id": r.media_id,
+                "has_password": r.password_hash.is_some(),
+            })
         })
         .collect();
     WsMessage {
@@ -109,7 +141,37 @@ mod tests {
     use super::*;
     use crate::test_helpers;
     use crate::types::PlaybackState;
-    use std::collections::HashSet;
+    use std::collections::{HashSet, VecDeque};
+
+    #[test]
+    fn room_list_msg_reports_has_password() {
+        let mut rooms = HashMap::new();
+        let mut room = test_helpers::create_room("r1", "host1");
+        room.password_hash = Some(crate::password::hash_password("secret"));
+        rooms.insert("r1".to_string(), room);
+
+        let msg = build_room_list_msg(&rooms);
+        let list = msg.payload.unwrap();
+        let entry = &list.as_array().unwrap()[0];
+        assert_eq!(entry.get("has_password").unwrap(), true);
+    }
+
+    #[test]
+    fn room_state_payload_includes_chat_history() {
+        let mut room = test_helpers::create_room("r1", "host1");
+        room.chat_history.push_back(crate::types::ChatHistoryEntry {
+            client_id: "host1".to_string(),
+            username: "Host".to_string(),
+            text: "hi".to_string(),
+            server_ts: 123,
+        });
+
+        let payload = build_room_state_payload(&room, 2);
+        assert_eq!(payload.get("participant_count").unwrap(), 2);
+        let history = payload.get("chat_history").unwrap().as_array().unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].get("text").unwrap(), "hi");
+    }
 
     #[test]
     fn build_room_list_msg_empty() {
@@ -140,6 +202,8 @@ mod tests {
                 },
                 last_state_ts: 0,
                 last_command_ts: 0,
+                chat_history: VecDeque::new(),
+                password_hash: None,
             },
         );
         rooms.insert(
@@ -158,6 +222,8 @@ mod tests {
                 },
                 last_state_ts: 0,
                 last_command_ts: 0,
+                chat_history: VecDeque::new(),
+                password_hash: None,
             },
         );
         let msg = build_room_list_msg(&rooms);

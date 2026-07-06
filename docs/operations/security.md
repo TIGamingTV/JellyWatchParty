@@ -273,8 +273,7 @@ Security warnings logged:
 
 | Limitation | Status |
 |------------|--------|
-| No room passwords | Planned |
-| No user permissions (democratic mode) | Planned |
+| Room passwords are a fast salted SHA-256 hash, not a slow KDF | By design — rooms are in-memory/ephemeral, so there's no persisted hash database to protect against offline cracking; see `src/server/src/password.rs` |
 | Ephemeral sessions | By design |
 | Single secret for all users | By design |
 | Rate limiting per client, not IP | By design (use reverse proxy) |
@@ -288,9 +287,9 @@ It's important to understand the scope of JWT authentication. While it verifies 
 
 | Scenario | Current Behavior | Mitigation |
 |----------|------------------|------------|
-| **Room creation** | Any authenticated user can create rooms | By design - all Jellyfin users are trusted |
-| **Room joining** | Any authenticated user can join any room | Planned: room passwords |
-| **Room enumeration** | All users see all active rooms | By design - rooms are public within your Jellyfin instance |
+| **Room creation** | Any authenticated user can create rooms, optionally with a password | By design - all Jellyfin users are trusted |
+| **Room joining** | Any authenticated user can join any room; password-protected rooms require the correct password | Room passwords available - set one at creation for private rooms |
+| **Room enumeration** | All users see all active rooms (and whether each is password-protected) | By design - rooms are public within your Jellyfin instance |
 | **Token revocation** | Tokens valid until expiration | Rotate JWT secret to invalidate all tokens |
 
 ### Token Lifecycle
@@ -317,7 +316,7 @@ Internet → [Jellyfin Auth] → Trusted Zone → [OpenWatchParty]
 ### Recommendations
 
 1. **For private instances** - JWT provides sufficient protection
-2. **For shared/public instances** - Wait for room passwords feature or restrict Jellyfin user creation
+2. **For shared/public instances** - Set a room password on creation, or restrict Jellyfin user creation
 3. **For sensitive content** - Use Jellyfin's library permissions to control media access
 
 ## Incident Response

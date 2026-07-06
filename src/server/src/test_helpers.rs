@@ -1,5 +1,5 @@
 use crate::types::{Client, Clients, PlaybackState, Room, Rooms, WsMessage};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 
@@ -49,6 +49,8 @@ pub fn create_room(room_id: &str, host_id: &str) -> Room {
         },
         last_state_ts: 0,
         last_command_ts: 0,
+        chat_history: VecDeque::new(),
+        password_hash: None,
     }
 }
 

@@ -10,10 +10,12 @@ nav_order: 2
 
 ### Room Management
 - **Create rooms** - Start a watch party with a custom name
+- **Room passwords** - Optionally require a password to join a room
 - **Join rooms** - Enter a room ID to join an existing session
 - **Leave rooms** - Exit cleanly with proper cleanup
 - **Room list** - See all active rooms on the server
 - **Participant count** - Track how many people are watching
+- **Automatic host transfer** - If the host leaves with others still in the room, the earliest-joined remaining participant is promoted to host instead of the room closing
 
 ### Playback Synchronization
 - **Play/Pause sync** - Host controls playback state for all clients
@@ -33,6 +35,7 @@ nav_order: 2
 
 ### Chat
 - **Text chat** - Real-time messaging within watch party rooms
+- **Message history** - Last 50 messages replayed to clients joining or reattaching to a room
 - **Username display** - Shows sender's Jellyfin username
 - **Timestamps** - Message timestamps for context
 - **Unread badge** - Notification when new messages arrive
@@ -113,9 +116,9 @@ Mobile browsers have reduced functionality due to platform restrictions:
 
 1. **Host-only control** - Only the host can control playback (democratic mode planned)
 2. **Single media** - One media item per room (by design)
-3. **Ephemeral rooms** - Rooms are closed when the host leaves and doesn't reconnect within 90 seconds, or when the server restarts (by design)
+3. **Ephemeral rooms** - Rooms are closed when the host leaves (with no other participants remaining) and doesn't reconnect within 90 seconds, or when the server restarts (by design); if other participants remain, host duties transfer automatically instead — see Automatic host transfer below
 4. **Guests need a browser or Jellyfin Media Player client** - The Watch Party UI (joining, chat, the room list) only exists in the injected web client and Jellyfin Desktop. Hosting is broader: a [Host Bridge](../technical/host-bridge.md) lets any native/TV client (e.g. Fladder on Android TV) act as room host even though it can't run the UI itself — but someone still has to join as a guest from a supported client to actually watch.
-5. **No message history** - Chat messages are not persisted; late joiners won't see previous messages
+5. **Chat history is capped and in-memory** - The last 50 messages are replayed to joining/reattaching clients, but history is lost when a room closes (rooms are ephemeral by design)
 
 ## Roadmap
 
@@ -124,17 +127,17 @@ Mobile browsers have reduced functionality due to platform restrictions:
 | Feature | Priority | Status |
 |---------|----------|--------|
 | Text chat | High | Done |
-| Message history for late joiners | Medium | Planned |
+| Message history for late joiners | Medium | Done |
 | Democratic mode | Medium | Planned |
-| Automatic host transfer | Medium | Planned |
-| Room passwords | Low | Planned |
+| Automatic host transfer | Medium | Done |
+| Room passwords | Low | Done |
 
 ### Feature Descriptions
 
-- **Message history for late joiners** - Send last N messages to clients joining a room
+- **Message history for late joiners** - The last 50 chat messages are replayed to clients joining or reattaching to a room
 - **Democratic mode** - Allow all participants to control playback, not just the host
-- **Automatic host transfer** - When host disconnects, transfer control to another participant instead of closing the room
-- **Room passwords** - Optional password protection for private rooms
+- **Automatic host transfer** - When the host leaves (or disconnects past the 90s reconnect grace period) with other participants still in the room, the earliest-joined remaining participant is promoted to host instead of closing the room
+- **Room passwords** - Optional password set at room creation; required to join
 
 ### Long-term Goals
 

@@ -241,20 +241,23 @@ connection/room state, then sends a `chat_message`.
 shown when the chat panel is closed.
 
 ### `chat/messages.js`
-`receive(msg)` appends an incoming message to `chat.messages` (capped
-at `MAX_MESSAGES` 100 client-side — not persisted, matching the
-`protocol.md`/`features.md` "no message history" limitation),
-increments the unread count and shows a toast if the panel is hidden,
-and renders it. `renderAllMessages()`/`clear()` handle full re-render
-and room-leave cleanup.
+`receive(msg)` appends an incoming *live* message to `chat.messages`
+(capped at `MAX_MESSAGES` 100 client-side), increments the unread count
+and shows a toast if the panel is hidden, and renders it.
+`hydrate(entries)` instead *replaces* `chat.messages` wholesale from the
+server-replayed `chat_history` on `room_state` (see `protocol.md`) —
+unlike `receive()`, it never touches the unread badge or fires a toast,
+since it's backfill for a joining/reattaching client, not a new live
+message. `renderAllMessages()`/`clear()` handle full re-render and
+room-leave cleanup.
 
 ## Module: `ws/` — WebSocket Communication
 
 ### `ws/send.js`
 `send(type, payload?, roomOverride?)` — the low-level message sender
-(adds `ts` and `client` automatically). `createRoom()`, `joinRoom(id)`,
-`leaveRoom()` build on top of it; `leaveRoom()` also resets all
-sync/drift state fields and hides the panel.
+(adds `ts` and `client` automatically). `createRoom(password?)`,
+`joinRoom(id, password?)`, and `leaveRoom()` build on top of it;
+`leaveRoom()` also resets all sync/drift state fields and hides the panel.
 
 ### `ws/auth.js`
 `fetchAuthToken()` — calls `/OpenWatchParty/Token` with the user's

@@ -49,6 +49,7 @@
       loadScript('ui/styles.js'),
       loadScript('ui/indicators.js'),
       loadScript('ui/toasts.js'),
+      loadScript('ui/modal.js'),
       loadScript('ui/cards.js'),
       loadScript('ui/bridge.js'),
     ]);

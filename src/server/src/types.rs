@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 
@@ -33,6 +33,22 @@ pub struct Room {
     pub last_state_ts: u64,
     #[serde(skip)]
     pub last_command_ts: u64,
+    /// Recent chat messages, replayed to clients that join/reattach so they
+    /// aren't missing context (bounded by `MAX_CHAT_HISTORY`).
+    #[serde(skip)]
+    pub chat_history: VecDeque<ChatHistoryEntry>,
+    /// Salt + SHA-256 hash of an optional room password, checked on join.
+    /// Never serialized to any client-facing payload.
+    #[serde(skip)]
+    pub password_hash: Option<(String, String)>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ChatHistoryEntry {
+    pub client_id: String,
+    pub username: String,
+    pub text: String,
+    pub server_ts: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -83,6 +99,7 @@ pub enum ServerMessageType {
     ClientLeft,
     RoomClosed,
     ChatMessage,
+    HostChanged,
 }
 
 /// Incoming WebSocket message from client

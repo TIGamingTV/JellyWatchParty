@@ -64,5 +64,19 @@
     if (container) container.innerHTML = '';
   };
 
-  Object.assign(chat, { renderMessage, renderAllMessages, receive, clear });
+  // Replaces chat.messages with server-replayed history (on join/reattach).
+  // Unlike receive(), this never bumps the unread badge or fires a toast —
+  // it's backfill, not a live message.
+  const hydrate = (entries) => {
+    chat.messages = entries.map(entry => ({
+      clientId: entry.client_id,
+      username: entry.username || 'Anonymous',
+      text: entry.text || '',
+      timestamp: entry.server_ts || Date.now(),
+      isOwn: entry.client_id === OWP.state.clientId
+    }));
+    renderAllMessages();
+  };
+
+  Object.assign(chat, { renderMessage, renderAllMessages, receive, clear, hydrate });
 })();
