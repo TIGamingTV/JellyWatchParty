@@ -8,12 +8,12 @@
     "category": "General",
     "versions": [
       {
-        "version": "0.0.23",
-        "changelog": "fix(plugin): match injected-client filter on prefix, not exact string\n\nThe exact-match filter added for Jellyfin Web/Media Player never matched\nin practice: real SessionInfo.Client values carry a trailing version\n(JellyfinWeb10.11.11, JellyfinDesktop3.0.0-dev — JMP appears\nrenamed to JellyfinDesktop), confirmed via Dashboard > Active Devices\non a live server. Switch to a prefix match so the version is effectively\na wildcard, and add JellyfinDesktop to the excluded list.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+        "version": "0.0.30",
+        "changelog": "Merge pull request #12 from TIGamingTV/claude/project-improvements-additions-br8ilt\n\nci: fix js-lint glob to check all client JS files; add sync.js drift-correction tests",
         "targetAbi": "10.11.11.0",
         "sourceUrl": "https://github.com/TIGamingTV/OpenWatchParty/releases/download/develop-latest/OpenWatchParty-dev.zip",
-        "checksum": "a6c19bfab76f0b0268086ec35f8ea4fb",
-        "timestamp": "2026-07-05T19:41:43Z"
+        "checksum": "9d8b80ebf48ef900b4ab31ebd3e52f17",
+        "timestamp": "2026-07-06T08:57:36Z"
       }
     ]
   }
