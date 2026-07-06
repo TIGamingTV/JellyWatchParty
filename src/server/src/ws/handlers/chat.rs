@@ -1,6 +1,6 @@
-use super::super::constants::MAX_CHAT_MESSAGE_LENGTH;
+use super::super::constants::{MAX_CHAT_HISTORY, MAX_CHAT_MESSAGE_LENGTH};
 use super::super::dispatch::send_error;
-use crate::types::{Clients, IncomingMessage, Rooms, WsMessage};
+use crate::types::{ChatHistoryEntry, Clients, IncomingMessage, Rooms, WsMessage};
 use crate::utils::now_ms;
 use tokio::sync::mpsc;
 
@@ -24,13 +24,25 @@ fn collect_chat_senders(
     client_id: &str,
     username: &str,
     chat_text: &str,
-    rooms: &std::collections::HashMap<String, crate::types::Room>,
+    rooms: &mut std::collections::HashMap<String, crate::types::Room>,
     clients: &std::collections::HashMap<String, crate::types::Client>,
 ) -> Option<BroadcastData> {
-    let room = rooms.get(room_id)?;
+    let room = rooms.get_mut(room_id)?;
     if !room.clients.contains(&client_id.to_string()) {
         return None;
     }
+    let server_ts = now_ms();
+
+    room.chat_history.push_back(ChatHistoryEntry {
+        client_id: client_id.to_string(),
+        username: username.to_string(),
+        text: chat_text.to_string(),
+        server_ts,
+    });
+    if room.chat_history.len() > MAX_CHAT_HISTORY {
+        room.chat_history.pop_front();
+    }
+
     let msg = WsMessage {
         msg_type: "chat_message".to_string(),
         room: Some(room_id.to_string()),
@@ -39,8 +51,8 @@ fn collect_chat_senders(
             "username": username,
             "text": chat_text
         })),
-        ts: now_ms(),
-        server_ts: Some(now_ms()),
+        ts: server_ts,
+        server_ts: Some(server_ts),
     };
     let senders: Vec<_> = room
         .clients
@@ -88,14 +100,14 @@ pub(in crate::ws) async fn handle_chat_message(
     };
 
     let broadcast_data = {
-        let locked_rooms = rooms.read().await;
+        let mut locked_rooms = rooms.write().await;
         let locked_clients = clients.read().await;
         collect_chat_senders(
             room_id,
             client_id,
             &username,
             chat_text,
-            &locked_rooms,
+            &mut locked_rooms,
             &locked_clients,
         )
     };
@@ -134,5 +146,65 @@ mod tests {
     fn validate_chat_at_limit() {
         let exact = "a".repeat(MAX_CHAT_MESSAGE_LENGTH);
         assert!(validate_chat(&exact).is_ok());
+    }
+
+    #[tokio::test]
+    async fn handle_chat_message_appends_to_history() {
+        let clients = crate::test_helpers::create_clients();
+        let rooms = crate::test_helpers::create_rooms();
+        let (host, mut rx_h) = crate::test_helpers::create_client_with_rx("uh", "Host", true);
+        clients.write().await.insert("host".to_string(), host);
+        rooms.write().await.insert(
+            "room-1".to_string(),
+            crate::test_helpers::create_room("room-1", "host"),
+        );
+
+        let parsed = IncomingMessage {
+            msg_type: crate::types::ClientMessageType::ChatMessage,
+            room: Some("room-1".to_string()),
+            client: Some("host".to_string()),
+            payload: Some(serde_json::json!({ "text": "hello" })),
+            ts: 0,
+            server_ts: None,
+        };
+        handle_chat_message("host", &parsed, &clients, &rooms).await;
+
+        let _ = crate::test_helpers::recv_msg(&mut rx_h); // drain the live broadcast
+        let rooms_locked = rooms.read().await;
+        let history = &rooms_locked.get("room-1").unwrap().chat_history;
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].text, "hello");
+        assert_eq!(history[0].username, "Host");
+    }
+
+    #[tokio::test]
+    async fn handle_chat_message_caps_history_at_max() {
+        let clients = crate::test_helpers::create_clients();
+        let rooms = crate::test_helpers::create_rooms();
+        let (host, _rx_h) = crate::test_helpers::create_client_with_rx("uh", "Host", true);
+        clients.write().await.insert("host".to_string(), host);
+        rooms.write().await.insert(
+            "room-1".to_string(),
+            crate::test_helpers::create_room("room-1", "host"),
+        );
+
+        for i in 0..(MAX_CHAT_HISTORY + 5) {
+            let parsed = IncomingMessage {
+                msg_type: crate::types::ClientMessageType::ChatMessage,
+                room: Some("room-1".to_string()),
+                client: Some("host".to_string()),
+                payload: Some(serde_json::json!({ "text": format!("msg {}", i) })),
+                ts: 0,
+                server_ts: None,
+            };
+            handle_chat_message("host", &parsed, &clients, &rooms).await;
+        }
+
+        let rooms_locked = rooms.read().await;
+        let history = &rooms_locked.get("room-1").unwrap().chat_history;
+        assert_eq!(history.len(), MAX_CHAT_HISTORY);
+        // Oldest messages should have been evicted — the front should no
+        // longer be "msg 0".
+        assert_ne!(history.front().unwrap().text, "msg 0");
     }
 }

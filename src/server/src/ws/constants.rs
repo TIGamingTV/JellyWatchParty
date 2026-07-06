@@ -20,3 +20,4 @@ pub(super) const MAX_POSITION_SECONDS: f64 = 86400.0; // 24 hours max
 pub(super) const MAX_MESSAGE_SIZE: usize = 64 * 1024; // 64 KB max message size
 pub(super) const MAX_NAME_LENGTH: usize = 100; // Max length for user/room names
 pub(super) const MAX_CHAT_MESSAGE_LENGTH: usize = 500; // Max chat message length
+pub(super) const MAX_CHAT_HISTORY: usize = 50; // Max chat messages replayed to a joining/reattaching client

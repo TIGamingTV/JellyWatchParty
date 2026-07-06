@@ -1220,3 +1220,218 @@ against the live deployment** (2026-07-05) — after updating to the
 rebuilt dev version and restarting, the Jellyfin Web/Desktop sessions no
 longer appear in the "Host From Another Device" list, leaving only
 Fladder.
+
+## Round 18 — Docs site rework: correctness pass, Host Bridge docs, de-clutter, restyle
+
+The published docs site (`docs/`, Jekyll + just-the-docs, deployed via
+`.github/workflows/docs.yml`) hadn't been touched since before most of
+Rounds 10-17 landed, so it had drifted from actively wrong to just plain
+missing in several places. This round didn't add any product features —
+it's a docs-only pass, verified fact-by-fact against the actual source
+rather than by cross-checking one doc page against another (several
+pages had already been silently copying each other's mistakes).
+
+**Wrong facts found and fixed** (not just missing — actively
+contradicted the code):
+- `product/faq.md` claimed drift correction was "0.95x-1.05x" with a
+  forced seek at "2.5 seconds". Neither number has ever matched the
+  real constants (`0.85x-2.0x` range, `2.0s` forced-seek threshold, plus
+  the Round 14 hysteresis enter/exit thresholds of 0.3s/0.1s that
+  `technical/sync.md` already documented correctly but `features.md` and
+  `user-guide.md` only had the bare range for, no hysteresis mention).
+- `technical/architecture.md`'s "Host Network Disconnect" section and
+  its "Reconnection Behavior" table both still described the
+  pre-Round-10 behavior — "room closes immediately", "host must create a
+  new room" — years after `room/reconnect.rs`'s 90s grace period and
+  persistent-`client_id` reattachment replaced that. `technical/server.md`
+  didn't even list `room/reconnect.rs` in its module tree.
+- `technical/api.md`'s "Configuration Fields Reference" table listed
+  `DefaultMaxBitrate`, `PreferDirectPlay`, `AllowHostQualityControl` as
+  plugin settings. These don't exist anywhere in
+  `PluginConfiguration.cs` — confirmed by reading the actual file, not
+  assumed. Removed, along with the example request body referencing them.
+- Jellyfin version claims were stale everywhere (README badge "10.9+",
+  `features.md`'s compatibility table topping out at "10.9.x") against
+  the real manifest target of `10.11.11.0`
+  (`docs/jellyfin-plugin-repo/manifest.json`).
+
+**Missing coverage added**:
+- `technical/host-bridge.md` (new page) — the Round 16/17 host-bridge
+  feature had zero docs anywhere on the public site, only in this file
+  and `ARCHITECTURE.md`. Covers `HostBridgeManager`/`SessionHostBridge`/
+  `SessionServerAuth`, the client-prefix eligibility filter, the four
+  REST endpoints (plain `[Authorize]`, not admin-gated — called out
+  explicitly since it differs from the config endpoints), and
+  `ui/bridge.js`'s lobby-panel integration. This also meant correcting
+  `features.md`'s "Known Limitations" #4 ("Web only... no native
+  mobile/TV apps planned"), which the bridge feature had quietly made
+  false.
+- The Round 14 native mpv/Jellyfin-Desktop adapter (`utils/video.js`)
+  was undocumented too — added to the rewritten `client.md` and to
+  `features.md`'s compatibility table.
+- `technical/client.md` was internally self-contradictory: its own
+  module-architecture tree at the top correctly listed the real
+  per-file split (verified against `infra/just/common.just`'s
+  `client_js_files`, the authoritative list), but every section below
+  it still documented four monolithic pre-split modules
+  (`playback.js`/`ws.js`/`ui.js`/`app.js`) that haven't existed in that
+  form since the split. Rewrote the whole per-module reference section
+  from scratch, one subsection per real file, by actually reading all
+  ~20 client files rather than trusting the old prose.
+- `technical/plugin.md`'s project structure was missing `Services/`
+  entirely and described `Web/plugin.js` as a "bundled client
+  JavaScript" — wrong, it's a loader; the individual-module endpoint
+  (`GET /OpenWatchParty/Client/{*path}`) wasn't documented anywhere,
+  alongside the older `ClientScript` endpoint.
+
+**De-cluttering** (separate ask from the user, mid-plan): folded
+`technical/jellyfin-syncplay-reference.md` (a dev-research page, not
+end-user content) and `development/file-transformation-integration.md`'s
+deep C# implementation detail into `ARCHITECTURE.md`, keeping only a
+short admin-facing summary of the latter in `operations/installation.md`
+(which already had it, briefly). Both standalone pages deleted, both
+`ARCHITECTURE.md` and `PROGRESS.md` (this file) added to `_config.yml`'s
+Jekyll `exclude:` list — neither has front matter, so undocumented they'd
+otherwise ship as raw, unstyled, unnavigable pages under the live site.
+Also trimmed the four section `index.md` stubs and the home page's
+"Documentation"/"Development" link tables down from hand-maintained
+duplicates of the sidebar nav to short one-paragraph intros.
+
+**Visual rework** (also user-requested): added
+`docs/_sass/color_schemes/owp.scss`, a small custom just-the-docs color
+scheme keyed off the logo's blue-to-purple gradient (with the logo's
+orange reserved for search-highlight only), replacing the stock
+`color_scheme: dark`. Deliberately not a layout rebuild — same
+sidebar/search/theme mechanics, just a different palette.
+
+**Verification**: actually built the site with
+`bundle exec jekyll build --baseurl ""` rather than just eyeballing
+Markdown — this sandbox's `bundle exec jekyll` needed a
+`LANG=C.utf8 LC_ALL=C.utf8` workaround for a Sass encoding crash (no
+`en_US.UTF-8` locale installed here), but once past that the build
+succeeded cleanly. Confirmed in `_site/`: the new host-bridge page
+renders and sits in the Technical nav, the two folded-in pages and
+`ARCHITECTURE.md`/`PROGRESS.md` don't appear anywhere in the output, and
+the custom color hex values show up in the compiled CSS. Repo-wide grep
+afterward for the old wrong numbers ("0.95x-1.05x", "2.5 second",
+stale "10.9" version claims, the fabricated config field names)
+confirmed no stale copies survived anywhere in `docs/`.
+
+### Status / next action
+
+Docs-only change, no product code touched — nothing to deploy/test
+beyond the docs site itself. Not done in this round: PR-preview builds
+for the docs site (discussed with the user — GitHub Pages via
+`actions/deploy-pages` only supports one live environment, so a real
+"beta" preview would need either a workflow change to upload PR builds
+as artifacts, or a separate third-party host like Cloudflare Pages/Netlify
+for shareable preview URLs — neither implemented yet, pending user
+decision).
+
+## Round 19 — Shipped the four roadmap features: chat history, democratic mode, host transfer, room passwords
+
+Asked to "think about improvements and additions", surveyed the repo
+(architecture, CI, `features.md`'s own Roadmap table, this file) and
+found the project's own stated roadmap — message history for late
+joiners, democratic mode, automatic host transfer, room passwords, all
+listed as "Planned" — was the highest-value, least-ambiguous thing to
+build, alongside two concrete gaps found while reading: `ci.yml`'s
+`js-lint` job only globbing top-level client JS (missing ~23 of ~25
+files), and `architecture.md` documenting a `MAX_ROOMS_PER_USER` server
+constant that doesn't exist anywhere in the code.
+
+**Changes:**
+- `ci.yml`: `js-lint`'s syntax-check step now recurses
+  (`find ... -name '*.js' -not -path '*/tests/*'`) instead of globbing
+  only the top-level directory.
+- `architecture.md`: "Rooms per user: 3, configurable via
+  `MAX_ROOMS_PER_USER`" corrected to describe the real, structural
+  1-hosted-room-per-user behavior in `ws/handlers/create.rs`.
+- `src/clients/jellyfin-web/tests/sync.test.js` (new): first automated
+  coverage for `playback/sync.js`'s hysteresis-gated drift-correction
+  math (previously zero tests existed for this file) — enter/exit
+  threshold behavior, rate clamping, hard-seek, host/non-room early exits.
+- **Chat history**: `Room.chat_history: VecDeque<ChatHistoryEntry>`
+  (capped at `MAX_CHAT_HISTORY = 50`, `ws/handlers/chat.rs` pushes/evicts
+  on each message), replayed via a new shared
+  `messaging::build_room_state_payload()` helper used by all three
+  `room_state`-sending sites (`create.rs`, `join.rs`,
+  `room/reconnect.rs`) — introduced now rather than left as 3x
+  duplicated `json!({...})` literals, since this round already needed to
+  add two new fields (`chat_history`, `democratic_mode`) to all three.
+  Client: `chat/messages.js` gets a `hydrate()` that replaces
+  `chat.messages` from server-replayed history without touching the
+  unread badge/toast (unlike live `receive()`).
+- **Democratic mode**: `Room.democratic_mode: bool`, one-line authority
+  change in `playback.rs`
+  (`room.host_id != client_id && !room.democratic_mode`), new
+  host-gated `toggle_democratic_mode` message →
+  `democratic_mode_changed` broadcast. Turned out the client also
+  gates: `playback/bind.js` never even *sends* a guest's playback
+  events today (`if (!state.isHost...) return` at every send site) —
+  fixed by adding `utils.canControlPlayback()` and using it in place of
+  the bare `state.isHost` checks, otherwise the server-side change alone
+  would have been silently ineffective for actual guests.
+- **Automatic host transfer**: `room/leave.rs`'s
+  `detach_client_from_room` only signals "close this room" when
+  `room.clients.is_empty()` now; if the host leaves with others still
+  present, `promote_new_host()` promotes `room.clients[0]` (the
+  Vec is already insertion-ordered — no new bookkeeping needed) and
+  broadcasts a new `host_changed` message instead. Both the explicit
+  `leave_room` path and the 90s-grace-period-expiry disconnect path
+  (`room/reconnect.rs::schedule_disconnect`) funnel through this same
+  function, so one change covers both. Client force-rerenders
+  (`ui.render(true)`) on `host_changed` since the fast-render path only
+  keys off `state.inRoom`, not `state.isHost`.
+- **Room passwords**: new `src/server/src/password.rs` (added `sha2`
+  dependency) — salted SHA-256, deliberately *not* argon2/bcrypt, with
+  the trade-off written down in both the module doc-comment and
+  `security.md`: rooms are in-memory/ephemeral, so there's no persisted
+  hash database to protect against offline cracking, and a slow KDF
+  would be solving a threat that doesn't exist here. `Room.password_hash:
+  Option<(salt, hash)>` (`#[serde(skip)]`, never leaves the server),
+  checked in `join.rs` (skipped for a client already in `room.clients`,
+  so reconnect-reattach is never re-challenged), room list gets a
+  derived `has_password` bool for a lock-icon affordance. Wrong password
+  reuses the generic `error` message type plus a `"reason":
+  "wrong_password"` field rather than inventing a new message type.
+- Docs: `protocol.md`, `architecture.md`, `features.md`, `security.md`,
+  `faq.md`, `client.md` all updated for the new message types
+  (`toggle_democratic_mode`, `host_changed`, `democratic_mode_changed`),
+  payload fields, and the corrected known-limitations/roadmap tables.
+
+**Verification**: `cargo fmt --check` / `cargo clippy --all-targets -- -D
+warnings` / `cargo test` all clean (106 tests, up from 75 — 31 new,
+covering both the pure logic and the async handler paths for each
+feature, including password-mismatch rejection, democratic-mode
+authority gating, and host-promotion vs. room-closure branching).
+`node --check` over every client JS file (the same corrected glob from
+the CI fix) and `node --test` (20 tests, up from 11) both clean. **Not
+verified**: no live Jellyfin instance was available in this sandbox, so
+none of this was exercised end-to-end in a real browser against a real
+session server — same category of gap as Round 17's original bridge
+picker work. The client-side wiring (password prompts via `window.prompt`,
+the democratic-mode toggle checkbox, lock icons on room cards) was
+written to closely mirror existing patterns in the same files rather
+than inventing new UI idioms, for the same reason Round 17 gave: to
+minimize the chance of an unexecuted mistake slipping through.
+
+**Also skipped, deliberately**: this sandbox has no .NET SDK installed,
+so the Host Bridge's `SessionHostBridge.cs` (its outbound `ClientWebSocket`
+has no reconnect/backoff, an accepted gap called out back in Round 16)
+was left untouched rather than writing C# that couldn't be
+compile-checked here.
+
+### Status / next action
+
+1. Deploy and manually verify each feature end-to-end against a real
+   Jellyfin + session server (chat history on a real late joiner,
+   democratic-mode toggle from an actual non-host client, a real host
+   disconnect/reconnect for the transfer path, wrong-password rejection
+   in the browser) — everything above is unit/integration-tested but not
+   browser-verified.
+2. Host Bridge reconnect/backoff (Round 16's original gap) is still
+   open — needs a .NET-capable environment.
+3. Tier-3 ideas discussed but not built: shareable room join links,
+   emoji reactions, a `/metrics` endpoint, subtitle/audio-track sync —
+   left as ideas in the plan, not committed work.

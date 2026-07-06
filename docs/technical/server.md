@@ -39,7 +39,8 @@ src/
 └── room/
     ├── mod.rs
     ├── leave.rs          # Client leave / disconnect
-    └── close.rs          # Room closure
+    ├── close.rs          # Room closure
+    └── reconnect.rs      # Grace-period disconnect + reattachment
 ```
 
 ## Module: `main.rs`
@@ -274,11 +275,49 @@ Responds with `pong` for latency measurement.
 ## Module: `room/`
 
 ### Description
-Manages room lifecycle and client disconnection. Split into `leave.rs` (client leave/disconnect) and `close.rs` (room closure).
+Manages room lifecycle and client disconnection. Split into `leave.rs` (client leave/disconnect), `close.rs` (room closure), and `reconnect.rs` (grace-period disconnect + reattachment).
+
+### Function `schedule_disconnect` (`room/reconnect.rs`)
+
+Called when a client's WebSocket connection ends (close, error, or
+zombie reap) — **instead of** tearing the client down immediately, this
+captures the client's current (about-to-be-dead) sender and spawns a
+90-second timer (`RECONNECT_GRACE_SECS`):
+
+```rust
+const RECONNECT_GRACE_SECS: u64 = 90;
+
+pub async fn schedule_disconnect(client_id: String, clients: Clients, rooms: Rooms) {
+    let stale_sender = /* clone the client's current sender */;
+
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(RECONNECT_GRACE_SECS)).await;
+
+        // If the client reconnected, connection.rs already swapped in a
+        // new sender for this client_id — comparing channel identity
+        // tells us whether that happened.
+        let never_reconnected = /* clients[client_id].sender.same_channel(&stale_sender) */;
+
+        if never_reconnected {
+            handle_disconnect(&client_id, &clients, &rooms).await;
+        }
+        // else: reconnected within the grace period, keep room state as-is
+    });
+}
+```
+
+If the client reconnects within the window using the same persistent
+`client_id` (see [Architecture: Persistent Client ID](architecture.md)),
+`src/server/src/ws/connection.rs` reattaches it to its existing entry
+and calls `resend_room_state` (also in `reconnect.rs`) to bring it back
+up to date — no `room_closed` is ever sent, and other participants never
+see a disruption. Only if the grace period elapses with no reconnect
+does `handle_disconnect` actually run.
 
 ### Function `handle_disconnect`
 
-Called when a client disconnects.
+Called once a client is confirmed gone (grace period expired with no
+reconnect).
 
 ```rust
 pub fn handle_disconnect(client_id: &str, clients: &Clients, rooms: &Rooms) {

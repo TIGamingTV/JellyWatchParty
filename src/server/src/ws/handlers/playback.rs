@@ -142,7 +142,7 @@ pub(in crate::ws) async fn handle_playback(
         let Some(room) = locked_rooms.get_mut(room_id) else {
             break 'broadcast None;
         };
-        if room.host_id != client_id {
+        if room.host_id != client_id && !room.democratic_mode {
             break 'broadcast None;
         }
 
@@ -375,5 +375,66 @@ mod tests {
         // server_ts should be set to target_server_ts
         assert!(parsed.server_ts.is_some());
         assert!(parsed.server_ts.unwrap() > now);
+    }
+
+    #[tokio::test]
+    async fn handle_playback_rejects_guest_when_democratic_mode_off() {
+        let clients = test_helpers::create_clients();
+        let rooms = test_helpers::create_rooms();
+        let (host, _rx_h) = test_helpers::create_client_with_rx("uh", "Host", true);
+        let (guest, mut rx_g) = test_helpers::create_client_with_rx("ug", "Guest", true);
+        clients.write().await.insert("host".to_string(), host);
+        clients.write().await.insert("guest".to_string(), guest);
+        {
+            let mut room = test_helpers::create_room("room-1", "host");
+            room.clients.push("guest".to_string());
+            rooms.write().await.insert("room-1".to_string(), room);
+        }
+
+        let parsed = IncomingMessage {
+            msg_type: ClientMessageType::PlayerEvent,
+            room: Some("room-1".to_string()),
+            client: None,
+            payload: Some(serde_json::json!({ "action": "play", "position": 5.0 })),
+            ts: 0,
+            server_ts: None,
+        };
+        handle_playback("guest", parsed, &clients, &rooms).await;
+
+        assert!(rx_g.try_recv().is_err(), "guest command should be dropped");
+        let room = rooms.read().await;
+        assert_eq!(room.get("room-1").unwrap().state.play_state, "paused");
+    }
+
+    #[tokio::test]
+    async fn handle_playback_allows_guest_when_democratic_mode_on() {
+        let clients = test_helpers::create_clients();
+        let rooms = test_helpers::create_rooms();
+        let (host, mut rx_h) = test_helpers::create_client_with_rx("uh", "Host", true);
+        let (guest, _rx_g) = test_helpers::create_client_with_rx("ug", "Guest", true);
+        clients.write().await.insert("host".to_string(), host);
+        clients.write().await.insert("guest".to_string(), guest);
+        {
+            let mut room = test_helpers::create_room("room-1", "host");
+            room.clients.push("guest".to_string());
+            room.democratic_mode = true;
+            room.ready_clients.insert("guest".to_string());
+            rooms.write().await.insert("room-1".to_string(), room);
+        }
+
+        let parsed = IncomingMessage {
+            msg_type: ClientMessageType::PlayerEvent,
+            room: Some("room-1".to_string()),
+            client: None,
+            payload: Some(serde_json::json!({ "action": "play", "position": 5.0 })),
+            ts: 0,
+            server_ts: None,
+        };
+        handle_playback("guest", parsed, &clients, &rooms).await;
+
+        let msg_h = test_helpers::recv_msg(&mut rx_h).unwrap();
+        assert_eq!(msg_h.msg_type, "player_event");
+        let room = rooms.read().await;
+        assert_eq!(room.get("room-1").unwrap().state.play_state, "playing");
     }
 }

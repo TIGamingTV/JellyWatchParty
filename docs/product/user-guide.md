@@ -23,6 +23,15 @@ Before using OpenWatchParty, ensure your Jellyfin administrator has:
 
 As the host, you control playback for everyone. When you play, pause, or seek, all participants follow.
 
+### Hosting from a TV App
+
+If you're watching on a native/TV client that can't run the Watch Party
+UI at all (e.g. Fladder on Android TV), someone with browser access to
+the same server can bridge your session in as the room host instead of
+starting a room themselves — see [Host Bridge](../technical/host-bridge.md).
+Guests still join normally from their own room list; nothing changes on
+their end.
+
 ## Joining a Watch Party
 
 ### From the Player
@@ -81,8 +90,9 @@ As a participant:
 | Host plays | Video starts automatically |
 | Host pauses | Video pauses automatically |
 | Host seeks | Video jumps to new position |
-| Host leaves | "Room closed" notification |
-| Drift detected | Playback speed adjusts (0.85x-2.0x) to catch up |
+| Host loses connection briefly | Nothing visible — the server holds the room open for 90 seconds waiting for the host to reconnect |
+| Host leaves (or doesn't reconnect within 90s) | "Room closed" notification |
+| Drift detected | Playback speed adjusts (0.85x-2.0x) to catch up, only kicking in once drift passes 0.3s and staying quiet again once it drops back under 0.1s |
 
 ## The Panel Interface
 
@@ -184,7 +194,7 @@ When the chat panel is closed, incoming messages appear as toasts in the top-rig
 - Check your network connection quality
 
 ### "Room closed unexpectedly"
-- The host left or disconnected
+- The host left, or lost connection and didn't reconnect within 90 seconds
 - Server may have restarted
 - Create a new room to continue
 

@@ -36,5 +36,10 @@
     return hash.includes('home');
   };
 
-  Object.assign(utils, { shouldSend, suppress, escapeHtml, getItemImageUrl, isHomeView });
+  // True if this client is allowed to send playback commands: the room
+  // host always can, and so can any participant once the host has turned
+  // on democratic mode for the room.
+  const canControlPlayback = () => state.isHost || state.democraticMode;
+
+  Object.assign(utils, { shouldSend, suppress, escapeHtml, getItemImageUrl, isHomeView, canControlPlayback });
 })();

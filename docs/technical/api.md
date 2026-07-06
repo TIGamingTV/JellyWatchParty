@@ -16,7 +16,8 @@ The OpenWatchParty plugin exposes REST API endpoints through Jellyfin's web serv
 
 ### GET /OpenWatchParty/ClientScript
 
-Serves the client JavaScript bundle.
+Serves the client JS loader (`plugin.js`), which then fetches each
+individual module via the `Client/{*path}` endpoint below.
 
 **Authentication:** None required
 
@@ -46,6 +47,36 @@ curl -i "http://localhost:8096/OpenWatchParty/ClientScript"
 curl -i -H "If-None-Match: \"abc123...\"" \
   "http://localhost:8096/OpenWatchParty/ClientScript"
 ```
+
+### GET /OpenWatchParty/Client/{*path}
+
+Serves an individual client module by path (e.g.
+`Client/playback/sync.js`), used by the `plugin.js` loader instead of
+shipping one monolithic bundle. Same content-type and caching model as
+`ClientScript`.
+
+**Authentication:** None required
+
+**Example:**
+```bash
+curl -i "http://localhost:8096/OpenWatchParty/Client/playback/sync.js"
+```
+
+### Host Bridge Endpoints
+
+Let a logged-in user bridge a currently-playing native Jellyfin session
+(e.g. Fladder on Android TV) in as a room host. Unlike the configuration
+endpoints below, these are gated with plain `[Authorize]` — **not**
+admin-only — since session info (username, device, now-playing title)
+is deliberately not treated as private within a server. Full detail:
+[Host Bridge](host-bridge.md).
+
+| Method | Path | Description |
+|--------|------|--------------|
+| `GET` | `/OpenWatchParty/Bridge/Sessions` | List sessions eligible to be bridged |
+| `GET` | `/OpenWatchParty/Bridge/Status` | List currently active bridges |
+| `POST` | `/OpenWatchParty/Bridge/{sessionId}/Start` | Start bridging a session in as a room host |
+| `POST` | `/OpenWatchParty/Bridge/{sessionId}/Stop` | Stop an active bridge |
 
 ### GET /OpenWatchParty/Token
 
@@ -221,10 +252,7 @@ curl -X POST \
     "JwtIssuer": "Jellyfin",
     "TokenTtlSeconds": 3600,
     "InviteTtlSeconds": 3600,
-    "SessionServerUrl": "",
-    "DefaultMaxBitrate": 0,
-    "PreferDirectPlay": true,
-    "AllowHostQualityControl": true
+    "SessionServerUrl": ""
   }' \
   "http://localhost:8096/System/Configuration/Plugin/0f2fd0fd-09ff-4f49-9f1c-4a8f421a4b7d"
 ```
@@ -241,9 +269,6 @@ curl -X POST \
 | `TokenTtlSeconds` | int | `3600` | Token lifetime in seconds. Valid range: 60-86400 (1 min to 24 hours). Values outside this range are clamped. |
 | `InviteTtlSeconds` | int | `3600` | *Reserved for future use.* Intended for room invite link expiration. Currently not implemented. |
 | `SessionServerUrl` | string | `""` | WebSocket server URL (e.g., `wss://party.example.com/ws`). **When empty**, the client auto-detects using the same hostname with port 3000 (e.g., `ws://jellyfin.local:3000/ws`). |
-| `DefaultMaxBitrate` | int | `0` | Maximum streaming bitrate in bits per second. `0` = Auto (no limit). Common values: `8000000` (1080p), `4000000` (720p), `1500000` (480p). |
-| `PreferDirectPlay` | bool | `true` | When `true`, attempts direct play without transcoding if the client supports the media format. Reduces server load and improves quality. |
-| `AllowHostQualityControl` | bool | `true` | When `true`, the host can change quality settings during a watch party. When `false`, quality is locked to default settings. |
 
 ### SessionServerUrl Behavior
 

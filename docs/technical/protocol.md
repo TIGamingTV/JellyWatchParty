@@ -10,7 +10,22 @@ nav_order: 2
 
 OpenWatchParty uses a JSON-over-WebSocket protocol for real-time communication between clients and the session server.
 
-**Endpoint:** `ws(s)://<host>:3000/ws`
+**Endpoint:** `ws(s)://<host>:3000/ws?client_id=<persistent-client-id>`
+
+### `client_id` Query Parameter
+
+The client generates a UUID once, persists it in `localStorage`, and
+sends it as `?client_id=` on every connection attempt (including
+reconnects). This is a *different* identifier from the per-connection
+`client` field used elsewhere in this protocol and from the
+`client_hello.payload.client_id` below — this query param is what lets
+the server recognize "this is the same client as before" across a
+dropped connection, so it can reattach the client to its existing room
+membership (and resend `room_state`) instead of treating it as brand
+new. Only values that look like a real UUIDv4 are trusted; anything
+else is ignored and the server mints a fresh ID instead. See
+[Architecture: Persistent Client ID](architecture.md) and
+[Server: `room/reconnect.rs`](server.md) for the reattachment mechanics.
 
 ## Message Format
 
@@ -75,7 +90,8 @@ Create a new watch party room.
   "payload": {
     "name": "Movie Night",
     "start_pos": 0.0,
-    "media_id": "abc123def456"
+    "media_id": "abc123def456",
+    "password": "optional-room-password"
   },
   "ts": 1678900000000
 }
@@ -86,6 +102,7 @@ Create a new watch party room.
 | `name` | string | Room display name |
 | `start_pos` | number | Initial position (seconds) |
 | `media_id` | string | Jellyfin media ID (optional) |
+| `password` | string | Optional room password. If set, `join_room` must supply a matching `password` (see below). Never echoed back to any client. |
 
 **Response:** `room_state`
 
@@ -101,11 +118,18 @@ Join an existing room.
 {
   "type": "join_room",
   "room": "uuid-room-id",
+  "payload": {
+    "password": "required-if-room-has-one"
+  },
   "ts": 1678900000000
 }
 ```
 
-**Response:** `room_state`
+| Payload Field | Type | Description |
+|---------------|------|-------------|
+| `password` | string | Required only if the room was created with a password. Not checked for a client that's already a member of the room (e.g. a re-sent join after a panel refresh). |
+
+**Response:** `room_state`, or `error` with `payload.reason: "wrong_password"` if the password is missing/incorrect.
 
 **Effects:**
 - Client added to `room.clients`
@@ -125,9 +149,34 @@ Leave the current room.
 ```
 
 **Effects:**
-- If host leaves: room closes, broadcast `room_closed`
-- Otherwise: broadcast `participants_update`
+- If host leaves and other participants remain: the earliest-joined
+  remaining participant is promoted to host in place, broadcast
+  `host_changed` (room stays open)
+- If host leaves and no participants remain: room closes, broadcast
+  `room_closed`
+- If a non-host leaves: broadcast `participants_update`
 - Broadcast `room_list` to all
+
+### `toggle_democratic_mode`
+
+Turn democratic mode on or off for the room (host only).
+
+```json
+{
+  "type": "toggle_democratic_mode",
+  "room": "uuid-room-id",
+  "payload": {
+    "enabled": true
+  },
+  "ts": 1678900000000
+}
+```
+
+| Payload Field | Type | Description |
+|---------------|------|-------------|
+| `enabled` | boolean | When `true`, any room participant may send `player_event`/`state_update` — not just the host. |
+
+**Response:** `democratic_mode_changed` broadcast to the room, or `error` if the sender isn't the host.
 
 ### `ready`
 
@@ -150,7 +199,7 @@ Indicate client is ready to receive playback commands.
 
 ### `player_event`
 
-Send a playback event (host only).
+Send a playback event. Requires being the room host, unless democratic mode is enabled for the room (see `toggle_democratic_mode`), in which case any participant may send this.
 
 ```json
 {
@@ -185,7 +234,7 @@ Send a playback event (host only).
 
 ### `state_update`
 
-Periodic playback state update (host only).
+Periodic playback state update. Same authority rule as `player_event`: host, or any participant once democratic mode is on.
 
 ```json
 {
@@ -285,7 +334,8 @@ List of active rooms.
       "id": "uuid-room-id",
       "name": "Movie Night",
       "count": 3,
-      "media_id": "abc123def456"
+      "media_id": "abc123def456",
+      "has_password": false
     }
   ],
   "ts": 1678900000000,
@@ -310,12 +360,29 @@ Full room state. Sent after `create_room` or `join_room`.
     "state": {
       "position": 120.5,
       "play_state": "playing"
-    }
+    },
+    "democratic_mode": false,
+    "chat_history": [
+      {
+        "client_id": "uuid-sender-id",
+        "username": "Alice",
+        "text": "Hello!",
+        "server_ts": 1678899990000
+      }
+    ]
   },
   "ts": 1678900000000,
   "server_ts": 1678900000000
 }
 ```
+
+| Payload Field | Type | Description |
+|---------------|------|-------------|
+| `democratic_mode` | boolean | Whether any participant (not just host) may currently control playback |
+| `chat_history` | array | Up to the last 50 chat messages sent in this room, oldest first — empty for a freshly created room. Replayed on both initial join and reconnect-reattach so late joiners and reconnecting clients aren't missing context. |
+
+Sent after `create_room`, `join_room`, and on reattachment after a
+dropped-connection reconnect (see [Architecture](architecture.md)).
 
 ### `participants_update`
 
@@ -411,6 +478,49 @@ A participant left the room.
 |---------------|------|-------------|
 | `participant_count` | number | Updated participant count after the client left |
 
+### `host_changed`
+
+The host left (or disconnected past the reconnect grace period) while
+other participants remained, so the earliest-joined remaining
+participant was promoted to host in place — the room stays open rather
+than closing.
+
+```json
+{
+  "type": "host_changed",
+  "room": "uuid-room-id",
+  "client": "uuid-new-host-id",
+  "payload": {
+    "host_id": "uuid-new-host-id",
+    "host_name": "Bob",
+    "participant_count": 2
+  },
+  "ts": 1678900000000,
+  "server_ts": 1678900000000
+}
+```
+
+**Client processing:** update `state.isHost` (compare `payload.host_id`
+to the local `client_id`) and force a full UI re-render — host-only
+affordances (the Close/Leave button, the democratic-mode toggle) only
+update on a forced render, not the normal fast-render path.
+
+### `democratic_mode_changed`
+
+Broadcast whenever the host toggles democratic mode for the room.
+
+```json
+{
+  "type": "democratic_mode_changed",
+  "room": "uuid-room-id",
+  "payload": {
+    "enabled": true
+  },
+  "ts": 1678900000000,
+  "server_ts": 1678900000000
+}
+```
+
 ### `pong`
 
 Response to ping.
@@ -468,12 +578,18 @@ Error response.
 {
   "type": "error",
   "payload": {
-    "message": "Error description"
+    "message": "Error description",
+    "reason": "wrong_password"
   },
   "ts": 1678900000000,
   "server_ts": 1678900000000
 }
 ```
+
+| Payload Field | Type | Description |
+|---------------|------|-------------|
+| `message` | string | Human-readable error description |
+| `reason` | string | Optional machine-readable code for errors a client may want to special-case (currently only `"wrong_password"`, from `join_room`) |
 
 ## Sequence Diagram: Complete Session
 

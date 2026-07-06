@@ -37,13 +37,25 @@
       <div class="owp-footer">Server: ${DEFAULT_WS_URL.replace(/^wss?:\/\//, '').replace('/ws', '')}</div>
     `;
     const btn = panel.querySelector('#owp-btn-create');
-    if (btn) btn.onclick = () => OWP.actions && OWP.actions.createRoom && OWP.actions.createRoom();
+    if (btn) btn.onclick = () => {
+      if (!OWP.actions || !OWP.actions.createRoom) return;
+      const password = window.prompt('Room password (optional, leave blank for none):') || '';
+      OWP.actions.createRoom(password);
+    };
     ui.updateRoomListUI();
     ui.updateBridgeListUI();
   };
 
   const renderRoom = (panel) => {
     const syncIndicator = ui.buildSyncStatusIndicator();
+    const democraticToggle = state.isHost
+      ? `<label style="font-size:12px; display:flex; align-items:center; gap:6px; margin-top:6px;">
+           <input type="checkbox" id="owp-democratic-toggle" ${state.democraticMode ? 'checked' : ''}>
+           Let everyone control playback
+         </label>`
+      : (state.democraticMode
+        ? '<div style="font-size:11px; color:#69f0ae; margin-top:6px;">Democratic mode is on \u2014 anyone can control playback</div>'
+        : '');
     panel.innerHTML = `
       <div class="owp-header">
         <span style="color:#69f0ae">\u25CF</span>
@@ -54,6 +66,7 @@
         <div class="owp-label">Participants</div>
         <div id="owp-participants-list" style="font-size:13px;">Online: ${state.participantCount || 1}</div>
         ${syncIndicator}
+        ${democraticToggle}
       </div>
       <div id="owp-chat-section">
         <div class="owp-label">Chat <span id="owp-chat-badge" class="owp-chat-badge"></span></div>
@@ -70,6 +83,14 @@
     `;
     const leaveBtn = panel.querySelector('#owp-btn-leave');
     if (leaveBtn) leaveBtn.onclick = () => OWP.actions && OWP.actions.leaveRoom && OWP.actions.leaveRoom();
+    const democraticToggleEl = panel.querySelector('#owp-democratic-toggle');
+    if (democraticToggleEl) {
+      democraticToggleEl.onchange = (e) => {
+        if (OWP.actions && OWP.actions.setDemocraticMode) {
+          OWP.actions.setDemocraticMode(e.target.checked);
+        }
+      };
+    }
   };
 
   const setupChatInput = (panel) => {

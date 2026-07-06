@@ -4,6 +4,26 @@
   const state = OWP.state;
   const utils = OWP.utils;
 
+  // Always prompts for a password and joins. Used to retry after the
+  // server rejects a join with "wrong_password" (e.g. the room list's
+  // cached has_password was stale, or the user mistyped it).
+  const promptJoinWithPassword = (roomId) => {
+    if (!OWP.actions || !OWP.actions.joinRoom) return;
+    const password = window.prompt('This room is password-protected. Enter password:') || '';
+    if (!password) return; // user cancelled
+    OWP.actions.joinRoom(roomId, password);
+  };
+
+  // Joins a room from the lobby list, prompting for a password first only
+  // if the room list flagged it as password-protected.
+  const joinRoomFromList = (room) => {
+    if (room.has_password) {
+      promptJoinWithPassword(room.id);
+      return;
+    }
+    if (OWP.actions && OWP.actions.joinRoom) OWP.actions.joinRoom(room.id);
+  };
+
   const updateRoomListUI = () => {
     const roomList = document.getElementById('owp-room-list');
     if (!roomList) return;
@@ -15,10 +35,11 @@
     state.rooms.forEach(room => {
       const item = document.createElement('div');
       item.className = 'owp-room-item';
-      item.innerHTML = `<div><div style="font-weight:bold">${utils.escapeHtml(room.name)}</div><div style="font-size:10px; color:#888">${room.count} users</div></div><button class="owp-btn secondary">Join</button>`;
-      item.onclick = () => {
-        if (OWP.actions && OWP.actions.joinRoom) OWP.actions.joinRoom(room.id);
-      };
+      const lockIcon = room.has_password
+        ? '<span class="material-icons" style="font-size:12px;vertical-align:middle;" aria-hidden="true">lock</span> '
+        : '';
+      item.innerHTML = `<div><div style="font-weight:bold">${lockIcon}${utils.escapeHtml(room.name)}</div><div style="font-size:10px; color:#888">${room.count} users</div></div><button class="owp-btn secondary">Join</button>`;
+      item.onclick = () => joinRoomFromList(room);
       roomList.appendChild(item);
     });
   };
@@ -131,5 +152,5 @@
     return card;
   };
 
-  Object.assign(ui, { updateRoomListUI, createRoomCard });
+  Object.assign(ui, { updateRoomListUI, createRoomCard, promptJoinWithPassword });
 })();

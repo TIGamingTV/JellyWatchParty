@@ -83,6 +83,8 @@
       case 'participants_update': h.handleParticipantsUpdate(msg); break;
       case 'client_left': h.handleClientLeft(msg); break;
       case 'room_closed': h.handleRoomClosed(msg); break;
+      case 'host_changed': h.handleHostChanged(msg); break;
+      case 'democratic_mode_changed': h.handleDemocraticModeChanged(msg); break;
       case 'player_event': h.handlePlayerEvent(msg, video); break;
       case 'state_update': h.handleStateUpdate(msg, video); break;
       case 'pong': h.handlePong(msg); break;
