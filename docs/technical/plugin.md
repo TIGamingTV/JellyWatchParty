@@ -1,7 +1,7 @@
 ---
 title: Plugin
-parent: Technical
-nav_order: 5
+parent: Technical Reference
+nav_order: 4
 ---
 
 # Jellyfin Plugin (C#)
@@ -91,9 +91,10 @@ Serves the client JS *loader* (`plugin.js`) with caching support. The
 loader then fetches each individual module via
 `GET /JellyWatchParty/Client/{*path}` (`GetClientModule`, same embedded-
 resource/ETag caching model) — the client is not shipped as one
-pre-bundled file. See [Client](client.md) for the module list, and
-[REST API](api.md) for the full endpoint reference, including the
-[Host Bridge](host-bridge.md) endpoints this controller also exposes.
+pre-bundled file. See [Client](client.md) for the module list, and the
+[REST API Reference](#rest-api-reference) below for the full endpoint
+list, including the [Host Bridge](host-bridge.md) endpoints this
+controller also exposes.
 
 ```csharp
 [HttpGet("ClientScript")]
@@ -335,3 +336,73 @@ just build plugin
 ```
 
 The built DLL and dependencies are placed in `bin/Debug/net9.0/`.
+
+## REST API Reference
+
+**Base URL:** `http(s)://<jellyfin-host>:<port>/JellyWatchParty`
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/JellyWatchParty/ClientScript` | None | Client JS loader (`plugin.js`), ETag-cached |
+| `GET` | `/JellyWatchParty/Client/{*path}` | None | Individual client module by path, e.g. `Client/playback/sync.js` |
+| `GET` | `/JellyWatchParty/Token` | Jellyfin auth | Issues a JWT (or no-auth response) for the current user |
+| `GET` | `/JellyWatchParty/Bridge/Sessions` | Jellyfin auth (any user) | Sessions eligible to bridge in as a room host — see [Host Bridge](host-bridge.md) |
+| `GET` | `/JellyWatchParty/Bridge/Status` | Jellyfin auth (any user) | Active bridges |
+| `POST` | `/JellyWatchParty/Bridge/{sessionId}/Start` | Jellyfin auth (any user) | Start bridging a session in as host |
+| `POST` | `/JellyWatchParty/Bridge/{sessionId}/Stop` | Jellyfin auth (any user) | Stop an active bridge |
+
+The Bridge endpoints are gated with plain `[Authorize]` — **not** admin-only
+— since session info (username, device, now-playing title) is deliberately
+not treated as private within a server.
+
+### GET /JellyWatchParty/Token
+
+```bash
+curl -H "X-Emby-Token: YOUR_API_KEY" "http://localhost:8096/JellyWatchParty/Token"
+```
+
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIs...",
+  "auth_enabled": true,
+  "expires_in": 3600,
+  "user_id": "abc123",
+  "user_name": "John"
+}
+```
+
+When JWT isn't configured, `token` is `null` and `auth_enabled` is `false`.
+
+| Status | Meaning |
+|--------|---------|
+| 200 | Token generated successfully |
+| 401 | Not authenticated or claims missing |
+| 429 | Rate limit exceeded (10 tokens/min per user) |
+| 500 | Plugin not configured |
+
+All error responses share the shape `{"error": "..."}`.
+
+### Configuration API
+
+Plugin configuration is managed through Jellyfin's standard plugin
+configuration endpoints (admin privileges required):
+
+```bash
+# Read
+curl -H "X-Emby-Token: $TOKEN" \
+  "http://localhost:8096/System/Configuration/Plugin/0f2fd0fd-09ff-4f49-9f1c-4a8f421a4b7d"
+
+# Update
+curl -X POST \
+  -H "X-Emby-Token: $TOKEN" -H "Content-Type: application/json" \
+  -d '{"JwtSecret": "...", "JwtAudience": "JellyWatchParty", "JwtIssuer": "Jellyfin", "TokenTtlSeconds": 3600, "InviteTtlSeconds": 3600, "SessionServerUrl": ""}' \
+  "http://localhost:8096/System/Configuration/Plugin/0f2fd0fd-09ff-4f49-9f1c-4a8f421a4b7d"
+```
+
+See [Configuration](../configuration) for the field reference and examples.
+
+### WebSocket API
+
+The session server itself uses WebSocket, not REST, for real-time
+communication — endpoint `ws(s)://<host>:3000/ws`. See
+[Protocol](protocol.md) for the complete message specification.

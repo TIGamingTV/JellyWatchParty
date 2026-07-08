@@ -12,46 +12,18 @@ nav_order: 1
 
 JellyWatchParty is a Jellyfin plugin that enables synchronized media playback across multiple clients. Watch movies and shows together with friends, no matter where they are.
 
-## Quick Start
+## Where to Start
 
-### For Users
+- **[Installation](installation)** - All install options: Docker, Windows Server, and the Jellyfin plugin
+- **[Features](features)** - What JellyWatchParty does, compatibility, and the roadmap
+- **[Core Structure](core-structure)** - How the plugin, session server, and web client fit together
+- **[User Guide](user-guide)** - Creating and joining watch parties
+- **[Troubleshooting & FAQ](troubleshooting)** - Common issues and questions
 
-Deploy the session server and install the plugin.
-See [Installation Guide](operations/installation) for step-by-step instructions.
-
-### For Developers
-
-Set up a development environment:
-
-```bash
-git clone https://github.com/TIGamingTV/JellyWatchParty.git
-cd JellyWatchParty
-just setup   # Configure git hooks (required once)
-just up      # Build and start Jellyfin + session server
-just dev     # Start with log following
-just watch   # Auto-restart on file changes
-```
-
-See [Development Setup](development/setup) for the full workflow.
+Contributing code instead? See [Development Setup](development/setup) to
+get a local environment running with `just up`.
 
 ---
-
-## Architecture Overview
-
-```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│  Jellyfin Web   │     │  Session Server │     │  Jellyfin Web   │
-│    (Host)       │◄───►│     (Rust)      │◄───►│   (Clients)     │
-└─────────────────┘     └─────────────────┘     └─────────────────┘
-        │                        │                       │
-        └────────────────────────┴───────────────────────┘
-                         WebSocket (ws://)
-```
-
-**Components:**
-- **Jellyfin Plugin (C#)** - Serves client JavaScript, provides configuration UI, and (via `Services/`) can bridge native/TV client sessions in as room hosts — see [Host Bridge](technical/host-bridge)
-- **Session Server (Rust)** - Manages rooms and relays sync messages via WebSocket
-- **Web Client (JavaScript)** - Injected into Jellyfin UI, handles playback synchronization
 
 ## Glossary
 

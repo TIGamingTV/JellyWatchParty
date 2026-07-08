@@ -375,11 +375,11 @@ List any breaking changes and migration steps.
 
 ## Installation
 
-See [Installation Guide](docs/operations/installation.md).
+See [Installation Guide](docs/installation.md).
 
 ## Upgrading
 
-See [Upgrade Procedure](docs/operations/deployment.md#upgrade-procedure).
+See [Upgrade Procedure](docs/deployment.md#upgrade-procedure).
 
 ## Changelog
 
@@ -389,4 +389,4 @@ See [Upgrade Procedure](docs/operations/deployment.md#upgrade-procedure).
 
 - [Contributing](contributing.md) - How to contribute
 - [Testing](testing.md) - Testing before release
-- [Deployment](../operations/deployment.md) - Production deployment
+- [Deployment](../deployment.md) - Production deployment

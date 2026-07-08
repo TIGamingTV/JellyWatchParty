@@ -195,6 +195,16 @@ Key files:
   `docs/jellyfin-plugin-repo/manifest.json` (served via GitHub Pages).
 - `.github/workflows/docs.yml` — deploys `docs/` via GitHub Pages
   (Jekyll), which is also how the plugin manifest becomes publicly fetchable.
+- **Docs layout (post docs-rework)**: the published site is now a flat set
+  of top-level pages (`docs/index.md`, `installation.md`, `features.md`,
+  `core-structure.md`, `user-guide.md`, `configuration.md`,
+  `troubleshooting.md`, `deployment.md`, `security.md`) plus two collapsed
+  sections for deeper/contributor content: `docs/technical/` (protocol,
+  server, client, plugin, sync, host-bridge) and `docs/development/`
+  (setup, contributing, testing, release, ci). The old `product/` and
+  `operations/` directories and `technical/architecture.md`/`api.md` no
+  longer exist — their content was merged into the pages above. This file
+  and `PROGRESS.md` remain excluded from the build (see `_config.yml`).
 - `docs/jellyfin-plugin-repo/manifest.json` — the Jellyfin plugin repository
   manifest; must contain valid `System.Version`-parseable version strings
   (N.N, N.N.N, or N.N.N.N — nothing else) or it will crash Jellyfin's
@@ -216,8 +226,8 @@ Internet ──HTTPS/WSS──▶ nginx (DDNS domain, TLS) ──┬──▶ Je
 
 ## File-Transformation Integration (implementation detail)
 
-The public installation guide (`docs/operations/installation.md`, Option
-A) covers the admin-facing summary: install
+The public installation guide (`docs/installation.md`, "Enable the Client
+Script" > Option A) covers the admin-facing summary: install
 [jellyfin-plugin-file-transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation)
 and JellyWatchParty auto-injects its client `<script>` tag into
 `index.html`, no Custom HTML step needed. This section is the

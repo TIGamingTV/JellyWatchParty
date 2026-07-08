@@ -1,10 +1,51 @@
 ---
 title: Features
-parent: Getting Started
-nav_order: 2
+nav_order: 3
 ---
 
 # Features
+
+## What is JellyWatchParty?
+
+JellyWatchParty is a plugin for [Jellyfin](https://jellyfin.org/) that enables
+synchronized media playback across multiple clients. It allows users to watch
+movies, TV shows, and other media together in real-time, regardless of their
+physical location.
+
+## The Problem
+
+Watching media together remotely is challenging:
+- Video players drift out of sync over time
+- Pausing, seeking, and resuming must be coordinated manually
+- Network latency makes coordination difficult
+- Different streaming qualities cause timing differences
+
+## The Solution
+
+- **Real-time synchronization** - All participants see the same content at the same time
+- **Host-controlled playback** - One person controls play/pause/seek for everyone
+- **Automatic drift correction** - Playback speed adjusts to keep clients in sync
+- **HLS/transcoding support** - Works with Jellyfin's adaptive streaming
+
+## How It Works
+
+1. **Host creates a room** - Starts a watch party from the Jellyfin player
+2. **Guests join** - Enter the room ID to join the session
+3. **Synchronized playback** - Everyone sees the same frame at the same time
+4. **Continuous sync** - Background algorithms keep everyone aligned
+
+See [Core Structure](core-structure) for how the three components (plugin,
+session server, web client) work together to make this happen.
+
+## Comparison with Alternatives
+
+| Feature | JellyWatchParty | SyncPlay | Teleparty |
+|---------|---------------|----------|-----------|
+| Self-hosted | Yes | Yes | No |
+| Jellyfin native | Yes | Yes | No |
+| Lightweight | Yes | Moderate | Heavy |
+| Browser-based | Yes | No | Yes |
+| Open source | Yes | Yes | No |
 
 ## Current Features
 
@@ -21,7 +62,7 @@ nav_order: 2
 - **Play/Pause sync** - Host controls playback state for all clients
 - **Seek sync** - Jumping to a position syncs everyone
 - **Position sync** - Continuous updates keep clients aligned
-- **Drift correction** - Automatic playback speed adjustment (0.85x-2.0x), using hysteresis so it only kicks in once drift exceeds 0.3s and stays quiet until it falls back under 0.1s (see [Sync Algorithms](../technical/sync.md))
+- **Drift correction** - Automatic playback speed adjustment (0.85x-2.0x), using hysteresis so it only kicks in once drift exceeds 0.3s and stays quiet until it falls back under 0.1s (see [Sync Algorithms](technical/sync))
 - **HLS support** - Works with Jellyfin's adaptive streaming
 
 ### User Interface
@@ -53,6 +94,15 @@ nav_order: 2
 - **CORS protection** - Origin validation (configurable)
 - **Message size limits** - 64KB max message size
 
+See [Security](security) for the full security model.
+
+### Host Bridge
+
+Any logged-in user with browser access to the server can bridge a currently
+playing native/TV session (e.g. Fladder on Android TV, which can't run the
+injected UI) in as a room host — see [Host Bridge](technical/host-bridge).
+Guests still join normally; nothing changes on their end.
+
 ## Compatibility
 
 ### Jellyfin Versions
@@ -73,23 +123,19 @@ nav_order: 2
 | Safari (iOS) | 14+ | Partial | See mobile limitations |
 | Chrome (Android) | 80+ | Partial | See mobile limitations |
 | Firefox (Android) | 79+ | Partial | See mobile limitations |
-| Jellyfin Desktop | Any (CEF+mpv) | Supported | Uses a native player adapter (see [Client](../technical/client.md#module-utilsvideojs)) instead of an HTML5 `<video>` element |
+| Jellyfin Desktop | Any (CEF+mpv) | Supported | Uses a native player adapter (see [Client](technical/client#module-utilsvideojs)) instead of an HTML5 `<video>` element |
 
 #### Safari Known Issues
 
-Safari uses its native HLS implementation which behaves differently:
+Safari uses its native HLS implementation, which behaves differently:
 
 - **Buffering state reporting** - Safari may report incorrect `readyState` during HLS segment loading, causing brief sync hiccups
 - **Playback rate limits** - Safari may clamp playback rates more aggressively than other browsers
 - **Background tab throttling** - Aggressive throttling can affect sync when tab is not focused
 
-**Workarounds:**
-- Keep the Safari tab in focus during watch parties
-- If sync issues persist, try leaving and rejoining the room
+**Workarounds:** keep the Safari tab in focus during watch parties; if sync issues persist, try leaving and rejoining the room.
 
 #### Mobile Browser Limitations
-
-Mobile browsers have reduced functionality due to platform restrictions:
 
 | Feature | Desktop | Mobile |
 |---------|---------|--------|
@@ -98,7 +144,6 @@ Mobile browsers have reduced functionality due to platform restrictions:
 | Auto-play | Yes | Requires user interaction |
 | Picture-in-picture sync | Yes | Not supported |
 
-**Mobile-specific notes:**
 - **iOS Safari** - Auto-play restrictions require tapping play after joining
 - **Android Chrome** - Background tabs may be suspended by the OS
 - **Data saver modes** - May interfere with WebSocket connections
@@ -116,13 +161,11 @@ Mobile browsers have reduced functionality due to platform restrictions:
 
 1. **Host-only control** - Only the host can control playback (democratic mode planned)
 2. **Single media** - One media item per room (by design)
-3. **Ephemeral rooms** - Rooms are closed when the host leaves (with no other participants remaining) and doesn't reconnect within 90 seconds, or when the server restarts (by design); if other participants remain, host duties transfer automatically instead — see Automatic host transfer below
-4. **Guests need a browser or Jellyfin Media Player client** - The Watch Party UI (joining, chat, the room list) only exists in the injected web client and Jellyfin Desktop. Hosting is broader: a [Host Bridge](../technical/host-bridge.md) lets any native/TV client (e.g. Fladder on Android TV) act as room host even though it can't run the UI itself — but someone still has to join as a guest from a supported client to actually watch.
+3. **Ephemeral rooms** - Rooms are closed when the host leaves (with no other participants remaining) and doesn't reconnect within 90 seconds, or when the server restarts (by design); if other participants remain, host duties transfer automatically instead — see Automatic host transfer above
+4. **Guests need a browser or Jellyfin Media Player client** - The Watch Party UI (joining, chat, the room list) only exists in the injected web client and Jellyfin Desktop. Hosting is broader: [Host Bridge](technical/host-bridge) lets any native/TV client act as room host even though it can't run the UI itself — but someone still has to join as a guest from a supported client to actually watch.
 5. **Chat history is capped and in-memory** - The last 50 messages are replayed to joining/reattaching clients, but history is lost when a room closes (rooms are ephemeral by design)
 
 ## Roadmap
-
-### Planned Features
 
 | Feature | Priority | Status |
 |---------|----------|--------|
@@ -132,14 +175,11 @@ Mobile browsers have reduced functionality due to platform restrictions:
 | Automatic host transfer | Medium | Done |
 | Room passwords | Low | Done |
 
-### Feature Descriptions
-
-- **Message history for late joiners** - The last 50 chat messages are replayed to clients joining or reattaching to a room
 - **Democratic mode** - Allow all participants to control playback, not just the host
-- **Automatic host transfer** - When the host leaves (or disconnects past the 90s reconnect grace period) with other participants still in the room, the earliest-joined remaining participant is promoted to host instead of closing the room
-- **Room passwords** - Optional password set at room creation; required to join
-
-### Long-term Goals
-
 - **Official Jellyfin plugin repository** - Publish to the [official Jellyfin plugin repository](https://jellyfin.org/docs/general/server/plugins/#official-plugins) for native discoverability and installation
 
+## Next Steps
+
+- [Installation](installation) - Set up on your server
+- [User Guide](user-guide) - How to use JellyWatchParty
+- [Core Structure](core-structure) - How it's built

@@ -1,7 +1,7 @@
 ---
 title: Host Bridge
-parent: Technical
-nav_order: 8
+parent: Technical Reference
+nav_order: 6
 ---
 
 # Host Bridge
@@ -97,20 +97,14 @@ the *bridged session's* owner, not the HTTP caller) and the normal
 
 ## REST Endpoints
 
-All gated with plain `[Authorize]` — **not** an admin-only policy.
-Session info (username, device, now-playing title) is deliberately not
-treated as private within a server, and any logged-in user can
-start/stop a bridge from the same panel where they'd create or join a
-room.
+See [Plugin: REST API Reference](plugin.md#rest-api-reference) for the
+full endpoint table (`Bridge/Sessions`, `Bridge/Status`,
+`Bridge/{sessionId}/Start`, `Bridge/{sessionId}/Stop`) and auth gating.
 
-| Method | Path | Description |
-|--------|------|--------------|
-| `GET` | `/JellyWatchParty/Bridge/Sessions` | Eligible sessions (`sessionId`, `userName`, `deviceName`, `client`, `nowPlayingItemName`) |
-| `GET` | `/JellyWatchParty/Bridge/Status` | Active bridges (`sessionId`, `userName`, `roomId`, `connected`) |
-| `POST` | `/JellyWatchParty/Bridge/{sessionId}/Start` | Start bridging a session in as host; returns the same shape as `Bridge/Status`'s entries |
-| `POST` | `/JellyWatchParty/Bridge/{sessionId}/Stop` | Stop an active bridge, closing its room |
-
-Response fields are camelCase — Jellyfin's controllers don't
+`Bridge/Sessions` returns `sessionId`, `userName`, `deviceName`, `client`,
+`nowPlayingItemName` per eligible session; `Bridge/Status` and the
+`Start`/`Stop` responses return `sessionId`, `userName`, `roomId`,
+`connected`. Response fields are camelCase — Jellyfin's controllers don't
 auto-camelCase JSON output, so the controller projects onto anonymous
 objects with the exact keys the UI expects, matching the existing
 `/Token` endpoint's `user_id`/`auth_enabled` convention of spelling
@@ -128,6 +122,6 @@ to call plugin endpoints.
 
 ## Related
 
-- [Features: Known Limitations](../product/features.md#known-limitations) — how this changes the "web only" caveat
-- [FAQ: Can I host from Fladder or another Android TV app?](../product/faq.md)
-- [User Guide: Hosting from a TV App](../product/user-guide.md#hosting-from-a-tv-app)
+- [Features: Known Limitations](../features.md#known-limitations) — how this changes the "web only" caveat
+- [Troubleshooting & FAQ: Can I host from Fladder or another Android TV app?](../troubleshooting.md#usage)
+- [User Guide: Hosting from a TV App](../user-guide.md#hosting-from-a-tv-app)
