@@ -116,6 +116,7 @@ dotnet build -c Release
 | Component | Output Location |
 |-----------|-----------------|
 | Session Server | `src/server/target/release/session-server` |
+| Session Server (Windows) | `jwp-session-server-windows-vX.Y.Z.zip` (CI-built, attached to GitHub Release) |
 | Plugin DLL | `src/plugins/jellyfin/JellyWatchParty/bin/Release/net9.0/JellyWatchParty.dll` |
 
 ## Release Steps
@@ -178,6 +179,7 @@ Or via GitHub UI:
 The workflow will automatically:
 - Build and push Docker images to GHCR
 - Build and attach the Jellyfin plugin zip
+- Build and attach a standalone Windows session server binary
 - Update `manifest.json` for the plugin repository
 
 ### 8. Merge Back into `develop`
@@ -272,7 +274,10 @@ When you create a GitHub Release:
 
 1. **Docker Image**: Built for amd64 and arm64, pushed to GHCR with version + `latest` tags
 2. **Jellyfin Plugin**: Built, zipped, and attached to the release
-3. **Plugin Repository**: `manifest.json` updated with new version and deployed to GitHub Pages
+3. **Windows Session Server**: Built natively on `windows-latest`, zipped with a
+   `session-server.exe` and a short usage README, and attached to the release —
+   no Docker or Rust install required to run it
+4. **Plugin Repository**: `manifest.json` updated with new version and deployed to GitHub Pages
 
 ### What Happens on Push to `main`
 
