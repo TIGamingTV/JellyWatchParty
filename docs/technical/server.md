@@ -1,7 +1,7 @@
 ---
 title: Server
-parent: Technical
-nav_order: 3
+parent: Technical Reference
+nav_order: 2
 ---
 
 # Session Server (Rust)
@@ -307,7 +307,7 @@ pub async fn schedule_disconnect(client_id: String, clients: Clients, rooms: Roo
 ```
 
 If the client reconnects within the window using the same persistent
-`client_id` (see [Architecture: Persistent Client ID](architecture.md)),
+`client_id` (see [Persistent Client ID](#persistent-client-id) below),
 `src/server/src/ws/connection.rs` reattaches it to its existing entry
 and calls `resend_room_state` (also in `reconnect.rs`) to bring it back
 up to date — no `room_closed` is ever sent, and other participants never
@@ -419,3 +419,52 @@ pub fn validate_token(token: &str, secret: &str) -> Result<Claims, Error> {
 2. **No deadlock**: Only one lock acquired at a time per handler
 3. **Message cloning**: `warp_msg.clone()` for efficient broadcasting
 4. **Bounded channels**: Backpressure via bounded `mpsc::Sender` per client
+
+## Reconnect and Room Lifecycle {#reconnect-and-room-lifecycle}
+
+### Persistent Client ID
+
+Reconnection is matched by identity, not by luck: the client generates a
+UUID once and stores it in `localStorage`
+(`getPersistentClientId()`/`withClientId()` in
+`src/clients/jellyfin-web/ws/connection.js`), then sends it as
+`?client_id=<uuid>` on every WebSocket connection attempt (see
+[Protocol](protocol)). If the server sees a connection with a `client_id`
+that still has a live (or grace-period) entry, it swaps in the new
+transport and keeps the existing room/host state (`ws/connection.rs`)
+instead of registering a new client. A client-supplied ID is only trusted
+if it looks like a real UUIDv4 — anything else falls back to a freshly
+minted server-side ID.
+
+### Reconnection Behavior
+
+| Scenario | Behavior |
+|----------|----------|
+| Any client reconnects within 90s | Reattaches to the same client entry; if they were in a room, `room_state` is resent and their host/guest role is restored |
+| Host reconnects within 90s | Room stays open the whole time; participants see no disruption |
+| Host does not reconnect within 90s, others remain | Earliest-joined remaining participant is promoted to host; `host_changed` broadcast; room stays open |
+| Host does not reconnect within 90s, no one else remains | Room is torn down, `room_closed` broadcast (no other participants left to receive it) |
+| Server restart | All rooms lost (in-memory only); clients reconnect to an empty server |
+
+Auto-reconnect on the client retries with exponential backoff
+(`RECONNECT_BASE_MS` up to `RECONNECT_MAX_MS`), not a fixed interval, and
+shows "Reconnecting..." in the UI while `autoReconnect=true`.
+
+### Room Capacity and Scaling
+
+Design limits: 20 clients per room, all state in-memory (rooms are
+ephemeral by design), single server instance (sufficient for typical use —
+see [Configuration: Multi-Instance Setup](../configuration#multi-instance-setup)
+for why not to run more than one). At capacity, a join attempt gets a
+`"Room is full"` error instead of being added.
+
+| Rooms | Clients/Room | Total Clients | Expected Behavior |
+|-------|--------------|---------------|-------------------|
+| 10 | 5 | 50 | Excellent |
+| 50 | 10 | 500 | Good |
+| 100 | 15 | 1500 | Acceptable (monitor memory) |
+| 200+ | 20 | 4000+ | May need resource limits |
+
+Bottlenecks in rough order of likelihood: memory (~2KB/client, ~5KB/room),
+network (proportional to message rate × clients), CPU (minimal — message
+relay, no heavy computation).

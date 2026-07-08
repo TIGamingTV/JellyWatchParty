@@ -18,7 +18,7 @@ JellyWatchParty enables synchronized media playback for [Jellyfin](https://jelly
 
 Forked from https://github.com/mhbxyz/OpenWatchParty
 
-## Quick Start
+## Quick Start with the File transformation Plugin
 
 ### Users
 
@@ -49,7 +49,8 @@ https://tigamingtv.github.io/JellyWatchParty/jellyfin-plugin-repo/manifest.json
 
 Then go to the **Catalog** tab, install **JellyWatchParty**, and restart Jellyfin.
 
-See the [Installation Guide](https://tigamingtv.github.io/JellyWatchParty/operations/installation/) for enabling the client script and full setup details.
+For Windows Server, manual installs, and enabling the client script: see the
+**[Installation Guide](https://tigamingtv.github.io/JellyWatchParty/installation/)**.
 
 ### Developers
 
@@ -63,13 +64,16 @@ See the [Development Setup Guide](https://tigamingtv.github.io/JellyWatchParty/d
 
 ## Documentation
 
-**[tigamingtv.github.io/JellyWatchParty](https://tigamingtv.github.io/JellyWatchParty/)**
+**[tigamingtv.github.io/JellyWatchParty](https://tigamingtv.github.io/JellyWatchParty/)** — start with
+[Installation](https://tigamingtv.github.io/JellyWatchParty/installation/),
+[Features](https://tigamingtv.github.io/JellyWatchParty/features/), and
+[Core Structure](https://tigamingtv.github.io/JellyWatchParty/core-structure/).
 
 ## Contributing
 
 - [Report bugs](https://github.com/TIGamingTV/JellyWatchParty/issues)
 - [Submit pull requests](https://github.com/TIGamingTV/JellyWatchParty/pulls)
-- [Contributing Guide](https://tigamingtv.github.io/JellyWatchParty/development/contributing.html)
+- [Contributing Guide](https://tigamingtv.github.io/JellyWatchParty/development/contributing/)
 
 ## License
 

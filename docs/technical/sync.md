@@ -1,7 +1,7 @@
 ---
 title: Sync Algorithms
-parent: Technical
-nav_order: 6
+parent: Technical Reference
+nav_order: 5
 ---
 
 # Synchronization Algorithms
@@ -49,6 +49,17 @@ function getServerNow() {
     return Date.now() + serverOffsetMs;
 }
 ```
+
+### Clock Skew Tolerance
+
+The system tolerates significant clock differences between clients:
+
+| Skew Level | Behavior |
+|------------|----------|
+| < 100ms | Ideal - no noticeable drift |
+| 100ms - 500ms | Good - corrected by playback rate adjustment |
+| 500ms - 2000ms | Acceptable - noticeable catch-up but functional |
+| > 2000ms | Poor - may trigger hard seek, visible jumps |
 
 ## 2. Synchronized Action Scheduling
 
@@ -347,10 +358,32 @@ if pos_diff >= 0.0 && pos_diff < 0.5 {
 }
 ```
 
+### Buffering and HLS Edge Cases
+
+| Scenario | Behavior |
+|----------|----------|
+| Segment loading | `isBuffering=true`, sync paused |
+| Seek during buffer | Queued until ready |
+| False pause (HLS artifact) | Filtered by buffering check |
+| Backward position jump | Ignored if < 2s (HLS noise) |
+
+Protection mechanisms: the `isSyncing` lock (2s) prevents feedback loops,
+`readyState >= 3` is required before sending updates, and the server
+applies a 2s cooldown after commands.
+
 ## 6. Ready/Pending Play Mechanism
 
 ### Problem
 When a new participant joins, they must load the media before they can play. If the host clicks Play before everyone is ready, some will miss the start.
+
+### Multiple Clients Joining Rapidly
+
+When several clients join a room in quick succession, each join is
+processed sequentially under the room lock, and participant updates are
+batched within 100ms to avoid a message flood. The host's play command
+waits up to 2s for all clients to be ready (see below); if clients aren't
+ready within that timeout, play proceeds anyway. Allow 2-3 seconds between
+mass joins for optimal sync.
 
 ### Solution
 
