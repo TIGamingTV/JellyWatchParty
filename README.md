@@ -22,13 +22,34 @@ Forked from https://github.com/mhbxyz/OpenWatchParty
 
 ### Users
 
-```bash
-docker run -d --name jwp-session -p 3000:3000 \
-  -e ALLOWED_ORIGINS="http://your-jellyfin:8096" \
-  ghcr.io/tigamingtv/jwp-session-server:latest
+**1. Start the session server** with Docker Compose:
+
+```yaml
+# docker-compose.yml
+services:
+  jwp-session:
+    image: ghcr.io/tigamingtv/jwp-session-server:latest
+    container_name: jwp-session
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - ALLOWED_ORIGINS=http://your-jellyfin:8096
 ```
 
-Then install the plugin from Jellyfin's catalog. See the [Installation Guide](https://tigamingtv.github.io/JellyWatchParty/operations/installation/) for full instructions.
+```bash
+docker compose up -d
+```
+
+**2. Add the plugin repository** in Jellyfin: **Dashboard > Plugins > Repositories > Add**
+
+```
+https://tigamingtv.github.io/JellyWatchParty/jellyfin-plugin-repo/manifest.json
+```
+
+Then go to the **Catalog** tab, install **JellyWatchParty**, and restart Jellyfin.
+
+See the [Installation Guide](https://tigamingtv.github.io/JellyWatchParty/operations/installation/) for enabling the client script and full setup details.
 
 ### Developers
 
