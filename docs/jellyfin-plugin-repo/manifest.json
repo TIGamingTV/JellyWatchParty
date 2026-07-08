@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.4.3.0",
+        "changelog": "## What's Changed\r\n* Develop by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/24\r\n* Add Windows prebuilt binary distribution for session server by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/25\r\n* Develop by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/26\r\n\r\n\r\n**Full Changelog**: https://github.com/TIGamingTV/JellyWatchParty/compare/v1.4.2.0...v1.4.3.0\n",
+        "targetAbi": "10.11.11.0",
+        "sourceUrl": "https://github.com/TIGamingTV/JellyWatchParty/releases/download/v1.4.3.0/JellyWatchParty-v1.4.3.0.zip",
+        "checksum": "cdfcbbf2fe1e8912ceef09f8da1752a1",
+        "timestamp": "2026-07-08T20:35:42Z"
+      },
+      {
         "version": "1.4.2.0",
         "changelog": "## What's Changed\r\n* Fix remaining skip-propagation in release publish workflow by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/20\r\n\r\n\r\n**Full Changelog**: https://github.com/TIGamingTV/JellyWatchParty/compare/v1.4.1.0...v1.4.2.0\n",
         "targetAbi": "10.11.11.0",
