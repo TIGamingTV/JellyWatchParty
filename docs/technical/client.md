@@ -1,7 +1,7 @@
 ---
 title: Client
-parent: Technical
-nav_order: 4
+parent: Technical Reference
+nav_order: 3
 ---
 
 # JavaScript Client
@@ -271,7 +271,7 @@ existing socket rather than reconnecting.
 ### `ws/connection.js`
 `connect()` opens the WebSocket, appending the client's **persistent**
 `client_id` (a UUID generated once and stored in `localStorage`, see
-[Architecture: Persistent Client ID](architecture.md)) as a
+[Server: Persistent Client ID](server#persistent-client-id)) as a
 `?client_id=` query param — this is what lets the server reattach a
 reconnecting client to its existing room/host state instead of treating
 it as new. `onWsClose` reconnects with exponential backoff

@@ -341,7 +341,7 @@ Things to test:
 
 **Tip:** Use `just watch` to automatically restart Jellyfin when JS files change, avoiding stale cache issues.
 
-For other issues (plugin not loading, WebSocket connection problems, build errors), see the [Troubleshooting Guide](../operations/troubleshooting.md).
+For other issues (plugin not loading, WebSocket connection problems, build errors), see the [Troubleshooting & FAQ](../troubleshooting.md).
 
 ## Build Optimization (Rust)
 
@@ -445,4 +445,4 @@ LOG_LEVEL=debug
 
 - [Contributing](contributing.md) - How to contribute
 - [Testing](testing.md) - Running tests
-- [Architecture](../technical/architecture.md) - System design
+- [Core Structure](../core-structure.md) - System design

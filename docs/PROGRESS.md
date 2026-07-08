@@ -1584,3 +1584,91 @@ is the one gap worth closing on the next attempt.
 **Verification**: `cargo fmt --check`/`cargo clippy --all-targets -- -D
 warnings`/`cargo test` clean (102 tests — back to the exact pre-Round-19
 count). `node --check` and `node --test` clean (20/20 — same).
+
+## Round 21 — Catch-up: several rounds of unlogged history since Round 20
+
+This file went stale for a while — several real changes landed between
+Round 20 and now without a PROGRESS.md entry. Logging them here
+retroactively, in commit order, rather than leaving the gap:
+
+**Rebrand from OpenWatchParty to JellyWatchParty** (`263c0fd`): renamed
+C# namespaces/classes/project files, JS globals/DOM IDs/CSS classes,
+Docker/justfile configs, CI workflows, and docs to JellyWatchParty. The
+Jellyfin plugin GUID was deliberately left unchanged so existing installs
+keep their saved configuration across the rename.
+
+**LICENSE copyright revision** (`e59f972`): updated the copyright year and
+author.
+
+**README quick-start rewrites** (`0268e27`, `0cbec5f`, `97ae300`): added a
+note crediting the project's origin as a fork; replaced the `docker run`
+one-liner quick-start with a `docker-compose.yml` snippet and the actual
+plugin-repository manifest URL instead of a vague "install from catalog"
+instruction; fixed the installation/development-setup links to match
+where those guides had moved.
+
+**CI publish-chain fix, in two parts** (`859cdeb`, `cfc93e9`): the release
+Docker build job depended on a `changes`-detection job that only runs on
+`push` events, not `release` events. GitHub Actions treats a *skipped*
+(not just failed) dependency as blocking downstream jobs regardless of
+their own `if:` condition, so on every tagged release since the
+changes-detection job was introduced, `build`, `merge`,
+`create-release-assets`, and `update-plugin-manifest` were silently
+skipped — only the plugin build (no dependency on `changes`) ran, so
+`jwp-session-server:latest` was never rebuilt and the production plugin
+manifest was never updated for a real release. The first fix added
+`always()` to the `build` job's `if:`, but GitHub's skip-propagation
+walks the whole dependency graph, not just direct `needs:` — `build`'s
+own skipped dependency kept poisoning `merge`/`create-release-assets`/
+`update-plugin-manifest` even after `build` itself started succeeding
+(confirmed on the v1.4.1.0 release run: Build succeeded, Merge & Push
+Manifest skipped again). The second fix added `always()` to each of
+those jobs too, paired with explicit `needs.*.result` checks so a
+genuine upstream failure still stops the chain.
+
+**Windows Server prebuilt binary** (`0b34273`): `session-server.exe` is
+now built natively on `windows-latest` and attached (zipped, with a short
+usage README) to every GitHub Release, so running the session server on
+Windows Server no longer requires installing Docker, Rust, or any other
+toolchain. Documented in `docs/installation.md`'s Windows Server option.
+
+## Round 22 — Docs site rework: consolidate and de-scatter
+
+Users reported the docs (26 markdown files across four nested sections —
+Getting Started / Technical / Operations / Development) were too
+complicated and scattered, with the same content repeated in several
+places (install steps in 3 files, sync constants in 4, REST endpoints in
+3, troubleshooting split across 4). Asked for, at minimum, one page
+covering all install options (Docker variants, Windows Server, plugin),
+one explaining the core structure, and one covering overall features —
+and agreed a full simplification pass made more sense than patching just
+those three.
+
+**What changed**: flattened the nav from 4 nested sections down to 9
+top-level pages (`installation`, `features`, `core-structure`,
+`user-guide`, `configuration`, `troubleshooting` (merged with the old
+FAQ), `deployment` (absorbed `monitoring`), `security`) plus two
+collapsed sections for deeper/contributor content — `technical/`
+(protocol, server, client, plugin, sync, host-bridge; `api.md` was
+folded into `plugin.md`, `architecture.md` into the new top-level
+`core-structure.md`) and `development/` (setup, contributing, testing,
+release, ci — `contributing.md`'s duplicated CI section was trimmed to a
+link into `ci.md`). Deleted the now-empty `docs/product/` and
+`docs/operations/` directories and the duplicate `docs/README.md`.
+Deduplicated repeated content down to one source of truth each: sync
+constants live only in `technical/sync.md` now (other pages link to it),
+REST endpoints only in `technical/plugin.md`, install steps only in
+`installation.md`. Trimmed the root `README.md`'s quick-start to a
+pointer at `installation.md` instead of restating the steps, and fixed
+its links to the new flat paths.
+
+`docs/ARCHITECTURE.md` and `docs/PROGRESS.md` (this file) stay excluded
+from the published site as before — not folded into the public docs —
+but `ARCHITECTURE.md` got a short note describing the new `docs/` layout
+so its own cross-references don't go stale immediately, and this file
+picked up the Round 21 catch-up entry above while doing this pass.
+
+**Verification**: `bundle exec jekyll build` against the restructured
+`docs/` tree, plus a repo-wide grep for links to the deleted/moved paths
+(`operations/`, `product/`, `technical/architecture`, `technical/api`) to
+catch anything left dangling.

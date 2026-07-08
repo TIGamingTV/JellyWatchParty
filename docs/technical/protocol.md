@@ -1,7 +1,7 @@
 ---
 title: Protocol
-parent: Technical
-nav_order: 2
+parent: Technical Reference
+nav_order: 1
 ---
 
 # WebSocket Protocol Specification
@@ -24,8 +24,8 @@ dropped connection, so it can reattach the client to its existing room
 membership (and resend `room_state`) instead of treating it as brand
 new. Only values that look like a real UUIDv4 are trusted; anything
 else is ignored and the server mints a fresh ID instead. See
-[Architecture: Persistent Client ID](architecture.md) and
-[Server: `room/reconnect.rs`](server.md) for the reattachment mechanics.
+[Server: Persistent Client ID](server#persistent-client-id) for the
+reattachment mechanics.
 
 ## Message Format
 
@@ -359,7 +359,8 @@ Full room state. Sent after `create_room` or `join_room`.
 | `chat_history` | array | Up to the last 50 chat messages sent in this room, oldest first — empty for a freshly created room. Replayed on both initial join and reconnect-reattach so late joiners and reconnecting clients aren't missing context. |
 
 Sent after `create_room`, `join_room`, and on reattachment after a
-dropped-connection reconnect (see [Architecture](architecture.md)).
+dropped-connection reconnect (see
+[Server: Reconnect and Room Lifecycle](server#reconnect-and-room-lifecycle)).
 
 ### `participants_update`
 

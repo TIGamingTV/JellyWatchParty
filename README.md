@@ -20,38 +20,12 @@ Forked from https://github.com/mhbxyz/OpenWatchParty
 
 ## Quick Start
 
-### Users
+Deploy the session server (Docker, native, or a prebuilt Windows Server
+binary), then install the Jellyfin plugin from the plugin repository. Full
+step-by-step instructions, including all install options: see the
+**[Installation Guide](https://tigamingtv.github.io/JellyWatchParty/installation/)**.
 
-**1. Start the session server** with Docker Compose:
-
-```yaml
-# docker-compose.yml
-services:
-  jwp-session:
-    image: ghcr.io/tigamingtv/jwp-session-server:latest
-    container_name: jwp-session
-    restart: unless-stopped
-    ports:
-      - "3000:3000"
-    environment:
-      - ALLOWED_ORIGINS=http://your-jellyfin:8096
-```
-
-```bash
-docker compose up -d
-```
-
-**2. Add the plugin repository** in Jellyfin: **Dashboard > Plugins > Repositories > Add**
-
-```
-https://tigamingtv.github.io/JellyWatchParty/jellyfin-plugin-repo/manifest.json
-```
-
-Then go to the **Catalog** tab, install **JellyWatchParty**, and restart Jellyfin.
-
-See the [Installation Guide](https://tigamingtv.github.io/JellyWatchParty/operations/installation/) for enabling the client script and full setup details.
-
-### Developers
+Contributing code instead?
 
 ```bash
 git clone https://github.com/TIGamingTV/JellyWatchParty.git
@@ -63,13 +37,16 @@ See the [Development Setup Guide](https://tigamingtv.github.io/JellyWatchParty/d
 
 ## Documentation
 
-**[tigamingtv.github.io/JellyWatchParty](https://tigamingtv.github.io/JellyWatchParty/)**
+**[tigamingtv.github.io/JellyWatchParty](https://tigamingtv.github.io/JellyWatchParty/)** — start with
+[Installation](https://tigamingtv.github.io/JellyWatchParty/installation/),
+[Features](https://tigamingtv.github.io/JellyWatchParty/features/), and
+[Core Structure](https://tigamingtv.github.io/JellyWatchParty/core-structure/).
 
 ## Contributing
 
 - [Report bugs](https://github.com/TIGamingTV/JellyWatchParty/issues)
 - [Submit pull requests](https://github.com/TIGamingTV/JellyWatchParty/pulls)
-- [Contributing Guide](https://tigamingtv.github.io/JellyWatchParty/development/contributing.html)
+- [Contributing Guide](https://tigamingtv.github.io/JellyWatchParty/development/contributing/)
 
 ## License
 

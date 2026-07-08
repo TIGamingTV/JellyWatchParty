@@ -213,52 +213,10 @@ dotnet test JellyWatchParty.Tests/JellyWatchParty.Tests.csproj
 
 ## Continuous Integration
 
-All pull requests are validated by GitHub Actions CI. Your PR must pass all checks before merging.
-
-### CI Jobs
-
-| Job | Description | Runs On |
-|-----|-------------|---------|
-| **Rust Tests** | `cargo fmt --check`, `cargo clippy`, `cargo test` | Every push/PR |
-| **.NET Tests** | `dotnet build`, `dotnet test` | Every push/PR |
-| **JavaScript Lint** | `node --check` syntax validation | Every push/PR |
-| **Build Server** | Docker image build | After Rust tests pass |
-
-### Security Scans
-
-| Scan | Description | Frequency |
-|------|-------------|-----------|
-| **Cargo Audit** | Rust dependency vulnerabilities | Every push/PR + weekly |
-| **Trivy** | Docker image CVE scan | Every push/PR + weekly |
-| **CodeQL** | JavaScript static analysis | Every push/PR + weekly |
-
-### Fixing CI Failures
-
-**Rust formatting:**
-```bash
-cd src/server && cargo fmt
-```
-
-**Clippy warnings:**
-```bash
-cd src/server && cargo clippy -- -D warnings
-# Fix the warnings or justify with #[allow(...)]
-```
-
-**Build failures:**
-```bash
-# Check locally before pushing
-just build
-```
-
-### Running CI Checks Locally
-
-```bash
-just fmt      # Format Rust code
-just lint     # Run linters
-just test     # Run tests
-just build    # Build all components
-```
+All pull requests are validated by GitHub Actions CI and must pass before
+merging. Run `just fmt`, `just lint`, `just test`, and `just build` locally
+to check before pushing. See [CI/CD](ci.md) for the full pipeline
+(workflows, jobs, security scans, and how to fix common CI failures).
 
 ## Code of Conduct
 
