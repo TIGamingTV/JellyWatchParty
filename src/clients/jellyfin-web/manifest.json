@@ -1,9 +1,9 @@
 {
-  "id": "openwatchparty",
-  "name": "OpenWatchParty",
+  "id": "jellywatchparty",
+  "name": "JellyWatchParty",
   "description": "Watch Party controls for Jellyfin Web.",
   "version": "0.1.0",
   "author": "TIGamingTV (https://github.com/TIGamingTV)",
-  "repository": "https://github.com/TIGamingTV/OpenWatchParty",
+  "repository": "https://github.com/TIGamingTV/JellyWatchParty",
   "entryPoint": "plugin.js"
 }

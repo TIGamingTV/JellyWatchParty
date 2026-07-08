@@ -1,7 +1,7 @@
 (() => {
-  const OWP = window.OpenWatchParty = window.OpenWatchParty || {};
-  const ui = OWP.ui = OWP.ui || {};
-  const utils = OWP.utils;
+  const JWP = window.JellyWatchParty = window.JellyWatchParty || {};
+  const ui = JWP.ui = JWP.ui || {};
+  const utils = JWP.utils;
 
   // Promise-based text-entry modal — an in-DOM replacement for
   // window.prompt(), which several embedded/CEF-based Jellyfin clients
@@ -11,14 +11,14 @@
   const promptText = ({ title, placeholder = '', submitLabel = 'OK', inputType = 'password' } = {}) => {
     return new Promise((resolve) => {
       const overlay = document.createElement('div');
-      overlay.className = 'owp-modal-overlay';
+      overlay.className = 'jwp-modal-overlay';
       overlay.innerHTML = `
-        <div class="owp-modal">
-          <div class="owp-modal-title">${utils.escapeHtml(title || '')}</div>
-          <input type="${inputType}" class="owp-input owp-modal-input" placeholder="${utils.escapeHtml(placeholder)}">
-          <div class="owp-modal-actions">
-            <button class="owp-btn secondary owp-modal-cancel">Cancel</button>
-            <button class="owp-btn owp-modal-submit">${utils.escapeHtml(submitLabel)}</button>
+        <div class="jwp-modal">
+          <div class="jwp-modal-title">${utils.escapeHtml(title || '')}</div>
+          <input type="${inputType}" class="jwp-input jwp-modal-input" placeholder="${utils.escapeHtml(placeholder)}">
+          <div class="jwp-modal-actions">
+            <button class="jwp-btn secondary jwp-modal-cancel">Cancel</button>
+            <button class="jwp-btn jwp-modal-submit">${utils.escapeHtml(submitLabel)}</button>
           </div>
         </div>
       `;
@@ -29,7 +29,7 @@
         resolve(value);
       };
 
-      const input = overlay.querySelector('.owp-modal-input');
+      const input = overlay.querySelector('.jwp-modal-input');
       const submit = () => cleanup(input.value.trim());
       const cancel = () => cleanup(null);
 
@@ -38,8 +38,8 @@
         else if (e.key === 'Enter') submit();
       };
 
-      overlay.querySelector('.owp-modal-submit').onclick = submit;
-      overlay.querySelector('.owp-modal-cancel').onclick = cancel;
+      overlay.querySelector('.jwp-modal-submit').onclick = submit;
+      overlay.querySelector('.jwp-modal-cancel').onclick = cancel;
       overlay.onclick = (e) => { if (e.target === overlay) cancel(); };
       // stopPlayerCapture prevents keydown from bubbling to the document
       // (so Jellyfin's player doesn't steal these keystrokes), which means

@@ -1,6 +1,6 @@
 (() => {
-  const OWP = window.OpenWatchParty = window.OpenWatchParty || {};
-  const utils = OWP.utils = OWP.utils || {};
+  const JWP = window.JellyWatchParty = window.JellyWatchParty || {};
+  const utils = JWP.utils = JWP.utils || {};
 
   const getCurrentItem = () => {
     const pm = utils.getPlaybackManager();

@@ -1,6 +1,6 @@
-# OpenWatchParty Documentation
+# JellyWatchParty Documentation
 
-OpenWatchParty is a Jellyfin plugin that enables synchronized media playback across multiple clients. Watch movies and shows together with friends, no matter where they are.
+JellyWatchParty is a Jellyfin plugin that enables synchronized media playback across multiple clients. Watch movies and shows together with friends, no matter where they are.
 
 ## Quick Links
 

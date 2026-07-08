@@ -15,10 +15,10 @@ first priority in this project.**
 The repo still referenced the original upstream project throughout. Fixed:
 
 - `.github/workflows/publish.yml`:
-  - `IMAGE_NAME` → `tigamingtv/owp-session-server`
-  - plugin manifest `sourceUrl` → `https://github.com/TIGamingTV/OpenWatchParty/releases/...`
+  - `IMAGE_NAME` → `tigamingtv/jwp-session-server`
+  - plugin manifest `sourceUrl` → `https://github.com/TIGamingTV/JellyWatchParty/releases/...`
   - `targetAbi` → `"10.11.11.0"` (was `"10.10.0.0"`)
-- `src/plugins/jellyfin/OpenWatchParty/OpenWatchPartyPlugin.csproj`:
+- `src/plugins/jellyfin/JellyWatchParty/JellyWatchPartyPlugin.csproj`:
   - `Authors`, `RepositoryUrl` → TIGamingTV
   - `Jellyfin.Controller` / `Jellyfin.Model` NuGet package versions bumped
     `10.11.6` → `10.11.11` to match the target server
@@ -83,7 +83,7 @@ image path (GHCR requires all-lowercase).
 
 ## Round 4 — GitHub Pages 404 on plugin manifest
 
-`https://tigamingtv.github.io/OpenWatchParty/jellyfin-plugin-repo/manifest.json`
+`https://tigamingtv.github.io/JellyWatchParty/jellyfin-plugin-repo/manifest.json`
 returned 404 when Jellyfin tried to fetch it as a plugin repository source.
 
 **Cause**: GitHub Pages either wasn't enabled, or wasn't set to deploy via
@@ -101,8 +101,8 @@ green in the Actions tab.
 ## Round 5 — Manual plugin install (workaround while Pages was broken)
 
 Documented for reference: extract the plugin release zip, create a folder
-named `OpenWatchParty` directly inside Jellyfin's `plugins/` directory
-(location varies by install type — Docker: `/config/plugins/OpenWatchParty`
+named `JellyWatchParty` directly inside Jellyfin's `plugins/` directory
+(location varies by install type — Docker: `/config/plugins/JellyWatchParty`
 inside the container), copy all extracted files (DLLs + `Web/` folder)
 directly into it (not nested), restart Jellyfin. This bypasses
 auto-updates — the plugin-repository method should be preferred once Pages
@@ -114,15 +114,15 @@ works.
 
 **Symptom**: plugin loaded, script tag was present in page source
 (`ClientScript` endpoint returned content), but no header/OSD buttons ever
-rendered. `document.getElementById('owp-global-btn')` returned `null`.
+rendered. `document.getElementById('jwp-global-btn')` returned `null`.
 
 **Root cause**: `.github/workflows/publish.yml` had:
 ```yaml
 - name: Copy JS files to plugin Web directory
   working-directory: src/plugins/jellyfin
   run: |
-    mkdir -p OpenWatchParty/Web
-    cp ../../clients/jellyfin-web/*.js OpenWatchParty/Web/
+    mkdir -p JellyWatchParty/Web
+    cp ../../clients/jellyfin-web/*.js JellyWatchParty/Web/
 ```
 `*.js` is **not recursive** — it only copied the 2 files sitting directly in
 that folder (`plugin.js`, `state.js`). Everything in subfolders (`ui/`,
@@ -140,11 +140,11 @@ correctly; **only the GitHub Actions release path had this bug**.
       - name: Copy JS files to plugin Web directory
         working-directory: src/plugins/jellyfin
         run: |
-          mkdir -p OpenWatchParty/Web
-          cp ../../clients/jellyfin-web/plugin.js OpenWatchParty/Web/plugin.js
+          mkdir -p JellyWatchParty/Web
+          cp ../../clients/jellyfin-web/plugin.js JellyWatchParty/Web/plugin.js
           for f in state.js utils/time.js utils/video.js utils/misc.js utils/media.js utils/log.js ui/styles.js ui/indicators.js ui/toasts.js ui/cards.js ui/home.js ui/render.js playback/play.js playback/bind.js playback/sync.js chat/messages.js chat/input.js ws/send.js ws/auth.js ws/handlers/room.js ws/handlers/sync.js ws/handlers/playback.js ws/handlers/clock.js ws/connection.js app/lifecycle.js app/cleanup.js; do
-            mkdir -p "OpenWatchParty/Web/$(dirname "$f")"
-            cp "../../clients/jellyfin-web/$f" "OpenWatchParty/Web/$f"
+            mkdir -p "JellyWatchParty/Web/$(dirname "$f")"
+            cp "../../clients/jellyfin-web/$f" "JellyWatchParty/Web/$f"
           done
 ```
 Confirmed applied and working — user confirmed the plugin buttons render
@@ -155,9 +155,9 @@ after a fresh release built with this fix.
 ## Round 7 — Icon collision with native SyncPlay
 
 **Symptom**: tapping the "group" icon in the header started Jellyfin's own
-native SyncPlay instead of OpenWatchParty.
+native SyncPlay instead of JellyWatchParty.
 
-**Root cause**: both OpenWatchParty's header button and OSD button
+**Root cause**: both JellyWatchParty's header button and OSD button
 (`src/clients/jellyfin-web/ui/render.js`) use the exact same Material Icon
 glyph (`groups`) that Jellyfin's own native SyncPlay button uses in the same
 general header area — visually indistinguishable.
@@ -216,7 +216,7 @@ Then configured:
 **Clarified during this round**: the Jellyfin plugin's C# backend has zero
 network calls to the session server anywhere in its code — it only ever
 echoes the configured URL string back to the browser via the
-`/OpenWatchParty/Token` response. The only real network hop that matters is
+`/JellyWatchParty/Token` response. The only real network hop that matters is
 browser ↔ session server. This means the specific host port the container
 uses (`3238` vs. the code's default of `3000`) is a pure implementation
 detail for nginx's `proxy_pass` target — there is no separate "plugin talks
@@ -349,7 +349,7 @@ window as a normal disconnect.
 
 **Delivery method**: since the user has no local clone, all 6 files (1 new,
 5 modified) were delivered as full-file replacement content to paste via
-GitHub's web editor, plus a `.patch` file (`openwatchparty-reconnect-fix.patch`)
+GitHub's web editor, plus a `.patch` file (`jellywatchparty-reconnect-fix.patch`)
 for reference/local application if a clone exists.
 
 **Status**: **implemented but not compiled, not deployed, not tested.**
@@ -444,7 +444,7 @@ accurate — `state.js` still had `syncStatus: 'synced'` as the default).
   (also removes duplicated dot/label logic between `updateSyncIndicator` and
   `buildSyncStatusIndicator`); unrecognized/`'unknown'` status now renders as
   a distinct "Not synced yet" gray dot instead of falsely "In sync".
-- `ui/styles.js`: added `.owp-sync-dot.unknown` style (gray, `#9e9e9e`).
+- `ui/styles.js`: added `.jwp-sync-dot.unknown` style (gray, `#9e9e9e`).
 
 **Diagnostic finding this round**: user confirmed buttons/panel/room-join
 *do* work on the desktop client (injected script loads and runs fine — rules
@@ -692,7 +692,7 @@ plugin had no develop-channel equivalent at all).
   actual branch is `develop` — CI silently never ran on pushes/PRs against
   it. Fixed to `[main, develop]`.
 - `ci.yml`'s `.NET Tests` job only copied top-level `*.js` files into
-  `OpenWatchParty/Web/`, missing every subdirectory module (`utils/`, `ui/`,
+  `JellyWatchParty/Web/`, missing every subdirectory module (`utils/`, `ui/`,
   `playback/`, `chat/`, `ws/`, `app/`). Since the `.csproj` embeds
   `Web\**\*.js` as resources, test builds were silently missing most of the
   client JS. Fixed to use the same explicit file list as the release build
@@ -754,7 +754,7 @@ both fired correctly (and only for the plugin/client change, as intended —
 `build`/`merge` correctly skipped since no `src/server/**` changed).
 `manifest-dev.json` on `main` ended up with a correct `0.0.10` entry
 pointing at the `develop-latest` pre-release. But
-`https://tigamingtv.github.io/OpenWatchParty/jellyfin-plugin-repo/manifest-dev.json`
+`https://tigamingtv.github.io/JellyWatchParty/jellyfin-plugin-repo/manifest-dev.json`
 kept serving the empty seed content — nothing showed up in Jellyfin's
 catalog after adding the repo.
 
@@ -827,7 +827,7 @@ jittery in practice and that `DRIFT_CORRECTION_ENTER_SEC`/`EXIT_SEC` (0.3s /
 
 ## Round 15 — Investigated native-client sync for Fladder (Android TV); no build started
 
-The user wants OpenWatchParty to eventually reach clients that don't run
+The user wants JellyWatchParty to eventually reach clients that don't run
 Jellyfin Web/injected JS, starting specifically with **Fladder on Android
 TV** (`DonutWare/Fladder`, GPLv3, Flutter, package `nl.jknaapen.fladder`,
 leanback/Android-TV support confirmed in its manifest). This round is pure
@@ -847,7 +847,7 @@ free, with better fidelity than anything we could bolt on externally
 Worth watching the PR / helping test it rather than duplicating the work.
 
 The user has pushed back on relying on Jellyfin's own SyncPlay before
-(reason: dissatisfaction with vanilla SyncPlay's UX is *why* OpenWatchParty
+(reason: dissatisfaction with vanilla SyncPlay's UX is *why* JellyWatchParty
 exists as a separate plugin) — but that objection was about SyncPlay inside
 Jellyfin Web, not about Fladder's native implementation of it, so it's kept
 as the top recommendation here rather than discarded.
@@ -885,10 +885,10 @@ standard `MediaSession` for the app (package `nl.jknaapen.fladder`),
 controllable by anything holding a `MediaController` for it. Two fallback
 designs were discussed, **not built**:
 
-1. **Companion Android TV app** ("OWP Bridge"): a small app installed
+1. **Companion Android TV app** ("JWP Bridge"): a small app installed
    alongside Fladder, granted Notification Listener access (one-time,
    Settings → Apps → Special app access), that resolves a `MediaController`
-   for `nl.jknaapen.fladder`, joins an OpenWatchParty room over the existing
+   for `nl.jknaapen.fladder`, joins an JellyWatchParty room over the existing
    Rust WS protocol like any other client, and translates host events to
    `transportControls.play()/pause()/seekTo(ms)` (and the reverse via
    `MediaController.Callback`). Gives frame-accurate seek and position
@@ -947,7 +947,7 @@ position/pause-state the instant Jellyfin itself receives it.
 
 **Proposed design (not built):**
 1. Plugin admin page lets the user pick which active Jellyfin session is
-   "the host" for a given OpenWatchParty room (same session-list UI concept
+   "the host" for a given JellyWatchParty room (same session-list UI concept
    as the earlier admin-bridge idea).
 2. Plugin subscribes to that session's progress events and translates them
    into the *same* `play`/`pause`/`seek` messages the Rust WS server
@@ -974,7 +974,7 @@ be picked up first:
    merged, those fallbacks are probably no longer worth building.
 2. **Fladder-as-host**: build the addendum design above (plugin subscribes
    to `ISessionManager` progress events for a chosen session, bridges them
-   into an existing OpenWatchParty room as host broadcasts). Independent of
+   into an existing JellyWatchParty room as host broadcasts). Independent of
    #735, ships today, zero Fladder changes.
 
 ---
@@ -986,9 +986,9 @@ scoping — Fladder-as-guest is still untouched and still blocked on
 `DonutWare/Fladder#735`).
 
 **What was built** (all under
-`src/plugins/jellyfin/OpenWatchParty/Services/`):
+`src/plugins/jellyfin/JellyWatchParty/Services/`):
 - `SessionServerAuth.cs` — JWT-minting logic extracted out of
-  `OpenWatchPartyController` (was private statics there) so it can be
+  `JellyWatchPartyController` (was private statics there) so it can be
   reused for a session owner other than the current HTTP caller.
 - `SessionHostBridge.cs` — one `ClientWebSocket` per bridged Jellyfin
   session, speaking the exact same `auth`/`create_room`/`player_event`/
@@ -1000,7 +1000,7 @@ scoping — Fladder-as-guest is still untouched and still blocked on
   id. `PlaybackStopped` auto-tears-down that session's bridge (closing its
   room), mirroring "host disconnected."
 - Four new admin-only (`[Authorize(Policy = "RequiresElevation")]`)
-  endpoints on `OpenWatchPartyController`: `GET Bridge/Sessions`,
+  endpoints on `JellyWatchPartyController`: `GET Bridge/Sessions`,
   `GET Bridge/Status`, `POST Bridge/{sessionId}/Start`,
   `POST Bridge/{sessionId}/Stop`.
 - A new "Native Client Bridge" section in `Web/configPage.html`: lists
@@ -1029,10 +1029,10 @@ cache with a throwaway console app, not by trusting web search results —
 worth repeating that verification step for any future Jellyfin SDK
 plugin work in this repo, since GitHub's `master` branch does not
 necessarily match whatever version is actually pinned in
-`OpenWatchPartyPlugin.csproj`.
+`JellyWatchPartyPlugin.csproj`.
 
 **Build/test status**: `dotnet build` on the plugin project is clean (0
-warnings, 0 errors). `dotnet test` on `OpenWatchParty.Tests` passes 48/48
+warnings, 0 errors). `dotnet test` on `JellyWatchParty.Tests` passes 48/48
 (the pre-existing 34 plus 14 new tests covering `SessionHostBridge`'s pure
 payload-builders and `HostBridgeManager.GetEligibleSessions` filtering).
 Note: this sandbox's installed runtimes only include
@@ -1067,7 +1067,7 @@ a live Jellyfin server**. Before calling this done:
    library item, use the admin config page to start a bridge, and confirm
    a browser joining the resulting room actually sees synced playback.
 2. Confirm a non-admin user genuinely cannot hit
-   `/OpenWatchParty/Bridge/*` (verify the `RequiresElevation` policy
+   `/JellyWatchParty/Bridge/*` (verify the `RequiresElevation` policy
    assumption above against a real server, not just by reading Jellyfin's
    own source for precedent).
 3. Fladder-as-guest is still fully unaddressed — see Round 15's own
@@ -1090,17 +1090,17 @@ list (session usernames/devices/now-playing titles are not treated as
 private within their deployment), so the admin-only gate was dropped too.
 
 **Changes:**
-- `Controllers/OpenWatchPartyController.cs`: all four
-  `/OpenWatchParty/Bridge/*` endpoints changed from
+- `Controllers/JellyWatchPartyController.cs`: all four
+  `/JellyWatchParty/Bridge/*` endpoints changed from
   `[Authorize(Policy = "RequiresElevation")]` to plain `[Authorize]` — any
   logged-in Jellyfin user can list sessions and start/stop a bridge now,
-  same access level as `/OpenWatchParty/Token`.
+  same access level as `/JellyWatchParty/Token`.
 - `Web/configPage.html`: the "Native Client Bridge" section added in
   Round 16 was removed entirely (moved, not duplicated).
 - `src/clients/jellyfin-web/ui/bridge.js` (new): fetches
-  `/OpenWatchParty/Bridge/Sessions` and `/Status` using the user's own
+  `/JellyWatchParty/Bridge/Sessions` and `/Status` using the user's own
   Jellyfin `ApiClient.accessToken()` (same auth pattern `ws/auth.js`
-  already uses for `/OpenWatchParty/Token`), renders "Start"/"Stop" rows,
+  already uses for `/JellyWatchParty/Token`), renders "Start"/"Stop" rows,
   and POSTs to `/Bridge/{sessionId}/Start` or `/Stop`.
 - `ui/render.js`'s `renderLobby` now has a "Host From Another Device"
   section under the existing "Available Rooms" list and "Create Room"
@@ -1119,7 +1119,7 @@ for syntax... except Node.js is not installed in this sandbox, so that
 could not actually be run — this is a genuine gap, not a "ran and passed"
 claim. `ui/bridge.js` was written to closely mirror the existing
 `ui/cards.js`/`ws/auth.js` patterns (same `ApiClient.accessToken()` fetch
-idiom, same `.owp-room-item`/`.owp-btn` CSS classes already defined in
+idiom, same `.jwp-room-item`/`.jwp-btn` CSS classes already defined in
 `ui/styles.js`) rather than inventing new patterns, to minimize the
 chance of a mistake slipping through without being able to execute it.
 
@@ -1142,7 +1142,7 @@ confirming nothing showed in Jellyfin's own logs either: **`GetBridgeableSession
 and `GetBridgeStatus` returned JSON with PascalCase keys
 (`SessionId`, `UserName`, ...), not the camelCase (`sessionId`,
 `userName`, ...) `ui/bridge.js` was reading.** Jellyfin's controllers do
-**not** auto-camelCase JSON output — the existing `/OpenWatchParty/Token`
+**not** auto-camelCase JSON output — the existing `/JellyWatchParty/Token`
 endpoint already proved this (it manually spells out `user_id`,
 `auth_enabled` as literal anonymous-object keys precisely because there's
 no naming-policy conversion to lean on), but the new `BridgeableSessionInfo`/
@@ -1158,7 +1158,7 @@ code ever got that far — which also explains why Jellyfin's own logs
 showed nothing: the exception was returned as a 400 response body, never
 logged).
 
-**Fix**: `OpenWatchPartyController`'s three affected endpoints now project
+**Fix**: `JellyWatchPartyController`'s three affected endpoints now project
 onto anonymous objects with explicit camelCase keys
 (`sessionId`/`userName`/`deviceName`/`client`/`nowPlayingItemName` and
 `sessionId`/`userName`/`roomId`/`connected`) at the HTTP boundary, matching
@@ -1197,7 +1197,7 @@ active session with something playing, including plain Jellyfin Web
 browser tabs and Jellyfin Media Player — both already run the injected
 script and can host a room themselves via "Create Room", so listing them
 in the bridge picker was just clutter (and mildly confusing, since
-bridging one would mean two separate connections — the browser's own OWP
+bridging one would mean two separate connections — the browser's own JWP
 client and the backend bridge — racing to be host of different rooms for
 the same underlying session). `HostBridgeManager.GetEligibleSessions()`
 now excludes sessions whose `Client` is `"Jellyfin Web"` or `"Jellyfin
@@ -1281,7 +1281,7 @@ contradicted the code):
 - `technical/plugin.md`'s project structure was missing `Services/`
   entirely and described `Web/plugin.js` as a "bundled client
   JavaScript" — wrong, it's a loader; the individual-module endpoint
-  (`GET /OpenWatchParty/Client/{*path}`) wasn't documented anywhere,
+  (`GET /JellyWatchParty/Client/{*path}`) wasn't documented anywhere,
   alongside the older `ClientScript` endpoint.
 
 **De-cluttering** (separate ask from the user, mid-plan): folded
@@ -1298,7 +1298,7 @@ Also trimmed the four section `index.md` stubs and the home page's
 duplicates of the sidebar nav to short one-paragraph intros.
 
 **Visual rework** (also user-requested): added
-`docs/_sass/color_schemes/owp.scss`, a small custom just-the-docs color
+`docs/_sass/color_schemes/jwp.scss`, a small custom just-the-docs color
 scheme keyed off the logo's blue-to-purple gradient (with the logo's
 orange reserved for search-highlight only), replacing the stock
 `color_scheme: dark`. Deliberately not a layout rebuild — same

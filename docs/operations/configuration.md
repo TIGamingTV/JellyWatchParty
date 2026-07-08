@@ -8,14 +8,14 @@ nav_order: 2
 
 ## Plugin Configuration
 
-Access the plugin configuration page at **Dashboard** > **Plugins** > **OpenWatchParty**.
+Access the plugin configuration page at **Dashboard** > **Plugins** > **JellyWatchParty**.
 
 ### Settings
 
 | Setting | Default | Description |
 |---------|---------|-------------|
 | JWT Secret | (empty) | Secret key for signing tokens. Leave empty to disable authentication. Min 32 characters recommended. |
-| JWT Audience | `OpenWatchParty` | Audience claim in generated tokens |
+| JWT Audience | `JellyWatchParty` | Audience claim in generated tokens |
 | JWT Issuer | `Jellyfin` | Issuer claim in generated tokens |
 | Token TTL | `3600` | Token lifetime in seconds (1 hour default) |
 | Invite TTL | `3600` | Invite link lifetime in seconds |
@@ -50,7 +50,7 @@ openssl rand -base64 32
 ```yaml
 services:
   session-server:
-    image: owp-session-server
+    image: jwp-session-server
     ports:
       - "3000:3000"
     environment:
@@ -85,7 +85,7 @@ The client gets its configuration from the plugin. Most settings are automatic, 
 
 If the session server is on a different host or port:
 
-1. Go to **Dashboard** > **Plugins** > **OpenWatchParty**
+1. Go to **Dashboard** > **Plugins** > **JellyWatchParty**
 2. Set **Session Server URL** to your custom URL:
    ```
    wss://session.example.com/ws
@@ -140,7 +140,7 @@ Server constants in `src/server/src/ws/constants.rs`:
 # docker-compose.yml
 services:
   session-server:
-    image: owp-session-server
+    image: jwp-session-server
     ports:
       - "3000:3000"
 ```
@@ -155,7 +155,7 @@ Plugin settings:
 # docker-compose.yml
 services:
   session-server:
-    image: owp-session-server
+    image: jwp-session-server
     ports:
       - "127.0.0.1:3000:3000"  # Only localhost
     environment:
@@ -176,7 +176,7 @@ For high availability or multiple Jellyfin instances:
 ```yaml
 services:
   session-server:
-    image: owp-session-server
+    image: jwp-session-server
     deploy:
       replicas: 1  # Single instance (stateful)
     environment:
@@ -204,7 +204,7 @@ curl http://localhost:3000/health
 
 ```bash
 curl -H "X-Emby-Token: YOUR_API_KEY" \
-  "http://localhost:8096/OpenWatchParty/Token"
+  "http://localhost:8096/JellyWatchParty/Token"
 ```
 
 Expected response:

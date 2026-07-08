@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
-    <RootNamespace>OpenWatchParty.Plugin.Tests</RootNamespace>
+    <RootNamespace>JellyWatchParty.Plugin.Tests</RootNamespace>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>
@@ -26,6 +26,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\OpenWatchParty\OpenWatchPartyPlugin.csproj" />
+    <ProjectReference Include="..\JellyWatchParty\JellyWatchPartyPlugin.csproj" />
   </ItemGroup>
 </Project>

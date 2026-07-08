@@ -2,13 +2,13 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using Microsoft.IdentityModel.Tokens;
-using OpenWatchParty.Plugin.Configuration;
+using JellyWatchParty.Plugin.Configuration;
 
-namespace OpenWatchParty.Plugin.Services;
+namespace JellyWatchParty.Plugin.Services;
 
 /// <summary>
 /// Mints JWTs for authenticating to the Rust session server. Shared by the
-/// user-facing <c>/OpenWatchParty/Token</c> endpoint and the host bridge
+/// user-facing <c>/JellyWatchParty/Token</c> endpoint and the host bridge
 /// (which mints tokens on behalf of a session's owner rather than the
 /// current HTTP caller).
 /// </summary>
@@ -21,7 +21,7 @@ public static class SessionServerAuth
     /// <summary>
     /// Gets or creates cached signing credentials. Credentials are cached
     /// and reused until the JWT secret changes (P-CS02 fix, originally in
-    /// OpenWatchPartyController).
+    /// JellyWatchPartyController).
     /// </summary>
     private static SigningCredentials GetSigningCredentials(string jwtSecret)
     {

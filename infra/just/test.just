@@ -26,7 +26,7 @@ plugin:
         -e HOME=/tmp \
         -e DOTNET_CLI_HOME=/tmp/.dotnet \
         mcr.microsoft.com/dotnet/sdk:9.0 \
-        dotnet test OpenWatchParty.Tests/
+        dotnet test JellyWatchParty.Tests/
     @echo -e "{{GREEN}}✓ Plugin tests passed{{RESET}}"
 
 [doc('Run JavaScript client tests')]

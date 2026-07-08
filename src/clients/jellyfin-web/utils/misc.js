@@ -1,8 +1,8 @@
 (() => {
-  const OWP = window.OpenWatchParty = window.OpenWatchParty || {};
-  const utils = OWP.utils = OWP.utils || {};
-  const state = OWP.state;
-  const { SUPPRESS_MS } = OWP.constants;
+  const JWP = window.JellyWatchParty = window.JellyWatchParty || {};
+  const utils = JWP.utils = JWP.utils || {};
+  const state = JWP.state;
+  const { SUPPRESS_MS } = JWP.constants;
 
   const shouldSend = () => utils.nowMs() > state.suppressUntil;
 

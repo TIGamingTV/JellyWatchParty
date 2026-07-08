@@ -8,7 +8,7 @@ nav_order: 4
 
 ## Overview
 
-The OpenWatchParty client is a set of JavaScript modules (IIFE pattern) injected into Jellyfin's web interface. These modules handle playback synchronization between multiple users via WebSocket.
+The JellyWatchParty client is a set of JavaScript modules (IIFE pattern) injected into Jellyfin's web interface. These modules handle playback synchronization between multiple users via WebSocket.
 
 ## Module Architecture
 
@@ -39,10 +39,10 @@ Modules are loaded in dependency waves, parallelizing where possible:
 
 ### Description
 Defines global shared state and configuration constants. Guarded by
-`if (OWP.state) return;` so re-injection (e.g. after a hot reload) is a
+`if (JWP.state) return;` so re-injection (e.g. after a hot reload) is a
 no-op.
 
-### Constants (`OWP.constants`)
+### Constants (`JWP.constants`)
 
 | Constant | Value | Description |
 |----------|-------|-------------|
@@ -73,7 +73,7 @@ See also `PANEL_ID`, `BTN_ID`, `STYLE_ID`, `HOME_SECTION_ID` (DOM element
 IDs) and `DEFAULT_WS_URL` (`ws(s)://<host>:3000/ws`, scheme matching the
 page's protocol).
 
-### State (`OWP.state`)
+### State (`JWP.state`)
 
 Notable fields beyond the obvious (`ws`, `roomId`, `clientId`, `isHost`,
 `inRoom`, `rooms`): `serverOffsetMs`/`hasTimeSync`/`timeSyncSamples`
@@ -115,7 +115,7 @@ the URL hash. This layered fallback exists because none of those sources
 is reliably present across all Jellyfin skins/versions.
 
 ### `utils/log.js`
-`log(category, data)` — formats structured log lines (`[OWP:CATEGORY]
+`log(category, data)` — formats structured log lines (`[JWP:CATEGORY]
 key=val ...`, with unit-aware formatting for position/rate/offset
 fields), logs to the console, and also relays them to the server as a
 `client_log` message when connected (buffering up to `logBufferMax`
@@ -260,7 +260,7 @@ room-leave cleanup.
 `leaveRoom()` also resets all sync/drift state fields and hides the panel.
 
 ### `ws/auth.js`
-`fetchAuthToken()` — calls `/OpenWatchParty/Token` with the user's
+`fetchAuthToken()` — calls `/JellyWatchParty/Token` with the user's
 Jellyfin access token, waiting up to 10s for `window.ApiClient` to exist
 if needed. Populates `state.userName`/`userId`/`authEnabled` regardless
 of whether auth is enabled, and if enabled, stores the JWT and schedules
@@ -277,7 +277,7 @@ reconnecting client to its existing room/host state instead of treating
 it as new. `onWsClose` reconnects with exponential backoff
 (`RECONNECT_BASE_MS` doubling up to `RECONNECT_MAX_MS`), not a fixed
 delay. `handleMessage` dispatches each incoming message type to the
-matching function in `OWP._wsHandlers` (populated by `ws/handlers/*.js`).
+matching function in `JWP._wsHandlers` (populated by `ws/handlers/*.js`).
 
 ### `ws/handlers/room.js`
 `handleRoomList`, `handleClientHello` (stores the server-assigned

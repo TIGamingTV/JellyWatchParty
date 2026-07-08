@@ -1,8 +1,8 @@
 (() => {
-  const OWP = window.OpenWatchParty = window.OpenWatchParty || {};
-  const h = OWP._wsHandlers = OWP._wsHandlers || {};
-  const state = OWP.state;
-  const ui = OWP.ui;
+  const JWP = window.JellyWatchParty = window.JellyWatchParty || {};
+  const h = JWP._wsHandlers = JWP._wsHandlers || {};
+  const state = JWP.state;
+  const ui = JWP.ui;
 
   h.handleRoomList = (msg) => {
     state.rooms = msg.payload || [];
@@ -20,7 +20,7 @@
   h.handleParticipantsUpdate = (msg) => {
     state.participantCount = msg.payload.participant_count;
     if (state.inRoom) {
-      const el = document.getElementById('owp-participants-list');
+      const el = document.getElementById('jwp-participants-list');
       if (el) el.textContent = `Online: ${state.participantCount}`;
     }
     if (state.lastParticipantCount && state.participantCount > state.lastParticipantCount) {
@@ -33,7 +33,7 @@
     if (msg.payload?.participant_count !== undefined) {
       state.participantCount = msg.payload.participant_count;
       if (state.inRoom) {
-        const el = document.getElementById('owp-participants-list');
+        const el = document.getElementById('jwp-participants-list');
         if (el) el.textContent = `Online: ${state.participantCount}`;
         ui.showToast('A participant left the room');
       }
@@ -69,7 +69,7 @@
 
   h.handleError = (msg) => {
     const message = msg.payload?.message || 'Unknown error';
-    console.error('[OpenWatchParty] Server error:', message);
+    console.error('[JellyWatchParty] Server error:', message);
     ui.showToast(message);
     if (msg.payload?.reason === 'wrong_password' && msg.room) {
       ui.promptJoinWithPassword(msg.room);

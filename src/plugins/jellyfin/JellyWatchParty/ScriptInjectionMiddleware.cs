@@ -5,13 +5,13 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using OpenWatchParty.Plugin.Services;
+using JellyWatchParty.Plugin.Services;
 
-namespace OpenWatchParty.Plugin;
+namespace JellyWatchParty.Plugin;
 
 /// <summary>
 /// ASP.NET Core middleware that intercepts requests for the Jellyfin web client
-/// index.html and injects the OpenWatchParty client script tag.
+/// index.html and injects the JellyWatchParty client script tag.
 ///
 /// Registered via IStartupFilter so it runs BEFORE Jellyfin's static file
 /// middleware, which would otherwise serve the unmodified index.html.

@@ -4,11 +4,11 @@ using MediaBrowser.Controller.Session;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-namespace OpenWatchParty.Plugin.Services;
+namespace JellyWatchParty.Plugin.Services;
 
 /// <summary>
 /// Owns all active <see cref="SessionHostBridge"/> instances — one per
-/// Jellyfin session an admin has chosen to bridge in as an OpenWatchParty
+/// Jellyfin session an admin has chosen to bridge in as an JellyWatchParty
 /// room host. Subscribes to <see cref="ISessionManager"/>'s playback events
 /// for the lifetime of the server process and routes them to whichever
 /// bridge (if any) matches the reporting session.
@@ -16,7 +16,7 @@ namespace OpenWatchParty.Plugin.Services;
 public sealed class HostBridgeManager : IHostedService
 {
     // Clients that render Jellyfin Web's index.html and already run the
-    // injected OWP script (see docs/ARCHITECTURE.md's native-client
+    // injected JWP script (see docs/ARCHITECTURE.md's native-client
     // constraint) — these can already host a room themselves via the
     // normal "Create Room" button, so they're excluded from the bridge
     // picker to avoid clutter/confusion. Everything else (Fladder,
@@ -74,7 +74,7 @@ public sealed class HostBridgeManager : IHostedService
     /// <summary>
     /// Active Jellyfin sessions that could be started as a bridge host
     /// (i.e. currently playing something, not already bridged, and not
-    /// already running the injected OWP client itself).
+    /// already running the injected JWP client itself).
     /// </summary>
     public IReadOnlyList<BridgeableSessionInfo> GetEligibleSessions()
     {
@@ -98,7 +98,7 @@ public sealed class HostBridgeManager : IHostedService
 
     /// <summary>
     /// Starts bridging the given session's playback into a new
-    /// OpenWatchParty room, with that session as host.
+    /// JellyWatchParty room, with that session as host.
     /// </summary>
     public async Task<BridgeStatus> StartBridgeAsync(string sessionId)
     {
@@ -111,7 +111,7 @@ public sealed class HostBridgeManager : IHostedService
             ?? throw new InvalidOperationException($"No active session with id '{sessionId}'.");
 
         var config = Plugin.Instance?.Configuration
-            ?? throw new InvalidOperationException("OpenWatchParty plugin is not configured.");
+            ?? throw new InvalidOperationException("JellyWatchParty plugin is not configured.");
         if (string.IsNullOrWhiteSpace(config.SessionServerUrl))
         {
             throw new InvalidOperationException("Session Server URL is not configured.");
@@ -135,7 +135,7 @@ public sealed class HostBridgeManager : IHostedService
         }
 
         _logger.LogInformation(
-            "[OpenWatchParty] Started host bridge for session {SessionId} ({UserName})",
+            "[JellyWatchParty] Started host bridge for session {SessionId} ({UserName})",
             sessionId,
             bridge.UserName);
 
@@ -150,7 +150,7 @@ public sealed class HostBridgeManager : IHostedService
         if (_bridges.TryRemove(sessionId, out var bridge))
         {
             await bridge.DisposeAsync().ConfigureAwait(false);
-            _logger.LogInformation("[OpenWatchParty] Stopped host bridge for session {SessionId}", sessionId);
+            _logger.LogInformation("[JellyWatchParty] Stopped host bridge for session {SessionId}", sessionId);
         }
     }
 
@@ -182,7 +182,7 @@ public sealed class HostBridgeManager : IHostedService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[OpenWatchParty] Host bridge error for session {SessionId}", sessionId);
+            _logger.LogWarning(ex, "[JellyWatchParty] Host bridge error for session {SessionId}", sessionId);
         }
     }
 }

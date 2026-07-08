@@ -5,12 +5,12 @@ nav_order: 1
 ---
 
 <p align="center">
-  <img src="logo.png" alt="OpenWatchParty" width="400">
+  <img src="logo.png" alt="JellyWatchParty" width="400">
 </p>
 
-# OpenWatchParty Documentation
+# JellyWatchParty Documentation
 
-OpenWatchParty is a Jellyfin plugin that enables synchronized media playback across multiple clients. Watch movies and shows together with friends, no matter where they are.
+JellyWatchParty is a Jellyfin plugin that enables synchronized media playback across multiple clients. Watch movies and shows together with friends, no matter where they are.
 
 ## Quick Start
 
@@ -24,8 +24,8 @@ See [Installation Guide](operations/installation) for step-by-step instructions.
 Set up a development environment:
 
 ```bash
-git clone https://github.com/TIGamingTV/OpenWatchParty.git
-cd OpenWatchParty
+git clone https://github.com/TIGamingTV/JellyWatchParty.git
+cd JellyWatchParty
 just setup   # Configure git hooks (required once)
 just up      # Build and start Jellyfin + session server
 just dev     # Start with log following

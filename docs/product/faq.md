@@ -8,14 +8,14 @@ nav_order: 4
 
 ## General
 
-### What is OpenWatchParty?
-OpenWatchParty is a Jellyfin plugin that lets multiple users watch the same video in sync. When the host plays, pauses, or seeks, everyone follows automatically.
+### What is JellyWatchParty?
+JellyWatchParty is a Jellyfin plugin that lets multiple users watch the same video in sync. When the host plays, pauses, or seeks, everyone follows automatically.
 
 ### Is it free?
-Yes, OpenWatchParty is open source and free to use.
+Yes, JellyWatchParty is open source and free to use.
 
 ### Does it work with Plex or Emby?
-No, OpenWatchParty is designed specifically for Jellyfin. It uses Jellyfin's plugin API and web interface.
+No, JellyWatchParty is designed specifically for Jellyfin. It uses Jellyfin's plugin API and web interface.
 
 ### Do all participants need Jellyfin accounts?
 Yes, everyone needs access to the same Jellyfin server and the media library.
@@ -63,7 +63,7 @@ No. Each client transcodes independently based on their connection and device. S
 Typically within 100-200ms. The system uses clock synchronization and drift correction to maintain sync.
 
 ### Why do I see slight speed changes?
-OpenWatchParty adjusts playback speed (0.85x-2.0x) to gradually correct drift without jarring seeks. It only starts adjusting once drift passes 0.3 seconds, and stops once it's back under 0.1 seconds, so small jitter doesn't cause constant flickering. This is imperceptible in most cases.
+JellyWatchParty adjusts playback speed (0.85x-2.0x) to gradually correct drift without jarring seeks. It only starts adjusting once drift passes 0.3 seconds, and stops once it's back under 0.1 seconds, so small jitter doesn't cause constant flickering. This is imperceptible in most cases.
 
 ### What if I'm several seconds behind?
 If drift exceeds 2.0 seconds, the client automatically seeks to the correct position instead of adjusting speed.
@@ -118,7 +118,7 @@ See [Troubleshooting Guide](../operations/troubleshooting.md#room-closes-unexpec
 ## Support
 
 ### Where can I report bugs?
-Open an issue on the [GitHub repository](https://github.com/TIGamingTV/OpenWatchParty/issues).
+Open an issue on the [GitHub repository](https://github.com/TIGamingTV/JellyWatchParty/issues).
 
 ### How can I contribute?
 See the [Contributing Guide](../development/contributing.md) for how to submit pull requests.

@@ -6,9 +6,9 @@ nav_order: 1
 
 # Overview
 
-## What is OpenWatchParty?
+## What is JellyWatchParty?
 
-OpenWatchParty is a plugin for [Jellyfin](https://jellyfin.org/) that enables synchronized media playback across multiple clients. It allows users to watch movies, TV shows, and other media together in real-time, regardless of their physical location.
+JellyWatchParty is a plugin for [Jellyfin](https://jellyfin.org/) that enables synchronized media playback across multiple clients. It allows users to watch movies, TV shows, and other media together in real-time, regardless of their physical location.
 
 ## The Problem
 
@@ -20,7 +20,7 @@ Watching media together remotely is challenging:
 
 ## The Solution
 
-OpenWatchParty provides:
+JellyWatchParty provides:
 - **Real-time synchronization** - All participants see the same content at the same time
 - **Host-controlled playback** - One person controls play/pause/seek for everyone
 - **Automatic drift correction** - Playback speed adjusts to keep clients in sync
@@ -53,7 +53,7 @@ OpenWatchParty provides:
 
 ## Comparison with Alternatives
 
-| Feature | OpenWatchParty | SyncPlay | Teleparty |
+| Feature | JellyWatchParty | SyncPlay | Teleparty |
 |---------|---------------|----------|-----------|
 | Self-hosted | Yes | Yes | No |
 | Jellyfin native | Yes | Yes | No |
@@ -64,5 +64,5 @@ OpenWatchParty provides:
 ## Next Steps
 
 - [Features](features.md) - Detailed feature list
-- [User Guide](user-guide.md) - How to use OpenWatchParty
+- [User Guide](user-guide.md) - How to use JellyWatchParty
 - [Installation](../operations/installation.md) - Set up on your server

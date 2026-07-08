@@ -8,8 +8,8 @@ nav_order: 3
 
 ## Getting Started
 
-Before using OpenWatchParty, ensure your Jellyfin administrator has:
-1. Installed the OpenWatchParty plugin
+Before using JellyWatchParty, ensure your Jellyfin administrator has:
+1. Installed the JellyWatchParty plugin
 2. Started the session server
 3. Enabled the client script in Jellyfin settings
 
@@ -142,7 +142,7 @@ The "Out of sync" state is normal for a few seconds after joining or after the h
 
 ## Notifications
 
-OpenWatchParty displays toast notifications to keep you informed about room activity.
+JellyWatchParty displays toast notifications to keep you informed about room activity.
 
 ### System Notifications (Center)
 

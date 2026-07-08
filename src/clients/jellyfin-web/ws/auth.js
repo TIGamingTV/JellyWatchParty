@@ -1,8 +1,8 @@
 (() => {
-  const OWP = window.OpenWatchParty = window.OpenWatchParty || {};
-  const actions = OWP.actions = OWP.actions || {};
-  const state = OWP.state;
-  const utils = OWP.utils;
+  const JWP = window.JellyWatchParty = window.JellyWatchParty || {};
+  const actions = JWP.actions = JWP.actions || {};
+  const state = JWP.state;
+  const utils = JWP.utils;
 
   const getJellyfinUsername = () => {
     try {
@@ -20,7 +20,7 @@
       const serverCreds = JSON.parse(localStorage.getItem('_deviceId2') || '{}');
       if (serverCreds?.Servers?.[0]?.Users?.[0]?.Name) return serverCreds.Servers[0].Users[0].Name;
     } catch (e) {
-      console.warn('[OpenWatchParty] Could not get username from Jellyfin:', e);
+      console.warn('[JellyWatchParty] Could not get username from Jellyfin:', e);
     }
     return '';
   };
@@ -56,9 +56,9 @@
     const refreshBeforeMs = Math.min(5 * 60 * 1000, expiresInSec * 1000 * 0.2);
     const refreshInMs = Math.max(0, (expiresInSec * 1000) - refreshBeforeMs);
     if (refreshInMs > 0) {
-      console.log('[OpenWatchParty] Token refresh scheduled in', Math.round(refreshInMs / 1000), 's');
+      console.log('[JellyWatchParty] Token refresh scheduled in', Math.round(refreshInMs / 1000), 's');
       state.tokenRefreshTimer = setTimeout(async () => {
-        console.log('[OpenWatchParty] Refreshing auth token...');
+        console.log('[JellyWatchParty] Refreshing auth token...');
         state.authToken = null;
         const newToken = await fetchAuthToken();
         if (newToken && state.ws && state.ws.readyState === WebSocket.OPEN) {
@@ -67,7 +67,7 @@
             payload: { token: newToken, user_name: state.userName, user_id: state.userId },
             ts: utils.nowMs()
           }));
-          console.log('[OpenWatchParty] Token refreshed and re-authenticated');
+          console.log('[JellyWatchParty] Token refreshed and re-authenticated');
         }
       }, refreshInMs);
     }
@@ -77,21 +77,21 @@
     try {
       let apiAccess = getApiAccessToken();
       if (!apiAccess) {
-        console.log('[OpenWatchParty] Waiting for ApiClient...');
+        console.log('[JellyWatchParty] Waiting for ApiClient...');
         apiAccess = await waitForApiClient();
       }
       if (!apiAccess) {
-        console.warn('[OpenWatchParty] ApiClient not available after waiting, auth disabled');
+        console.warn('[JellyWatchParty] ApiClient not available after waiting, auth disabled');
         state.userName = getJellyfinUsername();
         return null;
       }
       const { accessToken, serverAddress } = apiAccess;
-      const tokenUrl = `${serverAddress}/OpenWatchParty/Token`;
+      const tokenUrl = `${serverAddress}/JellyWatchParty/Token`;
       const response = await fetch(tokenUrl, {
         headers: { 'X-Emby-Token': accessToken }
       });
       if (!response.ok) {
-        console.warn('[OpenWatchParty] Failed to fetch auth token:', response.status);
+        console.warn('[JellyWatchParty] Failed to fetch auth token:', response.status);
         state.userName = getJellyfinUsername();
         return null;
       }
@@ -107,13 +107,13 @@
         const expiresIn = data.expires_in || 3600;
         state.tokenExpiresAt = Date.now() + (expiresIn * 1000);
         scheduleTokenRefresh(expiresIn);
-        console.log('[OpenWatchParty] Auth token obtained for user:', state.userName, 'expires in', expiresIn, 's');
+        console.log('[JellyWatchParty] Auth token obtained for user:', state.userName, 'expires in', expiresIn, 's');
         return data.token;
       }
-      console.log('[OpenWatchParty] Server auth disabled, connecting without token');
+      console.log('[JellyWatchParty] Server auth disabled, connecting without token');
       return null;
     } catch (err) {
-      console.warn('[OpenWatchParty] Error fetching auth token:', err);
+      console.warn('[JellyWatchParty] Error fetching auth token:', err);
       state.userName = getJellyfinUsername();
       return null;
     }

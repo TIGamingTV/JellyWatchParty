@@ -1,7 +1,7 @@
 (() => {
-  const OWP = window.OpenWatchParty = window.OpenWatchParty || {};
-  const playback = OWP.playback = OWP.playback || {};
-  const utils = OWP.utils;
+  const JWP = window.JellyWatchParty = window.JellyWatchParty || {};
+  const playback = JWP.playback = JWP.playback || {};
+  const utils = JWP.utils;
 
   const tryPlayMethods = (pm, item) => {
     const playOptions = { startPositionTicks: 0 };
@@ -9,14 +9,14 @@
     if (typeof pm.play === 'function') {
       try {
         pm.play({ items: [item], ...playOptions });
-        console.log('[OpenWatchParty] Playback started via pm.play({ items })');
+        console.log('[JellyWatchParty] Playback started via pm.play({ items })');
         return { success: true, errors };
       } catch (err) {
         errors.push({ method: 'play({ items })', error: err.message });
       }
       try {
         pm.play({ item: item, ...playOptions });
-        console.log('[OpenWatchParty] Playback started via pm.play({ item })');
+        console.log('[JellyWatchParty] Playback started via pm.play({ item })');
         return { success: true, errors };
       } catch (err) {
         errors.push({ method: 'play({ item })', error: err.message });
@@ -25,7 +25,7 @@
       if (itemId) {
         try {
           pm.play({ ids: [itemId], ...playOptions });
-          console.log('[OpenWatchParty] Playback started via pm.play({ ids })');
+          console.log('[JellyWatchParty] Playback started via pm.play({ ids })');
           return { success: true, errors };
         } catch (err) {
           errors.push({ method: 'play({ ids })', error: err.message });
@@ -35,7 +35,7 @@
     if (typeof pm.playItems === 'function') {
       try {
         pm.playItems([item], 0);
-        console.log('[OpenWatchParty] Playback started via pm.playItems()');
+        console.log('[JellyWatchParty] Playback started via pm.playItems()');
         return { success: true, errors };
       } catch (err) {
         errors.push({ method: 'playItems()', error: err.message });
@@ -47,21 +47,21 @@
   const playItem = (item) => {
     const pm = utils.getPlaybackManager();
     if (!pm) {
-      console.warn('[OpenWatchParty] Playback failed: PlaybackManager not available');
+      console.warn('[JellyWatchParty] Playback failed: PlaybackManager not available');
       return false;
     }
     const result = tryPlayMethods(pm, item);
     if (!result.success) {
-      console.error('[OpenWatchParty] All playback methods failed:', result.errors);
-      if (OWP.ui && OWP.ui.showToast) {
-        OWP.ui.showToast('Failed to start playback. Try refreshing the page.');
+      console.error('[JellyWatchParty] All playback methods failed:', result.errors);
+      if (JWP.ui && JWP.ui.showToast) {
+        JWP.ui.showToast('Failed to start playback. Try refreshing the page.');
       }
     }
     return result.success;
   };
 
   const ensurePlayback = (itemId, attempt = 0) => {
-    const state = OWP.state;
+    const state = JWP.state;
     if (!itemId || !window.ApiClient) return;
     if (utils.getCurrentItemId() === itemId) return;
     if (state.joiningItemId === itemId) return;
