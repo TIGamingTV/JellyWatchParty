@@ -20,13 +20,34 @@ OpenWatchParty enables synchronized media playback for [Jellyfin](https://jellyf
 
 ### Users
 
-```bash
-docker run -d --name owp-session -p 3000:3000 \
-  -e ALLOWED_ORIGINS="http://your-jellyfin:8096" \
-  ghcr.io/tigamingtv/owp-session-server:latest
+**1. Start the session server** with Docker Compose:
+
+```yaml
+# docker-compose.yml
+services:
+  owp-session:
+    image: ghcr.io/tigamingtv/owp-session-server:latest
+    container_name: owp-session
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - ALLOWED_ORIGINS=http://your-jellyfin:8096
 ```
 
-Then install the plugin from Jellyfin's catalog. See the [Installation Guide](https://tigamingtv.github.io/OpenWatchParty/operations/installation.html) for full instructions.
+```bash
+docker compose up -d
+```
+
+**2. Add the plugin repository** in Jellyfin: **Dashboard > Plugins > Repositories > Add**
+
+```
+https://tigamingtv.github.io/OpenWatchParty/jellyfin-plugin-repo/manifest.json
+```
+
+Then go to the **Catalog** tab, install **OpenWatchParty**, and restart Jellyfin.
+
+See the [Installation Guide](https://tigamingtv.github.io/OpenWatchParty/operations/installation.html) for enabling the client script and full setup details.
 
 ### Developers
 
