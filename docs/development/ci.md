@@ -6,7 +6,7 @@ nav_order: 5
 
 # Continuous Integration
 
-OpenWatchParty uses GitHub Actions for continuous integration and security scanning.
+JellyWatchParty uses GitHub Actions for continuous integration and security scanning.
 
 ## Branching model
 
@@ -85,7 +85,7 @@ push only rebuilds the components that actually changed.
 
 #### Plugin Repository
 
-On release, the workflow automatically updates the [Jellyfin plugin repository](https://tigamingtv.github.io/OpenWatchParty/jellyfin-plugin-repo/manifest.json):
+On release, the workflow automatically updates the [Jellyfin plugin repository](https://tigamingtv.github.io/JellyWatchParty/jellyfin-plugin-repo/manifest.json):
 
 1. Downloads the built plugin zip
 2. Calculates MD5 checksum
@@ -104,16 +104,16 @@ testers install it.
 
 ```bash
 # Latest stable release
-docker pull ghcr.io/tigamingtv/owp-session-server:latest
+docker pull ghcr.io/tigamingtv/jwp-session-server:latest
 
 # Specific version
-docker pull ghcr.io/tigamingtv/owp-session-server:v0.1.0
+docker pull ghcr.io/tigamingtv/jwp-session-server:v0.1.0
 
 # Latest build from main (pre-release)
-docker pull ghcr.io/tigamingtv/owp-session-server:beta
+docker pull ghcr.io/tigamingtv/jwp-session-server:beta
 
 # Latest build from develop
-docker pull ghcr.io/tigamingtv/owp-session-server:dev
+docker pull ghcr.io/tigamingtv/jwp-session-server:dev
 ```
 
 ## Build Configuration
@@ -144,17 +144,17 @@ The plugin uses NuGet packages from nuget.org:
 
 The `.csproj` embeds `Web\**\*.js` as resources, so CI copies the client JS
 files (including subdirectories: `utils/`, `ui/`, `playback/`, `chat/`,
-`ws/`, `app/`) into `OpenWatchParty/Web/` before building, using the same
+`ws/`, `app/`) into `JellyWatchParty/Web/` before building, using the same
 explicit file list as the release/develop plugin build jobs:
 
 ```yaml
 - name: Copy JS files to plugin Web directory
   run: |
-    mkdir -p OpenWatchParty/Web
-    cp ../../clients/jellyfin-web/plugin.js OpenWatchParty/Web/plugin.js
+    mkdir -p JellyWatchParty/Web
+    cp ../../clients/jellyfin-web/plugin.js JellyWatchParty/Web/plugin.js
     for f in state.js utils/time.js ... ; do
-      mkdir -p "OpenWatchParty/Web/$(dirname "$f")"
-      cp "../../clients/jellyfin-web/$f" "OpenWatchParty/Web/$f"
+      mkdir -p "JellyWatchParty/Web/$(dirname "$f")"
+      cp "../../clients/jellyfin-web/$f" "JellyWatchParty/Web/$f"
     done
 ```
 
@@ -189,7 +189,7 @@ docker build -t test ./src/server
 The README includes CI status badges:
 
 ```markdown
-[![CI](https://img.shields.io/github/actions/workflow/status/TIGamingTV/OpenWatchParty/ci.yml?branch=main)](https://github.com/TIGamingTV/OpenWatchParty/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/TIGamingTV/JellyWatchParty/ci.yml?branch=main)](https://github.com/TIGamingTV/JellyWatchParty/actions/workflows/ci.yml)
 ```
 
 | Badge | Meaning |

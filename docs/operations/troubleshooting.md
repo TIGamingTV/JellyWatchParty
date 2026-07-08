@@ -34,7 +34,7 @@ nav_order: 5
    - Go to Dashboard > General > Branding
    - Verify this line is in "Custom HTML body":
        ```html
-       <script src="../OpenWatchParty/ClientScript"></script>
+       <script src="../JellyWatchParty/ClientScript"></script>
        ```
 
 2. **Hard refresh the browser**
@@ -49,7 +49,7 @@ nav_order: 5
      - `CORS` - WebSocket blocked (check CORS config)
 
 4. **Verify plugin is installed**
-   - Dashboard > Plugins should show "OpenWatchParty"
+   - Dashboard > Plugins should show "JellyWatchParty"
    - Check Jellyfin logs for plugin load errors
 
 ### Cannot Connect to Session Server
@@ -182,7 +182,7 @@ HLS (HTTP Live Streaming) breaks video into small segments (typically 2-10 secon
 1. **Buffering during sync**
    ```
    Problem: Video buffers, reports paused state, triggers sync issues
-   Solution: OpenWatchParty filters these "false pauses" automatically
+   Solution: JellyWatchParty filters these "false pauses" automatically
    If issues persist: reduce video quality to improve buffering
    ```
 
@@ -263,7 +263,7 @@ HLS (HTTP Live Streaming) breaks video into small segments (typically 2-10 secon
 4. **If rate limited frequently**
    - Check for browser extensions that might cause extra requests
    - Check for scripts auto-refreshing the page
-   - Verify you're not running multiple tabs with OpenWatchParty
+   - Verify you're not running multiple tabs with JellyWatchParty
 
 ### Panel Opens But Empty
 
@@ -317,24 +317,24 @@ Location varies by installation:
 
 **Look for:**
 ```
-[OpenWatchParty] JWT authentication is enabled.
-[OpenWatchParty] JwtSecret is not configured.
+[JellyWatchParty] JWT authentication is enabled.
+[JellyWatchParty] JwtSecret is not configured.
 ```
 
 ### Browser Console
 
 1. Press F12 to open Developer Tools
 2. Go to Console tab
-3. Filter by "OWP" or "OpenWatchParty"
+3. Filter by "JWP" or "JellyWatchParty"
 
 **Common messages:**
 
 | Message | Meaning |
 |---------|---------|
-| `[OWP] Loaded` | Client initialized |
-| `[OWP] Connected` | WebSocket connected |
-| `[OWP] Disconnected` | WebSocket closed |
-| `[OWP] Room joined` | Successfully joined room |
+| `[JWP] Loaded` | Client initialized |
+| `[JWP] Connected` | WebSocket connected |
+| `[JWP] Disconnected` | WebSocket closed |
+| `[JWP] Room joined` | Successfully joined room |
 
 ## Network Debugging
 
@@ -343,7 +343,7 @@ Location varies by installation:
 In browser console:
 ```javascript
 // Check if connected
-console.log(OWP.state.ws?.readyState);
+console.log(JWP.state.ws?.readyState);
 // 0 = CONNECTING, 1 = OPEN, 2 = CLOSING, 3 = CLOSED
 ```
 
@@ -422,8 +422,8 @@ When reporting issues, include:
 
 ### Where to Get Help
 
-- [GitHub Issues](https://github.com/TIGamingTV/OpenWatchParty/issues) - Bug reports
-- [GitHub Discussions](https://github.com/TIGamingTV/OpenWatchParty/discussions) - Questions
+- [GitHub Issues](https://github.com/TIGamingTV/JellyWatchParty/issues) - Bug reports
+- [GitHub Discussions](https://github.com/TIGamingTV/JellyWatchParty/discussions) - Questions
 - [Jellyfin Forums](https://forum.jellyfin.org/) - Community help
 
 ## Reset Procedures
@@ -447,7 +447,7 @@ docker restart session-server
 
 ### Reset Plugin Configuration
 
-1. Dashboard > Plugins > OpenWatchParty
+1. Dashboard > Plugins > JellyWatchParty
 2. Clear all fields
 3. Save
 4. Restart Jellyfin

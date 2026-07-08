@@ -6,5 +6,5 @@ has_children: true
 
 # Getting Started
 
-Learn about OpenWatchParty and how to use it — see the sidebar for the
+Learn about JellyWatchParty and how to use it — see the sidebar for the
 overview, feature list, user guide, and FAQ.

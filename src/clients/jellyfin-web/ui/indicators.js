@@ -1,10 +1,10 @@
 (() => {
-  const OWP = window.OpenWatchParty = window.OpenWatchParty || {};
-  const ui = OWP.ui = OWP.ui || {};
-  const state = OWP.state;
+  const JWP = window.JellyWatchParty = window.JellyWatchParty || {};
+  const ui = JWP.ui = JWP.ui || {};
+  const state = JWP.state;
 
   const updateStatusIndicator = () => {
-    const el = document.getElementById('owp-ws-indicator');
+    const el = document.getElementById('jwp-ws-indicator');
     if (!el) return;
     const connected = state.ws && state.ws.readyState === 1;
     el.style.color = connected ? '#69f0ae' : '#ff5252';
@@ -26,20 +26,20 @@
   };
 
   const updateSyncIndicator = () => {
-    const el = document.getElementById('owp-sync-indicator');
+    const el = document.getElementById('jwp-sync-indicator');
     if (!el || state.isHost) return;
     const { dotClass, label, showSpinner } = describeSyncStatus(state.syncStatus);
     el.innerHTML = showSpinner
-      ? `<div class="owp-sync-spinner"></div><span>${label}</span>`
-      : `<div class="owp-sync-dot ${dotClass}"></div><span>${label}</span>`;
+      ? `<div class="jwp-sync-spinner"></div><span>${label}</span>`
+      : `<div class="jwp-sync-dot ${dotClass}"></div><span>${label}</span>`;
   };
 
   const buildSyncStatusIndicator = () => {
     if (state.isHost) return '';
     const { dotClass, label, showSpinner } = describeSyncStatus(state.syncStatus);
     return `
-      <div class="owp-sync-status" id="owp-sync-indicator">
-        ${showSpinner ? '<div class="owp-sync-spinner"></div>' : `<div class="owp-sync-dot ${dotClass}"></div>`}
+      <div class="jwp-sync-status" id="jwp-sync-indicator">
+        ${showSpinner ? '<div class="jwp-sync-spinner"></div>' : `<div class="jwp-sync-dot ${dotClass}"></div>`}
         <span>${label}</span>
       </div>
     `;

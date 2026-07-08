@@ -4,12 +4,12 @@ using MediaBrowser.Controller.Session;
 using MediaBrowser.Model.Session;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;
-using OpenWatchParty.Plugin.Configuration;
+using JellyWatchParty.Plugin.Configuration;
 
-namespace OpenWatchParty.Plugin.Services;
+namespace JellyWatchParty.Plugin.Services;
 
 /// <summary>
-/// Bridges one Jellyfin session's playback into one OpenWatchParty room,
+/// Bridges one Jellyfin session's playback into one JellyWatchParty room,
 /// with that session acting as the room's host. Opens its own WebSocket
 /// connection to the Rust session server and speaks the same client
 /// protocol a browser host would (see docs/ARCHITECTURE.md) — the resulting
@@ -148,7 +148,7 @@ public sealed class SessionHostBridge : IAsyncDisposable
         }
         catch (WebSocketException ex)
         {
-            _logger.LogWarning(ex, "[OpenWatchParty] Host bridge for session {SessionId} lost its connection", _sessionId);
+            _logger.LogWarning(ex, "[JellyWatchParty] Host bridge for session {SessionId} lost its connection", _sessionId);
         }
     }
 
@@ -171,7 +171,7 @@ public sealed class SessionHostBridge : IAsyncDisposable
                 break;
             case "error":
                 _logger.LogWarning(
-                    "[OpenWatchParty] Session server rejected a message for bridged session {SessionId}: {Message}",
+                    "[JellyWatchParty] Session server rejected a message for bridged session {SessionId}: {Message}",
                     _sessionId,
                     message["payload"]?["message"]);
                 break;

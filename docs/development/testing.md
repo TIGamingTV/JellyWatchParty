@@ -8,7 +8,7 @@ nav_order: 3
 
 ## Overview
 
-OpenWatchParty uses a combination of automated tests and manual testing procedures.
+JellyWatchParty uses a combination of automated tests and manual testing procedures.
 
 ## Automated Tests
 
@@ -69,7 +69,7 @@ mod tests {
 ### C# Plugin
 
 ```bash
-cd src/plugins/jellyfin/OpenWatchParty
+cd src/plugins/jellyfin/JellyWatchParty
 
 # Run tests
 dotnet test
@@ -209,7 +209,7 @@ Target: < 200ms drift after 10 minutes
 ```javascript
 // In browser console
 const start = Date.now();
-OWP.ws.send(JSON.stringify({type: 'ping', ts: start}));
+JWP.ws.send(JSON.stringify({type: 'ping', ts: start}));
 // Check pong response for round-trip time
 ```
 
@@ -252,7 +252,7 @@ RUST_LOG=debug cargo test test_name -- --nocapture
 1. Check browser console for errors
 2. Enable debug logging:
    ```javascript
-   OWP.constants.DEBUG = true;
+   JWP.constants.DEBUG = true;
    ```
 
 ### Network Issues
@@ -273,7 +273,7 @@ wscat -c ws://localhost:3000/ws
 |-----------|----------|
 | Rust | `src/server/src/*.rs` (inline) |
 | Rust integration | `src/server/tests/` |
-| C# | `src/plugins/jellyfin/OpenWatchParty.Tests/` |
+| C# | `src/plugins/jellyfin/JellyWatchParty.Tests/` |
 
 ### Test Naming
 

@@ -1,10 +1,10 @@
 (() => {
-  const OWP = window.OpenWatchParty = window.OpenWatchParty || {};
-  const ui = OWP.ui = OWP.ui || {};
-  const state = OWP.state;
-  const utils = OWP.utils;
-  const { PANEL_ID, BTN_ID, DEFAULT_WS_URL } = OWP.constants;
-  const GLOBAL_BTN_ID = 'owp-global-btn';
+  const JWP = window.JellyWatchParty = window.JellyWatchParty || {};
+  const ui = JWP.ui = JWP.ui || {};
+  const state = JWP.state;
+  const utils = JWP.utils;
+  const { PANEL_ID, BTN_ID, DEFAULT_WS_URL } = JWP.constants;
+  const GLOBAL_BTN_ID = 'jwp-global-btn';
 
   const togglePanel = (e) => {
     if (e) {
@@ -19,33 +19,33 @@
 
   const renderLobby = (panel) => {
     panel.innerHTML = `
-      <div class="owp-header"><span>OpenWatchParty</span> <span id="owp-ws-indicator"></span></div>
-      <div class="owp-lobby-container">
-          <div class="owp-section">
-            <div class="owp-label">Available Rooms</div>
-            <div id="owp-room-list"></div>
+      <div class="jwp-header"><span>JellyWatchParty</span> <span id="jwp-ws-indicator"></span></div>
+      <div class="jwp-lobby-container">
+          <div class="jwp-section">
+            <div class="jwp-label">Available Rooms</div>
+            <div id="jwp-room-list"></div>
           </div>
-          <div class="owp-section" style="border-top: 1px solid #333; padding-top: 15px;">
-            <button class="owp-btn" style="width:100%" id="owp-btn-create">Create Room</button>
+          <div class="jwp-section" style="border-top: 1px solid #333; padding-top: 15px;">
+            <button class="jwp-btn" style="width:100%" id="jwp-btn-create">Create Room</button>
           </div>
-          <div class="owp-section" style="border-top: 1px solid #333; padding-top: 15px;">
-            <div class="owp-label">Host From Another Device (e.g. Fladder)</div>
-            <div id="owp-bridge-active"></div>
-            <div id="owp-bridge-available"></div>
+          <div class="jwp-section" style="border-top: 1px solid #333; padding-top: 15px;">
+            <div class="jwp-label">Host From Another Device (e.g. Fladder)</div>
+            <div id="jwp-bridge-active"></div>
+            <div id="jwp-bridge-available"></div>
           </div>
       </div>
-      <div class="owp-footer">Server: ${DEFAULT_WS_URL.replace(/^wss?:\/\//, '').replace('/ws', '')}</div>
+      <div class="jwp-footer">Server: ${DEFAULT_WS_URL.replace(/^wss?:\/\//, '').replace('/ws', '')}</div>
     `;
-    const btn = panel.querySelector('#owp-btn-create');
+    const btn = panel.querySelector('#jwp-btn-create');
     if (btn) btn.onclick = async () => {
-      if (!OWP.actions || !OWP.actions.createRoom) return;
+      if (!JWP.actions || !JWP.actions.createRoom) return;
       const password = await ui.promptText({
         title: 'Room password (optional, leave blank for none):',
         placeholder: 'Password',
         submitLabel: 'Create Room'
       });
       if (password === null) return; // cancelled — don't create a room
-      OWP.actions.createRoom(password);
+      JWP.actions.createRoom(password);
     };
     ui.updateRoomListUI();
     ui.updateBridgeListUI();
@@ -54,54 +54,54 @@
   const renderRoom = (panel) => {
     const syncIndicator = ui.buildSyncStatusIndicator();
     panel.innerHTML = `
-      <div class="owp-header">
+      <div class="jwp-header">
         <span style="color:#69f0ae">\u25CF</span>
         <span style="flex-grow:1; margin-left:8px;">${utils.escapeHtml(state.roomName)}</span>
-        <button class="owp-btn danger" id="owp-btn-leave">${state.isHost ? 'Close' : 'Leave'}</button>
+        <button class="jwp-btn danger" id="jwp-btn-leave">${state.isHost ? 'Close' : 'Leave'}</button>
       </div>
-      <div class="owp-section" style="flex-shrink:0;">
-        <div class="owp-label">Participants</div>
-        <div id="owp-participants-list" style="font-size:13px;">Online: ${state.participantCount || 1}</div>
+      <div class="jwp-section" style="flex-shrink:0;">
+        <div class="jwp-label">Participants</div>
+        <div id="jwp-participants-list" style="font-size:13px;">Online: ${state.participantCount || 1}</div>
         ${syncIndicator}
       </div>
-      <div id="owp-chat-section">
-        <div class="owp-label">Chat <span id="owp-chat-badge" class="owp-chat-badge"></span></div>
-        <div id="owp-chat-messages"></div>
-        <div id="owp-chat-input-container">
-          <input type="text" id="owp-chat-input" placeholder="Type a message..." maxlength="500">
-          <button id="owp-chat-send">Send</button>
+      <div id="jwp-chat-section">
+        <div class="jwp-label">Chat <span id="jwp-chat-badge" class="jwp-chat-badge"></span></div>
+        <div id="jwp-chat-messages"></div>
+        <div id="jwp-chat-input-container">
+          <input type="text" id="jwp-chat-input" placeholder="Type a message..." maxlength="500">
+          <button id="jwp-chat-send">Send</button>
         </div>
       </div>
-      <div class="owp-meta" style="font-size:10px; color:#666; display:flex; justify-content:space-between; flex-shrink:0; padding-top:8px;">
-          <span>RTT: <span class="owp-latency">-</span></span>
+      <div class="jwp-meta" style="font-size:10px; color:#666; display:flex; justify-content:space-between; flex-shrink:0; padding-top:8px;">
+          <span>RTT: <span class="jwp-latency">-</span></span>
           <span>ID: ${state.clientId.split('-')[1] || '...'}</span>
       </div>
     `;
-    const leaveBtn = panel.querySelector('#owp-btn-leave');
-    if (leaveBtn) leaveBtn.onclick = () => OWP.actions && OWP.actions.leaveRoom && OWP.actions.leaveRoom();
+    const leaveBtn = panel.querySelector('#jwp-btn-leave');
+    if (leaveBtn) leaveBtn.onclick = () => JWP.actions && JWP.actions.leaveRoom && JWP.actions.leaveRoom();
   };
 
   const setupChatInput = (panel) => {
-    const chatInput = panel.querySelector('#owp-chat-input');
-    const chatSend = panel.querySelector('#owp-chat-send');
+    const chatInput = panel.querySelector('#jwp-chat-input');
+    const chatSend = panel.querySelector('#jwp-chat-send');
     if (!chatInput || !chatSend) return;
     ui.stopPlayerCapture(chatInput);
     chatInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
-        if (OWP.chat && OWP.chat.send(chatInput.value)) {
+        if (JWP.chat && JWP.chat.send(chatInput.value)) {
           chatInput.value = '';
         }
       }
     });
     chatSend.addEventListener('click', () => {
-      if (OWP.chat && OWP.chat.send(chatInput.value)) {
+      if (JWP.chat && JWP.chat.send(chatInput.value)) {
         chatInput.value = '';
       }
     });
-    if (OWP.chat) {
-      OWP.chat.markRead();
-      OWP.chat.renderAllMessages();
+    if (JWP.chat) {
+      JWP.chat.markRead();
+      JWP.chat.renderAllMessages();
     }
   };
 
@@ -152,10 +152,10 @@
 
     const btn = document.createElement('button');
     btn.id = GLOBAL_BTN_ID;
-    btn.className = 'paper-icon-button-light owp-global-btn';
+    btn.className = 'paper-icon-button-light jwp-global-btn';
     btn.type = 'button';
-    btn.title = 'OpenWatchParty';
-    btn.setAttribute('aria-label', 'OpenWatchParty');
+    btn.title = 'JellyWatchParty';
+    btn.setAttribute('aria-label', 'JellyWatchParty');
     btn.innerHTML = '<span class="material-icons groups" aria-hidden="true"></span>';
     btn.onclick = togglePanel;
 

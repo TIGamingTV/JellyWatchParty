@@ -1,10 +1,10 @@
 (() => {
-  const OWP = window.OpenWatchParty = window.OpenWatchParty || {};
-  const h = OWP._wsHandlers = OWP._wsHandlers || {};
-  const state = OWP.state;
-  const utils = OWP.utils;
-  const actions = OWP.actions;
-  const { TIME_SYNC_MAX_SAMPLES, TIME_SYNC_EMA_ALPHA, PING_STABLE_AFTER } = OWP.constants;
+  const JWP = window.JellyWatchParty = window.JellyWatchParty || {};
+  const h = JWP._wsHandlers = JWP._wsHandlers || {};
+  const state = JWP.state;
+  const utils = JWP.utils;
+  const actions = JWP.actions;
+  const { TIME_SYNC_MAX_SAMPLES, TIME_SYNC_EMA_ALPHA, PING_STABLE_AFTER } = JWP.constants;
 
   const updateClockSync = (now, rtt, serverTs) => {
     const sampleOffset = serverTs + (rtt / 2) - now;
@@ -40,7 +40,7 @@
     if (!msg.payload || !msg.payload.client_ts) return;
     const now = utils.nowMs();
     const rtt = now - msg.payload.client_ts;
-    const latEl = document.querySelector('.owp-latency');
+    const latEl = document.querySelector('.jwp-latency');
     if (latEl) latEl.textContent = `${rtt} ms`;
     if (typeof msg.server_ts === 'number' && rtt > 0) {
       const { prevOffset, bestSample } = updateClockSync(now, rtt, msg.server_ts);

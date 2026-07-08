@@ -57,7 +57,7 @@ async fn main() {
 
     let shutdown_rx = tasks::setup_shutdown_signal();
 
-    info!("OpenWatchParty server listening on {}", addr);
+    info!("JellyWatchParty server listening on {}", addr);
     let (_, server) = warp::serve(routes).bind_with_graceful_shutdown(addr, async {
         shutdown_rx.await.ok();
     });

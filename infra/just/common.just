@@ -7,7 +7,7 @@ set quiet
 
 # -- Project -----------------------------------------------------------------
 
-project_name      := "OpenWatchParty"
+project_name      := "JellyWatchParty"
 compose_file      := "infra/docker/dev/docker-compose.yml"
 compose           := "docker compose -f " + compose_file
 compose_tools     := "docker compose --profile tools -f " + compose_file
@@ -16,14 +16,14 @@ compose_prod      := "docker compose -f " + compose_prod_file
 
 # -- Directories -------------------------------------------------------------
 
-plugin_dir  := "src/plugins/jellyfin/OpenWatchParty"
+plugin_dir  := "src/plugins/jellyfin/JellyWatchParty"
 client_dir  := "src/clients/jellyfin-web"
 server_dir  := "src/server"
 
 # -- Containers --------------------------------------------------------------
 
 jellyfin_ctr := "jellyfin-dev"
-session_ctr  := "owp-session-server"
+session_ctr  := "jwp-session-server"
 
 # -- Client JS files (order matters for plugin loading) ----------------------
 

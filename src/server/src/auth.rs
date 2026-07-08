@@ -81,7 +81,7 @@ impl JwtConfig {
         Self {
             secret,
             audience: std::env::var("JWT_AUDIENCE")
-                .unwrap_or_else(|_| "OpenWatchParty".to_string()),
+                .unwrap_or_else(|_| "JellyWatchParty".to_string()),
             issuer: std::env::var("JWT_ISSUER").unwrap_or_else(|_| "Jellyfin".to_string()),
             enabled,
         }

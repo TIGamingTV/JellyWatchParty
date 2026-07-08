@@ -1,19 +1,19 @@
 [
   {
     "guid": "0f2fd0fd-09ff-4f49-9f1c-4a8f421a4b7d",
-    "name": "OpenWatchParty (Develop)",
+    "name": "JellyWatchParty (Develop)",
     "description": "Watch movies together in sync with friends on Jellyfin",
-    "overview": "Rolling development build of OpenWatchParty, rebuilt automatically from the develop branch. Unstable — for testers only.",
+    "overview": "Rolling development build of JellyWatchParty, rebuilt automatically from the develop branch. Unstable — for testers only.",
     "owner": "TIGamingTV",
     "category": "General",
     "versions": [
       {
-        "version": "0.0.23",
-        "changelog": "fix(plugin): match injected-client filter on prefix, not exact string\n\nThe exact-match filter added for Jellyfin Web/Media Player never matched\nin practice: real SessionInfo.Client values carry a trailing version\n(JellyfinWeb10.11.11, JellyfinDesktop3.0.0-dev — JMP appears\nrenamed to JellyfinDesktop), confirmed via Dashboard > Active Devices\non a live server. Switch to a prefix match so the version is effectively\na wildcard, and add JellyfinDesktop to the excluded list.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+        "version": "0.0.33",
+        "changelog": "Merge pull request #16 from TIGamingTV/claude/project-improvements-additions-br8ilt\n\nClaude/project improvements additions br8ilt",
         "targetAbi": "10.11.11.0",
-        "sourceUrl": "https://github.com/TIGamingTV/OpenWatchParty/releases/download/develop-latest/OpenWatchParty-dev.zip",
-        "checksum": "a6c19bfab76f0b0268086ec35f8ea4fb",
-        "timestamp": "2026-07-05T19:41:43Z"
+        "sourceUrl": "https://github.com/TIGamingTV/JellyWatchParty/releases/download/develop-latest/JellyWatchParty-dev.zip",
+        "checksum": "ccaf1a14b3ef9d87ccb6aad93bdfc9b0",
+        "timestamp": "2026-07-06T11:39:07Z"
       }
     ]
   }

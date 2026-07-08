@@ -8,7 +8,7 @@ nav_order: 2
 
 ## Overview
 
-OpenWatchParty uses a JSON-over-WebSocket protocol for real-time communication between clients and the session server.
+JellyWatchParty uses a JSON-over-WebSocket protocol for real-time communication between clients and the session server.
 
 **Endpoint:** `ws(s)://<host>:3000/ws?client_id=<persistent-client-id>`
 

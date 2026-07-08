@@ -1,7 +1,7 @@
-namespace OpenWatchParty.Plugin.Services;
+namespace JellyWatchParty.Plugin.Services;
 
 /// <summary>
-/// A Jellyfin session that could be bridged in as an OpenWatchParty room
+/// A Jellyfin session that could be bridged in as an JellyWatchParty room
 /// host (i.e. it's currently playing something).
 /// </summary>
 public sealed record BridgeableSessionInfo(

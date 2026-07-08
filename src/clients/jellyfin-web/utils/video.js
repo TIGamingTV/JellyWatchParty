@@ -1,6 +1,6 @@
 (() => {
-  const OWP = window.OpenWatchParty = window.OpenWatchParty || {};
-  const utils = OWP.utils = OWP.utils || {};
+  const JWP = window.JellyWatchParty = window.JellyWatchParty || {};
+  const utils = JWP.utils = JWP.utils || {};
 
   // Jellyfin Media Player / jellyfin-desktop (CEF+mpv) never creates a DOM
   // <video> element - its player plugin (mpv-video-player.js) routes
@@ -37,7 +37,7 @@
 
     const fire = (type) => {
       for (const fn of listeners[type] || []) {
-        try { fn(); } catch (err) { console.error('[OpenWatchParty] native adapter listener error:', err); }
+        try { fn(); } catch (err) { console.error('[JellyWatchParty] native adapter listener error:', err); }
       }
     };
 

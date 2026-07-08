@@ -8,7 +8,7 @@ nav_order: 6
 
 ## Overview
 
-OpenWatchParty uses multiple algorithms to maintain playback synchronization between clients, addressing the specific challenges of HLS/transcoded streaming.
+JellyWatchParty uses multiple algorithms to maintain playback synchronization between clients, addressing the specific challenges of HLS/transcoded streaming.
 
 ## 1. Clock Synchronization (Simplified NTP)
 

@@ -40,7 +40,7 @@ docker inspect --format='{{.State.Health.Status}}' session-server
 Check if plugin is loaded:
 ```bash
 curl -H "X-Emby-Token: TOKEN" \
-  "http://localhost:8096/System/Plugins" | jq '.[] | select(.Name == "OpenWatchParty")'
+  "http://localhost:8096/System/Plugins" | jq '.[] | select(.Name == "JellyWatchParty")'
 ```
 
 ## Logging
@@ -105,7 +105,7 @@ services:
       driver: syslog
       options:
         syslog-address: "udp://localhost:514"
-        tag: "owp-session"
+        tag: "jwp-session"
 ```
 
 #### Forward to Loki
@@ -117,7 +117,7 @@ services:
       driver: loki
       options:
         loki-url: "http://loki:3100/loki/api/v1/push"
-        labels: "service=owp-session"
+        labels: "service=jwp-session"
 ```
 
 ## Metrics
@@ -170,15 +170,15 @@ Future versions may include:
 
 ```bash
 #!/bin/bash
-# /usr/local/bin/check-owp.sh
+# /usr/local/bin/check-jwp.sh
 
 if ! curl -sf http://localhost:3000/health > /dev/null; then
-    echo "OpenWatchParty session server is DOWN" | mail -s "ALERT: OWP Down" admin@example.com
+    echo "JellyWatchParty session server is DOWN" | mail -s "ALERT: JWP Down" admin@example.com
 fi
 ```
 
 ```cron
-*/5 * * * * /usr/local/bin/check-owp.sh
+*/5 * * * * /usr/local/bin/check-jwp.sh
 ```
 
 ### Alertmanager (Prometheus)
@@ -197,9 +197,9 @@ receivers:
 
 Example alert rule:
 ```yaml
-# prometheus/rules/owp.yml
+# prometheus/rules/jwp.yml
 groups:
-  - name: owp
+  - name: jwp
     rules:
       - alert: OWPSessionServerDown
         expr: up{job="session-server"} == 0
@@ -207,7 +207,7 @@ groups:
         labels:
           severity: critical
         annotations:
-          summary: "OpenWatchParty session server is down"
+          summary: "JellyWatchParty session server is down"
 ```
 
 ### Uptime Monitoring
@@ -233,7 +233,7 @@ While waiting for native metrics, use Docker/container metrics:
 
 ```json
 {
-  "title": "OpenWatchParty",
+  "title": "JellyWatchParty",
   "panels": [
     {
       "title": "Container CPU",
@@ -262,9 +262,9 @@ Create a simple status page:
 ```html
 <!DOCTYPE html>
 <html>
-<head><title>OpenWatchParty Status</title></head>
+<head><title>JellyWatchParty Status</title></head>
 <body>
-  <h1>OpenWatchParty Status</h1>
+  <h1>JellyWatchParty Status</h1>
   <div id="status">Checking...</div>
   <script>
     fetch('/api/health')

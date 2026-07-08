@@ -1,35 +1,35 @@
 (() => {
-  const OWP = window.OpenWatchParty = window.OpenWatchParty || {};
-  const chat = OWP.chat = OWP.chat || { messages: [], unreadCount: 0 };
+  const JWP = window.JellyWatchParty = window.JellyWatchParty || {};
+  const chat = JWP.chat = JWP.chat || { messages: [], unreadCount: 0 };
 
   const MAX_MESSAGE_LENGTH = 500;
 
   const send = (text) => {
-    console.log('[OpenWatchParty] Chat.send called with:', text);
+    console.log('[JellyWatchParty] Chat.send called with:', text);
     if (!text || !text.trim()) return false;
     const trimmed = text.trim();
     if (trimmed.length > MAX_MESSAGE_LENGTH) {
-      OWP.ui.showToast(`Message too long (max ${MAX_MESSAGE_LENGTH} characters)`);
+      JWP.ui.showToast(`Message too long (max ${MAX_MESSAGE_LENGTH} characters)`);
       return false;
     }
-    if (!OWP.state.ws || OWP.state.ws.readyState !== 1) {
-      console.log('[OpenWatchParty] Chat: Not connected');
-      OWP.ui.showToast('Not connected to server');
+    if (!JWP.state.ws || JWP.state.ws.readyState !== 1) {
+      console.log('[JellyWatchParty] Chat: Not connected');
+      JWP.ui.showToast('Not connected to server');
       return false;
     }
-    if (!OWP.state.roomId) {
-      console.log('[OpenWatchParty] Chat: Not in a room');
-      OWP.ui.showToast('Not in a room');
+    if (!JWP.state.roomId) {
+      console.log('[JellyWatchParty] Chat: Not in a room');
+      JWP.ui.showToast('Not in a room');
       return false;
     }
-    console.log('[OpenWatchParty] Chat: Sending message to room', OWP.state.roomId);
-    OWP.actions.send('chat_message', { text: trimmed });
+    console.log('[JellyWatchParty] Chat: Sending message to room', JWP.state.roomId);
+    JWP.actions.send('chat_message', { text: trimmed });
     return true;
   };
 
   const isChatVisible = () => {
-    const chatSection = document.getElementById('owp-chat-section');
-    const panel = document.getElementById(OWP.constants.PANEL_ID);
+    const chatSection = document.getElementById('jwp-chat-section');
+    const panel = document.getElementById(JWP.constants.PANEL_ID);
     return chatSection && panel && !panel.classList.contains('hide');
   };
 
@@ -39,7 +39,7 @@
   };
 
   const updateBadge = () => {
-    const badge = document.getElementById('owp-chat-badge');
+    const badge = document.getElementById('jwp-chat-badge');
     if (badge) {
       if (chat.unreadCount > 0) {
         badge.textContent = chat.unreadCount > 99 ? '99+' : chat.unreadCount;

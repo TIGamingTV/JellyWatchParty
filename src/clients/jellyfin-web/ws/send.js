@@ -1,8 +1,8 @@
 (() => {
-  const OWP = window.OpenWatchParty = window.OpenWatchParty || {};
-  const actions = OWP.actions = OWP.actions || {};
-  const state = OWP.state;
-  const utils = OWP.utils;
+  const JWP = window.JellyWatchParty = window.JellyWatchParty || {};
+  const actions = JWP.actions = JWP.actions || {};
+  const state = JWP.state;
+  const utils = JWP.utils;
 
   const send = (type, payload = {}, roomOverride = null) => {
     if (!state.ws || state.ws.readyState !== 1) return;
@@ -57,8 +57,8 @@
       clearTimeout(state.pendingActionTimer);
       state.pendingActionTimer = null;
     }
-    if (OWP.chat) OWP.chat.clear();
-    const panel = document.getElementById(OWP.constants.PANEL_ID);
+    if (JWP.chat) JWP.chat.clear();
+    const panel = document.getElementById(JWP.constants.PANEL_ID);
     if (panel) panel.classList.add('hide');
   };
 

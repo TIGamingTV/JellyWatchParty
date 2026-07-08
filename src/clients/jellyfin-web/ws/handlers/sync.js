@@ -1,10 +1,10 @@
 (() => {
-  const OWP = window.OpenWatchParty = window.OpenWatchParty || {};
-  const h = OWP._wsHandlers = OWP._wsHandlers || {};
-  const state = OWP.state;
-  const utils = OWP.utils;
-  const ui = OWP.ui;
-  const { SEEK_THRESHOLD } = OWP.constants;
+  const JWP = window.JellyWatchParty = window.JellyWatchParty || {};
+  const h = JWP._wsHandlers = JWP._wsHandlers || {};
+  const state = JWP.state;
+  const utils = JWP.utils;
+  const ui = JWP.ui;
+  const { SEEK_THRESHOLD } = JWP.constants;
 
   const applyRoomState = (msg) => {
     state.inRoom = true;
@@ -15,8 +15,8 @@
       state.clientId = msg.client;
     }
     state.isHost = (msg.payload.host_id === state.clientId);
-    if (OWP.chat && Array.isArray(msg.payload.chat_history)) {
-      OWP.chat.hydrate(msg.payload.chat_history);
+    if (JWP.chat && Array.isArray(msg.payload.chat_history)) {
+      JWP.chat.hydrate(msg.payload.chat_history);
     }
     if (!state.hasTimeSync && typeof msg.server_ts === 'number') {
       state.serverOffsetMs = msg.server_ts - utils.nowMs();
@@ -46,7 +46,7 @@
     });
     utils.startSyncing();
     if (hostPlaying) {
-      const { INITIAL_SYNC_COOLDOWN_MS, INITIAL_SYNC_MAX_MS } = OWP.constants;
+      const { INITIAL_SYNC_COOLDOWN_MS, INITIAL_SYNC_MAX_MS } = JWP.constants;
       const now = utils.nowMs();
       state.isInitialSync = true;
       state.initialSyncUntil = now + INITIAL_SYNC_MAX_MS;
@@ -69,9 +69,9 @@
     ui.render();
     syncToRoom(msg, video);
     if (!state.isHost && msg.payload?.media_id) {
-      if (OWP.playback && OWP.playback.ensurePlayback) {
-        OWP.playback.ensurePlayback(msg.payload.media_id);
-        if (OWP.playback.watchReady) OWP.playback.watchReady();
+      if (JWP.playback && JWP.playback.ensurePlayback) {
+        JWP.playback.ensurePlayback(msg.payload.media_id);
+        if (JWP.playback.watchReady) JWP.playback.watchReady();
       }
     }
   };
