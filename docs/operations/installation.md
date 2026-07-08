@@ -112,6 +112,27 @@ cargo build --release
 ./target/release/session-server
 ```
 
+#### Option D: Windows Server (Prebuilt Binary, No Install Required)
+
+No Docker, no Rust, nothing to install — download a ready-to-run binary:
+
+1. Go to [Releases](https://github.com/TIGamingTV/OpenWatchParty/releases) and
+   download `owp-session-server-windows-vX.Y.Z.zip` from the latest release
+2. Extract it anywhere on the Windows Server host
+3. (Optional) Set configuration via environment variables before launching,
+   e.g. in PowerShell:
+   ```powershell
+   $env:PORT = "3000"
+   $env:ALLOWED_ORIGINS = "http://your-jellyfin:8096"
+   $env:JWT_SECRET = "<32+ char secret, must match the Jellyfin plugin config>"
+   ```
+4. Run `session-server.exe`
+5. Allow it through Windows Firewall when prompted so Jellyfin and clients can
+   reach it on the configured port (default `3000`)
+
+To keep it running in the background as a Windows service, wrap it with
+[NSSM](https://nssm.cc/) or Task Scheduler pointed at `session-server.exe`.
+
 ### Jellyfin Plugin
 
 #### Option A: Via Jellyfin Plugin Repository (Recommended)
