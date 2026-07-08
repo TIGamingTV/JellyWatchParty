@@ -18,7 +18,7 @@ JellyWatchParty enables synchronized media playback for [Jellyfin](https://jelly
 
 Forked from https://github.com/mhbxyz/OpenWatchParty
 
-## Quick Start
+## Quick Start with the File transformation Plugin
 
 ### Users
 
