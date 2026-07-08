@@ -20,12 +20,39 @@ Forked from https://github.com/mhbxyz/OpenWatchParty
 
 ## Quick Start
 
-Deploy the session server (Docker, native, or a prebuilt Windows Server
-binary), then install the Jellyfin plugin from the plugin repository. Full
-step-by-step instructions, including all install options: see the
+### Users
+
+**1. Start the session server** with Docker Compose:
+
+```yaml
+# docker-compose.yml
+services:
+  jwp-session:
+    image: ghcr.io/tigamingtv/jwp-session-server:latest
+    container_name: jwp-session
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - ALLOWED_ORIGINS=http://your-jellyfin:8096
+```
+
+```bash
+docker compose up -d
+```
+
+**2. Add the plugin repository** in Jellyfin: **Dashboard > Plugins > Repositories > Add**
+
+```
+https://tigamingtv.github.io/JellyWatchParty/jellyfin-plugin-repo/manifest.json
+```
+
+Then go to the **Catalog** tab, install **JellyWatchParty**, and restart Jellyfin.
+
+For Windows Server, manual installs, and enabling the client script: see the
 **[Installation Guide](https://tigamingtv.github.io/JellyWatchParty/installation/)**.
 
-Contributing code instead?
+### Developers
 
 ```bash
 git clone https://github.com/TIGamingTV/JellyWatchParty.git
