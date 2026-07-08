@@ -28,7 +28,7 @@ docker run -d --name jwp-session -p 3000:3000 \
   ghcr.io/tigamingtv/jwp-session-server:latest
 ```
 
-Then install the plugin from Jellyfin's catalog. See the [Installation Guide](https://tigamingtv.github.io/JellyWatchParty/operations/installation.html) for full instructions.
+Then install the plugin from Jellyfin's catalog. See the [Installation Guide](https://tigamingtv.github.io/JellyWatchParty/operations/installation/) for full instructions.
 
 ### Developers
 
@@ -38,7 +38,7 @@ cd JellyWatchParty
 just up
 ```
 
-See the [Development Setup Guide](https://tigamingtv.github.io/JellyWatchParty/development/setup.html) for the full workflow.
+See the [Development Setup Guide](https://tigamingtv.github.io/JellyWatchParty/development/setup/) for the full workflow.
 
 ## Documentation
 
