@@ -101,17 +101,16 @@ Caddy automatically provisions Let's Encrypt certificates for the block above.
 ### nginx
 
 ```nginx
-{
-    location /ws {
-        proxy_pass http://session-server;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_read_timeout 86400;
-    }
+location /ws {
+    proxy_pass http://session-server;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_read_timeout 86400;
 }
+
 ```
 
 For Let's Encrypt with Certbot: `sudo apt install certbot python3-certbot-nginx && sudo certbot --nginx -d jellyfin.example.com` (auto-renewal is usually configured automatically via `certbot.timer`).
