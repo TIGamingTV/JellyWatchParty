@@ -16,7 +16,7 @@ Access the plugin configuration page at **Dashboard** > **Plugins** > **JellyWat
 | JWT Issuer | `Jellyfin` | Issuer claim in generated tokens |
 | Token TTL | `3600` | Token lifetime in seconds (1 hour default) |
 | Invite TTL | `3600` | Invite link lifetime in seconds (reserved for future use) |
-| Session Server URL | (empty) | Custom WebSocket server URL. If empty, uses `ws(s)://[host]:3000/ws` |
+| Session Server URL | (empty) | Custom WebSocket server URL. If empty, uses `ws(s)://[host]:3000/ws`. Invalid or suspicious values (wrong scheme, malformed URL, bare internal hostname) show a non-blocking warning in the config page and browser console/toast — the value is still saved and used as entered. |
 
 ### JWT Secret Guidelines
 
@@ -78,6 +78,13 @@ session server runs on a different host or port, set a custom WebSocket URL:
 |--------|-------------|
 | `ws://` | HTTP/unencrypted (development only) |
 | `wss://` | HTTPS/encrypted (production) |
+
+The config page warns (but does not block saving) if the URL looks wrong —
+e.g. `ws://` used while the value doesn't parse as a scheme it recognizes,
+or a bare hostname with no dot that isn't `localhost` (a common sign of an
+internal Docker/Compose service name that isn't reachable from a browser).
+The same checks run again client-side on every connection attempt and are
+logged to the browser console and the plugin's server log.
 
 ## Sync Tuning
 

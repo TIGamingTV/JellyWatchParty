@@ -42,6 +42,11 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         {
             _logger.LogInformation("[JellyWatchParty] JWT authentication is enabled.");
         }
+
+        foreach (var warning in PluginConfiguration.ValidateSessionServerUrl(Configuration.SessionServerUrl))
+        {
+            _logger.LogWarning("[JellyWatchParty] SessionServerUrl: {Warning}", warning);
+        }
     }
 
     public override string Name => "JellyWatchParty";
