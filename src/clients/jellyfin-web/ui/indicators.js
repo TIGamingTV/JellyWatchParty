@@ -11,6 +11,13 @@
     el.textContent = connected ? 'Online' : 'Offline';
   };
 
+  const updateServerFooter = () => {
+    const el = document.getElementById('jwp-server-footer');
+    if (!el) return;
+    const wsUrl = state.wsUrl || JWP.constants.DEFAULT_WS_URL;
+    el.textContent = `Server: ${wsUrl.replace(/^wss?:\/\//, '').replace('/ws', '')}`;
+  };
+
   const describeSyncStatus = (status) => {
     if (status === 'pending_play') {
       const remaining = Math.max(0, (state.pendingPlayUntil - (Date.now() + (state.serverOffsetMs || 0))) / 1000);
@@ -54,5 +61,5 @@
     input.addEventListener('mousedown', stopPropagation);
   };
 
-  Object.assign(ui, { updateStatusIndicator, updateSyncIndicator, buildSyncStatusIndicator, stopPlayerCapture });
+  Object.assign(ui, { updateStatusIndicator, updateServerFooter, updateSyncIndicator, buildSyncStatusIndicator, stopPlayerCapture });
 })();
