@@ -287,6 +287,33 @@ function onEvent() {
 }
 ```
 
+`startSyncing()` (`utils/time.js`) takes an optional duration, defaulting
+to `SUPPRESS_MS` (2000ms). This same lock is also reused client-side (not
+just for incoming server commands) to stop the host's *own* local actions
+from being mistaken for a real playback event — see "Per-user audio/
+subtitle tracks" below.
+
+##### Per-user audio/subtitle tracks
+
+Audio and subtitle track selection is intentionally **not** synced —
+every participant picks their own via Jellyfin's normal player controls,
+independent of everyone else, since only `position`/`play_state` ever
+travel over the room's WebSocket channel. Guests get this for free (they
+never broadcast anything), but the host's own `<video>` element is bound
+by the same generic `play`/`pause`/`seeked`/`waiting` listeners used for
+real sync — and switching a track can force Jellyfin to reload the stream
+(most audio-track switches under transcoding do), which fires those same
+events.
+
+`playback/tracks.js` wraps `playbackManager.setAudioStreamIndex`/
+`setSubtitleStreamIndex` so that when the *host* calls either locally, the
+Sync Lock engages for `TRACK_SWITCH_SUPPRESS_MS` (8000ms) — long enough to
+cover a worst-case transcode restart — but a settle-shortcut (one-shot
+`canplay`/`playing` listeners on the video element) collapses it back down
+to the normal `SUPPRESS_MS` window the moment the reload visibly finishes,
+so a quick or no-reload switch doesn't hold the room's real sync events
+hostage for the full 8 seconds.
+
 #### B. Buffering Detection
 
 ```javascript
@@ -440,6 +467,7 @@ fn schedule_pending_play(room_id, created_at, rooms, clients) {
 | Parameter | Value | Location | Description |
 |-----------|-------|----------|-------------|
 | `SUPPRESS_MS` | 2000ms | Client | Anti-feedback lock duration |
+| `TRACK_SWITCH_SUPPRESS_MS` | 8000ms | Client | Anti-feedback lock safety-net for host audio/subtitle track switches (collapses early via settle-shortcut) |
 | `SEEK_THRESHOLD` | 1.0s | Client | Min difference for seek broadcast |
 | `STATE_UPDATE_MS` | 1000ms | Client | State send interval |
 | `SYNC_LEAD_MS` | 300ms | Client | Compensation advance |

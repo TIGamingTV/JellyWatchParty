@@ -50,6 +50,7 @@
     host,
     DEFAULT_WS_URL: `${protocol}//${host}:3000/ws`,
     SUPPRESS_MS: 2000,
+    TRACK_SWITCH_SUPPRESS_MS: 8000, // Safety-net suppression window for host audio/subtitle track switches (collapses early via settle-shortcut, see playback/tracks.js)
     SEEK_THRESHOLD: 1.0,          // Reduced from 2.5s - smaller seeks now broadcast (UX-P2)
     STATE_UPDATE_MS: 1000,        // Reduced from 2000ms - more responsive state updates (UX-P1)
     SYNC_LEAD_MS: 300,            // Compensates processing + initial HLS buffer

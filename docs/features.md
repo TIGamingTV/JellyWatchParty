@@ -64,6 +64,7 @@ session server, web client) work together to make this happen.
 - **Position sync** - Continuous updates keep clients aligned
 - **Drift correction** - Automatic playback speed adjustment (0.85x-2.0x), using hysteresis so it only kicks in once drift exceeds 0.3s and stays quiet until it falls back under 0.1s (see [Sync Algorithms](technical/sync))
 - **HLS support** - Works with Jellyfin's adaptive streaming
+- **Per-user audio/subtitle tracks** - Each participant picks their own audio and subtitle track using Jellyfin's normal player controls; only play/pause/seek/position are synced, so track choice never affects (or is affected by) anyone else in the room
 
 ### User Interface
 - **OSD button** - Watch Party button in the video player controls

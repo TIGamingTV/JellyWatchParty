@@ -57,6 +57,7 @@
         hadVideoElement = true;
         ui.injectOsdButton();
         playback.bindVideo();
+        if (playback.patchTrackSwitching) playback.patchTrackSwitching();
         if (state.pendingJoinRoomId) {
           console.log('[JellyWatchParty] Video detected, pendingJoinRoomId:', state.pendingJoinRoomId);
           if (JWP.actions && JWP.actions.joinRoom) {
