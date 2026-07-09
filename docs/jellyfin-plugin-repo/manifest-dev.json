@@ -8,12 +8,12 @@
     "category": "General",
     "versions": [
       {
-        "version": "0.0.67",
-        "changelog": "Merge pull request #34 from TIGamingTV/claude/github-issue-30-00frsa\n\nFix ScriptInjectionMiddleware permanently disabling itself on transie…",
+        "version": "0.0.68",
+        "changelog": "Merge pull request #35 from TIGamingTV/claude/plugin-button-visibility-lc7g0a\n\nFix missing client JS files in CI/release workflows",
         "targetAbi": "10.11.11.0",
         "sourceUrl": "https://github.com/TIGamingTV/JellyWatchParty/releases/download/develop-latest/JellyWatchParty-dev.zip",
-        "checksum": "fdba8c196d46ef61badd3ad73357cb9b",
-        "timestamp": "2026-07-09T16:34:32Z"
+        "checksum": "4f7d802fb777f2d4399403dd68803e75",
+        "timestamp": "2026-07-09T17:25:45Z"
       }
     ]
   }
