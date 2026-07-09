@@ -34,7 +34,7 @@
             <div id="jwp-bridge-available"></div>
           </div>
       </div>
-      <div class="jwp-footer">Server: ${DEFAULT_WS_URL.replace(/^wss?:\/\//, '').replace('/ws', '')}</div>
+      <div class="jwp-footer" id="jwp-server-footer">Server: ${(state.wsUrl || DEFAULT_WS_URL).replace(/^wss?:\/\//, '').replace('/ws', '')}</div>
     `;
     const btn = panel.querySelector('#jwp-btn-create');
     if (btn) btn.onclick = async () => {
@@ -110,6 +110,7 @@
     if (!panel) return;
     if (!forceFullRender && panel.dataset.inRoom === String(state.inRoom) && panel.children.length > 0) {
       ui.updateStatusIndicator();
+      ui.updateServerFooter();
       ui.updateSyncIndicator();
       ui.updateRoomListUI();
       ui.updateBridgeListUI();

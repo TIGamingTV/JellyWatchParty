@@ -3,6 +3,7 @@ using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Session;
 using Microsoft.Extensions.Logging;
 using Moq;
+using JellyWatchParty.Plugin.Configuration;
 using JellyWatchParty.Plugin.Services;
 using Xunit;
 
@@ -122,5 +123,43 @@ public class SessionHostBridgeTests
         var payload = SessionHostBridge.BuildStateUpdatePayload(isPaused: false, positionSeconds: 1.0);
 
         Assert.Equal("playing", payload["play_state"]!.ToString());
+    }
+
+    [Fact]
+    public void BuildAuthPayload_EmptySecret_FallsBackToUserIdAndName()
+    {
+        var config = new PluginConfiguration { JwtSecret = string.Empty };
+
+        var payload = SessionHostBridge.BuildAuthPayload("user-1", "Alice", config);
+
+        Assert.Null(payload["token"]);
+        Assert.Equal("user-1", payload["user_id"]!.ToString());
+        Assert.Equal("Alice", payload["user_name"]!.ToString());
+    }
+
+    [Fact]
+    public void BuildAuthPayload_TooShortSecret_FallsBackWithoutThrowing()
+    {
+        // Regression test: a non-empty but sub-128-bit secret used to reach
+        // SessionServerAuth.CreateToken and throw ArgumentOutOfRangeException
+        // (IDX10653) from the JWT library. It must now be treated the same
+        // as an empty secret instead of crashing.
+        var config = new PluginConfiguration { JwtSecret = "short10ch" };
+
+        var payload = SessionHostBridge.BuildAuthPayload("user-1", "Alice", config);
+
+        Assert.Null(payload["token"]);
+        Assert.Equal("user-1", payload["user_id"]!.ToString());
+    }
+
+    [Fact]
+    public void BuildAuthPayload_UsableSecret_IncludesToken()
+    {
+        var config = new PluginConfiguration { JwtSecret = "0123456789012345678901234567890123456789" };
+
+        var payload = SessionHostBridge.BuildAuthPayload("user-1", "Alice", config);
+
+        Assert.NotNull(payload["token"]);
+        Assert.False(string.IsNullOrEmpty(payload["token"]!.ToString()));
     }
 }

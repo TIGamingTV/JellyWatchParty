@@ -8,6 +8,16 @@ namespace JellyWatchParty.Plugin.Configuration;
 /// </summary>
 public class PluginConfiguration : BasePluginConfiguration
 {
+    /// <summary>
+    /// Minimum JWT secret length (in characters) for it to be considered
+    /// usable for HS256 signing. HS256's hard technical floor is 128 bits
+    /// (16 UTF-8 bytes) - below that, signing throws. This constant is set
+    /// well above that floor, matching the security recommendation already
+    /// documented for admins, so a secret that passes this check can never
+    /// hit the crypto library's minimum-key-size exception.
+    /// </summary>
+    public const int MinJwtSecretLength = 32;
+
     private string _jwtSecret = string.Empty;
     private int _tokenTtlSeconds = 3600;
     private int _inviteTtlSeconds = 3600;
@@ -25,6 +35,16 @@ public class PluginConfiguration : BasePluginConfiguration
         get => _jwtSecret;
         set => _jwtSecret = value ?? string.Empty;
     }
+
+    /// <summary>
+    /// True when <see cref="JwtSecret"/> is both set and long enough to be
+    /// safely used for HS256 signing. False covers two distinct cases that
+    /// callers should treat identically: auth intentionally disabled (empty
+    /// secret) and a misconfigured, too-short secret - in both cases, skip
+    /// token generation and respond as if auth were disabled rather than
+    /// attempting to sign with an unusable key.
+    /// </summary>
+    public bool HasUsableJwtSecret => JwtSecret.Length >= MinJwtSecretLength;
 
     /// <summary>
     /// JWT audience claim. Defaults to "JellyWatchParty".
@@ -60,4 +80,43 @@ public class PluginConfiguration : BasePluginConfiguration
     /// <example>ws://localhost:3000/ws or wss://party.example.com/ws</example>
     public string SessionServerUrl { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Checks a Session Server URL for common misconfigurations and returns
+    /// human-readable warnings. Does not reject anything - an empty result
+    /// means no issues were found. Empty/whitespace input always passes
+    /// (it means "auto-detect") since this only flags likely mistakes.
+    /// </summary>
+    public static IReadOnlyList<string> ValidateSessionServerUrl(string? value)
+    {
+        var warnings = new List<string>();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return warnings;
+        }
+
+        if (!Uri.TryCreate(value.Trim(), UriKind.Absolute, out var uri))
+        {
+            warnings.Add("Session Server URL is not a valid absolute URL.");
+            return warnings;
+        }
+
+        if (!uri.Scheme.Equals("ws", StringComparison.OrdinalIgnoreCase)
+            && !uri.Scheme.Equals("wss", StringComparison.OrdinalIgnoreCase))
+        {
+            warnings.Add($"Session Server URL should use ws:// or wss:// (got '{uri.Scheme}://').");
+        }
+
+        if (string.IsNullOrEmpty(uri.Host))
+        {
+            warnings.Add("Session Server URL is missing a host.");
+        }
+        else if (!uri.Host.Contains('.', StringComparison.Ordinal)
+            && !uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+            && !System.Net.IPAddress.TryParse(uri.Host, out _))
+        {
+            warnings.Add($"'{uri.Host}' looks like an internal/Docker hostname - it may not be reachable from a browser outside the container network.");
+        }
+
+        return warnings;
+    }
 }

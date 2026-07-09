@@ -1672,3 +1672,104 @@ picked up the Round 21 catch-up entry above while doing this pass.
 `docs/` tree, plus a repo-wide grep for links to the deleted/moved paths
 (`operations/`, `product/`, `technical/architecture`, `technical/api`) to
 catch anything left dangling.
+
+## Round 23 — Per-user audio/subtitle tracks during synced playback
+
+Requested: let each participant pick their own audio track and subtitle
+track independently while playback stays synced.
+
+Investigation first, since this sounded like it could be a large feature.
+A full-repo grep for `audioStreamIndex|subtitleStreamIndex|
+AudioStreamIndex|SubtitleStreamIndex|audioTrack|subtitleTrack` turned up
+nothing — no code anywhere (client, server, or plugin) touches track
+selection, and nothing hides or overrides Jellyfin Web's own native
+subtitle/audio OSD buttons. The synced room state (`Room`/`PlaybackState`
+in `src/server/src/types.rs:22-58`) only ever carries `position`,
+`play_state`, and a single room-wide `media_id`; only the host may
+broadcast (`src/server/src/ws/handlers/playback.rs:145-147`). Conclusion:
+**for guests, independent track selection already worked with zero code
+changes** — a guest's local track switch never gets broadcast (guests
+never send anything), and the existing drift-correction loop already
+tolerates the transient buffering a guest's own stream reload causes.
+
+**The one real gap**: when the *host* switches their own audio or
+subtitle track, Jellyfin can reload the stream (audio-track switches under
+transcoding almost always do), firing `waiting`/`pause`/`seeked`/`play`
+events on the host's `<video>` element. `playback/bind.js`'s listeners are
+generic — they didn't distinguish "host changed their own subtitle" from
+"host actually paused the movie" — so this would broadcast a spurious
+pause/seek/rebuffer to the whole room.
+
+**What changed**: reused the existing `isSyncing` "Sync Lock" anti-feedback
+pattern (documented in `technical/sync.md` §5A, already used 3 other places
+to suppress `bind.js`'s broadcast listeners during programmatic video
+manipulation) rather than inventing a new mechanism. New
+`playback/tracks.js` monkey-patches `playbackManager.setAudioStreamIndex`/
+`setSubtitleStreamIndex` (feature-detected, matching `playback/play.js`'s
+defensive method-detection style) so that when the host calls either
+locally, `utils.startSyncing()` suppresses broadcast for the duration of
+any resulting reload. `utils/time.js`'s `startSyncing()` was extended to
+take an optional duration (default unchanged) so track switches can use a
+longer safety-net window (`TRACK_SWITCH_SUPPRESS_MS`, 8000ms) than a plain
+seek's 2000ms — but a settle-shortcut (one-shot `canplay`/`playing`
+listeners) collapses the window back down the moment the reload visibly
+finishes, so the common no-reload case doesn't hold the room hostage for a
+full 8 seconds. Wired into the existing `state.intervals.ui` poll loop in
+`app/lifecycle.js` (same place `bindVideo()` already runs once a video
+element appears), and into both file lists a new client script needs
+(`plugin.js`'s `loadAll()` and `infra/just/common.just`'s `client_js_files`
+— the latter easy to miss since it's a build-time copy list, not a glob).
+
+**Verification**: `node --test` (new `tracks.test.js`, 6 new tests across 2
+new suites — wrapping calls through to the original method, `isSyncing`
+set only when host+in-room, no double-wrap on repeated patching, custom
+`startSyncing` duration) plus the full existing client suite, 32 tests
+total, all green; `node --check` on every touched/new file. **Not
+verified**: no live Jellyfin instance in this sandbox, so the actual
+reload behavior of `setAudioStreamIndex`/`setSubtitleStreamIndex` (do they
+even exist under those exact names in the currently-targeted Jellyfin Web
+version, and does a real transcode-restart really take under 8s) hasn't
+been observed end-to-end. The wrapper degrades safely if the method names
+are wrong (feature-detected, so it just silently no-ops, same as before
+the fix) but this needs a real two-browser test against the dev stack
+before considering it done, per the plan's verification section.
+
+---
+
+## Round 24 — Round 6 regressed: buttons gone again, GH Actions file list drifted
+
+**Symptom**: reported after the ScriptInjectionMiddleware caching fix
+(previous commit on `develop`) shipped — user confirmed the in-player
+Watch Party button still didn't appear, so that fix (a real bug, but a
+different one — the server-side script-tag injection cache) was not the
+cause of what the user was seeing.
+
+**Root cause**: this is Round 6 again, reintroduced. `.github/workflows/
+publish.yml` (both the tagged-release job and the `develop-latest` rolling
+build job) and `.github/workflows/ci.yml` each hardcode their own copy of
+the client JS file list, independently of the authoritative
+`infra/just/common.just` `client_js_files` (used by local `just build
+plugin`) and independently of `plugin.js`'s own `loadAll()` script list.
+Round 19 added `utils/validation.js` and `ui/bridge.js`/`ui/modal.js`,
+and Round 23 added `playback/tracks.js` — both rounds updated
+`common.just` and `plugin.js` (Round 23 explicitly called out
+`common.just` as "easy to miss") but neither touched the three GitHub
+Actions copies, which is exactly what actually ships to users via
+releases and the `develop-latest` build. Any plugin built by CI or the
+release workflow 404s on `utils/validation.js` and `playback/tracks.js`
+at runtime; `plugin.js`'s `Promise.all([...])` rejects, `loadAll()`
+throws, and `init()` — which creates both the OSD and header buttons —
+never runs. Locally-built plugins (`just build plugin`) were unaffected,
+which is why this didn't surface in dev testing.
+
+**Fix applied**: updated the file list in all three workflow copies
+(`publish.yml` ×2, `ci.yml` ×1) to match `common.just` exactly (30 files).
+Confirmed byte-for-byte identical via diff after the edit.
+
+**Not fixed**: the underlying duplication. There are now 4 independent
+places a new client script must be added (`plugin.js`, `common.just`,
+and 3 workflow steps across 2 files) for the button to survive a CI or
+release build — this is the second time keeping them in sync by hand has
+failed. Worth a follow-up to have the workflows source the file list from
+`common.just` (e.g. `just --evaluate client_js_files` or a `just build
+plugin`-only CI/release path) instead of hardcoding it a fourth time.

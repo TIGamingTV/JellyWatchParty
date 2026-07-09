@@ -203,7 +203,7 @@ public sealed class SessionHostBridge : IAsyncDisposable
 
     internal static JObject BuildAuthPayload(string userId, string userName, PluginConfiguration config)
     {
-        if (!string.IsNullOrEmpty(config.JwtSecret))
+        if (config.HasUsableJwtSecret)
         {
             return new JObject { ["token"] = SessionServerAuth.CreateToken(userId, userName, config) };
         }

@@ -60,6 +60,7 @@ Technical details: [Core Structure: Host Disconnect](core-structure#host-disconn
 1. **Check JWT configuration matches** — plugin JWT Secret must match server `JWT_SECRET`; both must be configured or both must be empty
 2. **Check token expiration** — default 1 hour; refresh the page for a new token
 3. **Rate limiting** — max 10 token requests per minute; wait and try again
+4. **JWT Secret is set but very short** — the widget shows "Offline" and changing the Session Server URL setting seems to have no effect: check the Jellyfin server logs for repeated errors on `GET /JellyWatchParty/Token`. A JWT Secret under 32 characters is treated as unusable and disables authentication (see [Configuration: JWT Secret Guidelines](configuration#jwt-secret-guidelines)) — set a proper secret with `openssl rand -base64 32`, or clear the field entirely to explicitly run without authentication.
 
 ### HLS Streaming Issues
 

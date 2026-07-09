@@ -116,8 +116,12 @@
     const wsUrl = state.wsUrl || DEFAULT_WS_URL;
     const fullWsUrl = withClientId(wsUrl, getPersistentClientId());
     console.log('[JellyWatchParty] Connecting to WebSocket:', fullWsUrl);
-    if (wsUrl.startsWith('ws://') && window.location.protocol === 'https:') {
-      console.warn('[JellyWatchParty] WARNING: Using insecure WebSocket (ws://) on HTTPS page. Data may be intercepted.');
+    // Only validate an explicit admin-configured URL - DEFAULT_WS_URL is derived
+    // from the page's own location, so it's reachable by definition.
+    const urlWarnings = state.wsUrl ? utils.validateWsUrl(state.wsUrl) : [];
+    urlWarnings.forEach((w) => console.warn('[JellyWatchParty] WARNING:', w));
+    if (urlWarnings.length > 0 && state.reconnectAttempts === 0 && ui && ui.showToast) {
+      ui.showToast(`Session Server URL problem: ${urlWarnings[0]}`);
     }
     try {
       state.ws = new WebSocket(fullWsUrl);

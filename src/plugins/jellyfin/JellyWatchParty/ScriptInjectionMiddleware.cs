@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using JellyWatchParty.Plugin.Services;
 
 namespace JellyWatchParty.Plugin;
@@ -18,27 +19,40 @@ namespace JellyWatchParty.Plugin;
 /// </summary>
 public class ScriptInjectionMiddleware
 {
+    private sealed class CachedContent
+    {
+        public required byte[] Content { get; init; }
+        public required string ETag { get; init; }
+    }
+
     private readonly RequestDelegate _next;
-    private static readonly Lazy<(byte[] Content, string ETag)?> _cache =
-        new(LoadContent, LazyThreadSafetyMode.ExecutionAndPublication);
+
+    // Caches only successful loads, not failures - a transient failure (e.g.
+    // index.html not fully written yet at first request) must not
+    // permanently disable script injection for the process's whole
+    // lifetime. Guarded by _loadLock only while unpopulated; once set, reads
+    // never take the lock. A reference-type wrapper (rather than a
+    // (byte[], string)? tuple) is used so the field can be `volatile` -
+    // C# doesn't allow `volatile` on Nullable<T>/struct fields, and without
+    // it a multi-field struct read isn't guaranteed atomic across threads.
+    private static volatile CachedContent? _cachedContent;
+    private static readonly object _loadLock = new();
 
     public ScriptInjectionMiddleware(RequestDelegate next)
     {
         _next = next;
     }
 
-    public async Task InvokeAsync(HttpContext context)
+    public async Task InvokeAsync(HttpContext context, ILogger<ScriptInjectionMiddleware> logger)
     {
         var path = context.Request.Path.Value?.TrimEnd('/');
         if (path is "/web" or "/web/index.html")
         {
-            var cached = _cache.Value;
-            if (cached.HasValue)
+            var cached = GetOrLoadContent(logger);
+            if (cached != null)
             {
-                var (content, etag) = cached.Value;
-
                 var requestETag = context.Request.Headers.IfNoneMatch.FirstOrDefault();
-                if (!string.IsNullOrEmpty(requestETag) && requestETag == etag)
+                if (!string.IsNullOrEmpty(requestETag) && requestETag == cached.ETag)
                 {
                     context.Response.StatusCode = 304;
                     return;
@@ -46,9 +60,9 @@ public class ScriptInjectionMiddleware
 
                 context.Response.ContentType = "text/html; charset=utf-8";
                 context.Response.Headers.CacheControl = "no-cache";
-                context.Response.Headers.ETag = etag;
-                context.Response.ContentLength = content.Length;
-                await context.Response.Body.WriteAsync(content);
+                context.Response.Headers.ETag = cached.ETag;
+                context.Response.ContentLength = cached.Content.Length;
+                await context.Response.Body.WriteAsync(cached.Content);
                 return;
             }
         }
@@ -56,24 +70,41 @@ public class ScriptInjectionMiddleware
         await _next(context);
     }
 
-    private static (byte[] Content, string ETag)? LoadContent()
+    private static CachedContent? GetOrLoadContent(ILogger logger)
     {
-        try
+        var cached = _cachedContent;
+        if (cached != null)
         {
-            var webDir = Environment.GetEnvironmentVariable("JELLYFIN_WEB_DIR")
-                ?? "/usr/share/jellyfin/web";
-            var indexPath = Path.Combine(webDir, "index.html");
-            var html = File.ReadAllText(indexPath);
-            var modified = FileTransformationIntegration.InjectScript(html);
-
-            var bytes = Encoding.UTF8.GetBytes(modified);
-            var hash = System.Security.Cryptography.SHA256.HashData(bytes);
-            var etag = $"\"{Convert.ToBase64String(hash)[..16]}\"";
-            return (bytes, etag);
+            return cached;
         }
-        catch
+
+        lock (_loadLock)
         {
-            return null;
+            if (_cachedContent != null)
+            {
+                return _cachedContent;
+            }
+
+            try
+            {
+                var webDir = Environment.GetEnvironmentVariable("JELLYFIN_WEB_DIR")
+                    ?? "/usr/share/jellyfin/web";
+                var indexPath = Path.Combine(webDir, "index.html");
+                var html = File.ReadAllText(indexPath);
+                var modified = FileTransformationIntegration.InjectScript(html);
+
+                var bytes = Encoding.UTF8.GetBytes(modified);
+                var hash = System.Security.Cryptography.SHA256.HashData(bytes);
+                var etag = $"\"{Convert.ToBase64String(hash)[..16]}\"";
+                _cachedContent = new CachedContent { Content = bytes, ETag = etag };
+                return _cachedContent;
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "[JellyWatchParty] Failed to inject client script into index.html - " +
+                    "the Watch Party button will not appear until this succeeds. Will retry on the next request.");
+                return null;
+            }
         }
     }
 }

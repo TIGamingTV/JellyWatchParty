@@ -40,6 +40,7 @@
       loadScript('utils/time.js'),
       loadScript('utils/video.js'),
       loadScript('utils/misc.js'),
+      loadScript('utils/validation.js'),
     ]);
     await Promise.all([
       loadScript('utils/media.js'),
@@ -61,6 +62,7 @@
       loadScript('playback/play.js'),
       loadScript('playback/bind.js'),
       loadScript('playback/sync.js'),
+      loadScript('playback/tracks.js'),
     ]);
     await Promise.all([
       loadScript('chat/messages.js'),

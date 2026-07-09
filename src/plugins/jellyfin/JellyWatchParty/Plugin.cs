@@ -31,16 +31,23 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         if (string.IsNullOrEmpty(Configuration.JwtSecret))
         {
             _logger.LogWarning("[JellyWatchParty] JwtSecret is not configured. Authentication is DISABLED. " +
-                "Set a JwtSecret (min 32 characters) in the plugin configuration to enable authentication.");
+                "Set a JwtSecret (min {MinLength} characters) in the plugin configuration to enable authentication.",
+                PluginConfiguration.MinJwtSecretLength);
         }
-        else if (Configuration.JwtSecret.Length < 32)
+        else if (!Configuration.HasUsableJwtSecret)
         {
-            _logger.LogWarning("[JellyWatchParty] JwtSecret is too short ({Length} chars). " +
-                "Use at least 32 characters for secure authentication.", Configuration.JwtSecret.Length);
+            _logger.LogWarning("[JellyWatchParty] JwtSecret is too short ({Length} chars, minimum {MinLength}). " +
+                "Authentication is DISABLED until you set a longer secret (or clear it to explicitly disable auth).",
+                Configuration.JwtSecret.Length, PluginConfiguration.MinJwtSecretLength);
         }
         else
         {
             _logger.LogInformation("[JellyWatchParty] JWT authentication is enabled.");
+        }
+
+        foreach (var warning in PluginConfiguration.ValidateSessionServerUrl(Configuration.SessionServerUrl))
+        {
+            _logger.LogWarning("[JellyWatchParty] SessionServerUrl: {Warning}", warning);
         }
     }
 

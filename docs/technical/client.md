@@ -21,7 +21,7 @@ plugin.js                    # Loader - loads modules in parallel waves
     │   ├── cards.js, home.js, indicators.js
     │   ├── render.js, styles.js, toasts.js
     ├── playback/            # Video playback management
-    │   ├── bind.js, play.js, sync.js
+    │   ├── bind.js, play.js, sync.js, tracks.js
     ├── chat/                # Text chat
     │   ├── input.js, messages.js
     ├── ws/                  # WebSocket communication
@@ -231,6 +231,23 @@ also a distinct **initial-sync phase** right after joining
 `INITIAL_SYNC_COOLDOWN_MS`/`INITIAL_SYNC_MAX_MS` unless drift is
 extreme (`INITIAL_SYNC_MAX_DRIFT`), since Jellyfin's own resume-position
 jump right after load would otherwise look like a real desync.
+
+### `playback/tracks.js`
+Audio and subtitle track selection is deliberately outside the sync
+protocol — every participant picks their own via Jellyfin's normal player
+controls, and only guests get this for free automatically (they never
+broadcast anything). `patchTrackSwitching()` closes the remaining gap for
+the host: it monkey-patches `playbackManager.setAudioStreamIndex`/
+`setSubtitleStreamIndex` (feature-detected, since a track switch can force
+Jellyfin to reload the stream and fire the same `waiting`/`pause`/
+`seeked`/`play` events `bind.js` listens for) so that a host's own local
+track switch engages the `isSyncing` lock (see [Sync Algorithms](sync.md)
+§5A) for `TRACK_SWITCH_SUPPRESS_MS` instead of broadcasting a spurious
+pause/seek to the room. A settle-shortcut (one-shot `canplay`/`playing`
+listeners) collapses that window back down once the reload visibly
+finishes, so a quick or no-reload switch doesn't hold the room's sync
+events back for the full safety-net duration. Called idempotently from
+`app/lifecycle.js`'s UI poll loop, same place `bindVideo()` runs.
 
 ## Module: `chat/` — Text Chat
 
