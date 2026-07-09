@@ -8,12 +8,12 @@
     "category": "General",
     "versions": [
       {
-        "version": "0.0.64",
-        "changelog": "Merge pull request #31 from TIGamingTV/claude/github-issue-30-00frsa\n\nFix group play console showing wrong server URL",
+        "version": "0.0.65",
+        "changelog": "Merge pull request #32 from TIGamingTV/claude/github-issue-30-00frsa\n\nWarn on invalid or unreachable Session Server URLs",
         "targetAbi": "10.11.11.0",
         "sourceUrl": "https://github.com/TIGamingTV/JellyWatchParty/releases/download/develop-latest/JellyWatchParty-dev.zip",
-        "checksum": "001f52510246fa58ce15a9e7dc854d1c",
-        "timestamp": "2026-07-09T14:39:06Z"
+        "checksum": "4274daec3361b01358706ed93bde1e35",
+        "timestamp": "2026-07-09T14:57:17Z"
       }
     ]
   }
