@@ -133,4 +133,24 @@ public class PluginConfigurationTests
         var warnings = PluginConfiguration.ValidateSessionServerUrl("not a url");
         Assert.Contains(warnings, w => w.Contains("not a valid absolute URL", StringComparison.Ordinal));
     }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("short")]
+    [InlineData("0123456789")]                            // 10 chars - the exact length from the bug report
+    [InlineData("0123456789012345678901234567890")]        // 31 chars
+    public void HasUsableJwtSecret_FalseForEmptyOrTooShort(string secret)
+    {
+        var config = new PluginConfiguration { JwtSecret = secret };
+        Assert.False(config.HasUsableJwtSecret);
+    }
+
+    [Theory]
+    [InlineData("01234567890123456789012345678901")]       // 32 chars - minimum
+    [InlineData("0123456789012345678901234567890123456789012345678901234567890123")] // 64 chars
+    public void HasUsableJwtSecret_TrueForLongEnoughSecrets(string secret)
+    {
+        var config = new PluginConfiguration { JwtSecret = secret };
+        Assert.True(config.HasUsableJwtSecret);
+    }
 }

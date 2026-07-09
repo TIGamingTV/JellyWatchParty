@@ -30,6 +30,18 @@ public static class SessionServerAuth
             return _cachedSigningCredentials;
         }
 
+        // Fail fast with a clear message instead of letting an unusably
+        // short secret reach the JWT library, which throws a much more
+        // cryptic ArgumentOutOfRangeException (IDX10653) deep inside
+        // WriteToken. Callers should check config.HasUsableJwtSecret before
+        // calling CreateToken at all - this is a safety net for callers
+        // that don't.
+        if (jwtSecret.Length < PluginConfiguration.MinJwtSecretLength)
+        {
+            throw new InvalidOperationException(
+                $"JwtSecret must be at least {PluginConfiguration.MinJwtSecretLength} characters to sign tokens; got {jwtSecret.Length}.");
+        }
+
         var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret));
         _cachedSigningCredentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
         _cachedJwtSecret = jwtSecret;

@@ -8,6 +8,16 @@ namespace JellyWatchParty.Plugin.Configuration;
 /// </summary>
 public class PluginConfiguration : BasePluginConfiguration
 {
+    /// <summary>
+    /// Minimum JWT secret length (in characters) for it to be considered
+    /// usable for HS256 signing. HS256's hard technical floor is 128 bits
+    /// (16 UTF-8 bytes) - below that, signing throws. This constant is set
+    /// well above that floor, matching the security recommendation already
+    /// documented for admins, so a secret that passes this check can never
+    /// hit the crypto library's minimum-key-size exception.
+    /// </summary>
+    public const int MinJwtSecretLength = 32;
+
     private string _jwtSecret = string.Empty;
     private int _tokenTtlSeconds = 3600;
     private int _inviteTtlSeconds = 3600;
@@ -25,6 +35,16 @@ public class PluginConfiguration : BasePluginConfiguration
         get => _jwtSecret;
         set => _jwtSecret = value ?? string.Empty;
     }
+
+    /// <summary>
+    /// True when <see cref="JwtSecret"/> is both set and long enough to be
+    /// safely used for HS256 signing. False covers two distinct cases that
+    /// callers should treat identically: auth intentionally disabled (empty
+    /// secret) and a misconfigured, too-short secret - in both cases, skip
+    /// token generation and respond as if auth were disabled rather than
+    /// attempting to sign with an unusable key.
+    /// </summary>
+    public bool HasUsableJwtSecret => JwtSecret.Length >= MinJwtSecretLength;
 
     /// <summary>
     /// JWT audience claim. Defaults to "JellyWatchParty".

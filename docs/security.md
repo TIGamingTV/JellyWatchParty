@@ -23,6 +23,10 @@ topology, see [Deployment](deployment).
 openssl rand -base64 32
 ```
 
+A secret under 32 characters is treated as unusable and disables
+authentication (see [Configuration: JWT Secret Guidelines](configuration#jwt-secret-guidelines))
+rather than being used as a weak key.
+
 Set the result as **JWT Secret** in **Dashboard > Plugins > JellyWatchParty**,
 and as `JWT_SECRET` in the session server's environment — both must use the
 **same secret**:
