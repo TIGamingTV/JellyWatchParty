@@ -17,4 +17,7 @@ require('../utils/time.js');
 // Load misc.js (defines JWP.utils.escapeHtml, suppress, shouldSend)
 require('../utils/misc.js');
 
+// Load validation.js (defines JWP.utils.validateWsUrl)
+require('../utils/validation.js');
+
 module.exports = globalThis.JellyWatchParty;

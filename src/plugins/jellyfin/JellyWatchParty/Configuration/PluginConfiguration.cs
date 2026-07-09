@@ -60,4 +60,43 @@ public class PluginConfiguration : BasePluginConfiguration
     /// <example>ws://localhost:3000/ws or wss://party.example.com/ws</example>
     public string SessionServerUrl { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Checks a Session Server URL for common misconfigurations and returns
+    /// human-readable warnings. Does not reject anything - an empty result
+    /// means no issues were found. Empty/whitespace input always passes
+    /// (it means "auto-detect") since this only flags likely mistakes.
+    /// </summary>
+    public static IReadOnlyList<string> ValidateSessionServerUrl(string? value)
+    {
+        var warnings = new List<string>();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return warnings;
+        }
+
+        if (!Uri.TryCreate(value.Trim(), UriKind.Absolute, out var uri))
+        {
+            warnings.Add("Session Server URL is not a valid absolute URL.");
+            return warnings;
+        }
+
+        if (!uri.Scheme.Equals("ws", StringComparison.OrdinalIgnoreCase)
+            && !uri.Scheme.Equals("wss", StringComparison.OrdinalIgnoreCase))
+        {
+            warnings.Add($"Session Server URL should use ws:// or wss:// (got '{uri.Scheme}://').");
+        }
+
+        if (string.IsNullOrEmpty(uri.Host))
+        {
+            warnings.Add("Session Server URL is missing a host.");
+        }
+        else if (!uri.Host.Contains('.', StringComparison.Ordinal)
+            && !uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+            && !System.Net.IPAddress.TryParse(uri.Host, out _))
+        {
+            warnings.Add($"'{uri.Host}' looks like an internal/Docker hostname - it may not be reachable from a browser outside the container network.");
+        }
+
+        return warnings;
+    }
 }

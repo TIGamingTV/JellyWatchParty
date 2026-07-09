@@ -272,12 +272,23 @@ public class PluginConfiguration : BasePluginConfiguration
     /// WebSocket server URL. If empty, uses default (same host, port 3000).
     /// </summary>
     public string SessionServerUrl { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Checks a Session Server URL for common misconfigurations (wrong
+    /// scheme, malformed URL, bare internal hostname) and returns
+    /// human-readable warnings. Never rejects a value - empty result means
+    /// no issues found.
+    /// </summary>
+    public static IReadOnlyList<string> ValidateSessionServerUrl(string? value) { /* ... */ }
 }
 ```
 
 **Validation:**
 - TTL values are clamped to valid range (1 minute to 24 hours)
 - Null JWT secret is converted to empty string
+- `SessionServerUrl` is checked by `ValidateSessionServerUrl` and any
+  warnings are logged (`Plugin` constructor) — this is advisory only, the
+  value itself is never modified or rejected
 
 ## configPage.html
 
@@ -289,6 +300,7 @@ Admin configuration page rendered in Jellyfin dashboard.
 - **JWT Secret** - Password input field (never exposed in GET response)
 - **JWT Audience** - Configurable audience claim
 - **JWT Issuer** - Configurable issuer claim
+- **Session Server URL** - Live warning indicator (updates on input/blur) that flags suspicious values without blocking save
 - **Save button** - Persists configuration
 
 ### Security Considerations

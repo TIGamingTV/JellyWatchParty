@@ -40,6 +40,7 @@
       loadScript('utils/time.js'),
       loadScript('utils/video.js'),
       loadScript('utils/misc.js'),
+      loadScript('utils/validation.js'),
     ]);
     await Promise.all([
       loadScript('utils/media.js'),

@@ -90,4 +90,47 @@ public class PluginConfigurationTests
         Assert.Equal(string.Empty, config.SessionServerUrl);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("wss://party.example.com/ws")]
+    [InlineData("ws://localhost:3000/ws")]
+    [InlineData("wss://192.168.1.5/ws")]
+    public void ValidateSessionServerUrl_NoWarningsForValidValues(string? value)
+    {
+        var warnings = PluginConfiguration.ValidateSessionServerUrl(value);
+        Assert.Empty(warnings);
+    }
+
+    [Theory]
+    [InlineData("not a url")]
+    [InlineData("http://party.example.com/ws")]
+    [InlineData("ws://jwp-session:3000/ws")]
+    public void ValidateSessionServerUrl_WarnsForSuspiciousValues(string value)
+    {
+        var warnings = PluginConfiguration.ValidateSessionServerUrl(value);
+        Assert.NotEmpty(warnings);
+    }
+
+    [Fact]
+    public void ValidateSessionServerUrl_WarnsAboutWrongScheme()
+    {
+        var warnings = PluginConfiguration.ValidateSessionServerUrl("http://party.example.com/ws");
+        Assert.Contains(warnings, w => w.Contains("ws:// or wss://", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ValidateSessionServerUrl_WarnsAboutInternalHostname()
+    {
+        var warnings = PluginConfiguration.ValidateSessionServerUrl("ws://jwp-session:3000/ws");
+        Assert.Contains(warnings, w => w.Contains("internal/Docker hostname", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ValidateSessionServerUrl_WarnsAboutMalformedUrl()
+    {
+        var warnings = PluginConfiguration.ValidateSessionServerUrl("not a url");
+        Assert.Contains(warnings, w => w.Contains("not a valid absolute URL", StringComparison.Ordinal));
+    }
 }

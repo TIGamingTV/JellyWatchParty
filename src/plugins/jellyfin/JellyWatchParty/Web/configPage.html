@@ -42,6 +42,7 @@
                         <div class="inputContainer">
                             <input is="emby-input" type="text" id="SessionServerUrl" label="Session Server URL" placeholder="Auto-detect (same host, port 3000)" />
                             <div class="fieldDescription">WebSocket server URL (e.g., wss://party.example.com/ws). Leave empty for auto-detection.</div>
+                            <div class="fieldDescription" id="SessionServerUrlWarning" style="color:#ffb74d;display:none"></div>
                         </div>
                     </div>
 
@@ -74,6 +75,45 @@
                 }
             };
 
+            // Mirrors PluginConfiguration.ValidateSessionServerUrl (C#) and
+            // utils/validation.js's validateWsUrl (browser client). This page
+            // is a standalone embedded resource, not part of the jellyfin-web
+            // client bundle, so the rules are duplicated in small form here
+            // rather than shared as a module.
+            function validateSessionServerUrl(value) {
+                var warnings = [];
+                if (!value) return warnings;
+
+                var parsed;
+                try {
+                    parsed = new URL(value);
+                } catch (e) {
+                    return ['Not a valid URL.'];
+                }
+
+                if (parsed.protocol !== 'ws:' && parsed.protocol !== 'wss:') {
+                    warnings.push('Should use ws:// or wss:// (got ' + parsed.protocol + ')');
+                }
+                if (parsed.hostname && parsed.hostname.indexOf('.') === -1 && parsed.hostname !== 'localhost' && !/^[\d.]+$/.test(parsed.hostname)) {
+                    warnings.push("'" + parsed.hostname + "' looks like an internal/Docker hostname — it may not be reachable from a browser.");
+                }
+                return warnings;
+            }
+
+            function updateSessionServerUrlWarning(page) {
+                var warnings = validateSessionServerUrl($('#SessionServerUrl', page).val());
+                var el = $('#SessionServerUrlWarning', page);
+                if (warnings.length > 0) {
+                    el.text(warnings.join(' ')).show();
+                } else {
+                    el.hide();
+                }
+            }
+
+            $('#SessionServerUrl').on('input blur', function () {
+                updateSessionServerUrlWarning($(this).parents('.pluginConfigurationPage')[0]);
+            });
+
             $('#toggleJwtSecret').on('click', function () {
                 var input = document.getElementById('JwtSecret');
                 var icon = this.querySelector('.material-icons');
@@ -102,6 +142,7 @@
 
                     // Server settings
                     $('#SessionServerUrl', page).val(config.SessionServerUrl || '');
+                    updateSessionServerUrlWarning(page);
 
                     Dashboard.hideLoadingMsg();
                 }).catch(function (err) {
