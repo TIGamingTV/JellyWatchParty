@@ -101,32 +101,7 @@ Caddy automatically provisions Let's Encrypt certificates for the block above.
 ### nginx
 
 ```nginx
-upstream jellyfin {
-    server jellyfin:8096;
-}
-
-upstream session-server {
-    server session-server:3000;
-}
-
-server {
-    listen 443 ssl http2;
-    server_name jellyfin.example.com;
-
-    ssl_certificate /etc/ssl/certs/jellyfin.crt;
-    ssl_certificate_key /etc/ssl/private/jellyfin.key;
-
-    location / {
-        proxy_pass http://jellyfin;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-    }
-
+{
     location /ws {
         proxy_pass http://session-server;
         proxy_http_version 1.1;
