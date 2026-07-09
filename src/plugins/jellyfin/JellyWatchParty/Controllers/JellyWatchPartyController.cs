@@ -249,8 +249,11 @@ public class JellyWatchPartyController : ControllerBase
             TokenRateLimits[userId] = (limit.Count + 1, limit.ResetTime);
         }
 
-        // Check if JWT is configured
-        if (string.IsNullOrEmpty(config.JwtSecret))
+        // Check if JWT is configured with a secret that's actually usable
+        // for signing (empty = intentionally disabled; too-short = broken
+        // config - both fall back to the auth-disabled response instead of
+        // crashing on an unsignable key).
+        if (!config.HasUsableJwtSecret)
         {
             // Return a special response indicating auth is disabled
             return Ok(new {

@@ -11,7 +11,7 @@ Access the plugin configuration page at **Dashboard** > **Plugins** > **JellyWat
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| JWT Secret | (empty) | Secret key for signing tokens. Leave empty to disable authentication. Min 32 characters recommended. |
+| JWT Secret | (empty) | Secret key for signing tokens. Leave empty to disable authentication. **Must be at least 32 characters** — shorter non-empty values are treated as if authentication were disabled (see below), not just "less secure." |
 | JWT Audience | `JellyWatchParty` | Audience claim in generated tokens |
 | JWT Issuer | `Jellyfin` | Issuer claim in generated tokens |
 | Token TTL | `3600` | Token lifetime in seconds (1 hour default) |
@@ -25,6 +25,18 @@ For production use: minimum 32 characters, cryptographically random, never reuse
 ```bash
 openssl rand -base64 32
 ```
+
+**A secret shorter than 32 characters disables authentication entirely** —
+`/JellyWatchParty/Token` responds as if `JwtSecret` were empty (no token,
+`auth_enabled: false`), it does not attempt to sign with a weak key. This
+still includes `session_server_url` in the response, so the widget
+connects normally without authentication. (Before this was fixed, a
+non-empty secret under 128 bits — e.g. accidentally pasting a 10-character
+value — made every call to `/JellyWatchParty/Token` fail with a 500 error,
+which meant the client never learned the configured Session Server URL and
+the widget got stuck showing "Offline" no matter what URL was set. If you
+hit that symptom on an older version, check your Jellyfin server logs for
+`IDX10653`/`ArgumentOutOfRangeException` on `GET /JellyWatchParty/Token`.)
 
 ## Session Server Configuration
 
