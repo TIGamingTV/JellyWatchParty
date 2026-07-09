@@ -27,7 +27,7 @@ session_ctr  := "jwp-session-server"
 
 # -- Client JS files (order matters for plugin loading) ----------------------
 
-client_js_files := "state.js utils/time.js utils/video.js utils/misc.js utils/media.js utils/log.js ui/styles.js ui/indicators.js ui/toasts.js ui/modal.js ui/cards.js ui/bridge.js ui/home.js ui/render.js playback/play.js playback/bind.js playback/sync.js chat/messages.js chat/input.js ws/send.js ws/auth.js ws/handlers/room.js ws/handlers/sync.js ws/handlers/playback.js ws/handlers/clock.js ws/connection.js app/lifecycle.js app/cleanup.js"
+client_js_files := "state.js utils/time.js utils/video.js utils/misc.js utils/media.js utils/log.js ui/styles.js ui/indicators.js ui/toasts.js ui/modal.js ui/cards.js ui/bridge.js ui/home.js ui/render.js playback/play.js playback/bind.js playback/sync.js playback/tracks.js chat/messages.js chat/input.js ws/send.js ws/auth.js ws/handlers/room.js ws/handlers/sync.js ws/handlers/playback.js ws/handlers/clock.js ws/connection.js app/lifecycle.js app/cleanup.js"
 
 # -- Colors ------------------------------------------------------------------
 

@@ -35,13 +35,13 @@
     }, delay);
   };
 
-  const startSyncing = () => {
+  const startSyncing = (ms = SUPPRESS_MS) => {
     state.isSyncing = true;
     if (syncingTimer) clearTimeout(syncingTimer);
     syncingTimer = setTimeout(() => {
       state.isSyncing = false;
       syncingTimer = null;
-    }, SUPPRESS_MS);
+    }, ms);
   };
 
   Object.assign(utils, { nowMs, getServerNow, adjustedPosition, scheduleAt, startSyncing });

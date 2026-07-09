@@ -61,6 +61,7 @@
       loadScript('playback/play.js'),
       loadScript('playback/bind.js'),
       loadScript('playback/sync.js'),
+      loadScript('playback/tracks.js'),
     ]);
     await Promise.all([
       loadScript('chat/messages.js'),
