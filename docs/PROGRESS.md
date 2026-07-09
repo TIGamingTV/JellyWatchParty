@@ -1733,3 +1733,43 @@ been observed end-to-end. The wrapper degrades safely if the method names
 are wrong (feature-detected, so it just silently no-ops, same as before
 the fix) but this needs a real two-browser test against the dev stack
 before considering it done, per the plan's verification section.
+
+---
+
+## Round 24 — Round 6 regressed: buttons gone again, GH Actions file list drifted
+
+**Symptom**: reported after the ScriptInjectionMiddleware caching fix
+(previous commit on `develop`) shipped — user confirmed the in-player
+Watch Party button still didn't appear, so that fix (a real bug, but a
+different one — the server-side script-tag injection cache) was not the
+cause of what the user was seeing.
+
+**Root cause**: this is Round 6 again, reintroduced. `.github/workflows/
+publish.yml` (both the tagged-release job and the `develop-latest` rolling
+build job) and `.github/workflows/ci.yml` each hardcode their own copy of
+the client JS file list, independently of the authoritative
+`infra/just/common.just` `client_js_files` (used by local `just build
+plugin`) and independently of `plugin.js`'s own `loadAll()` script list.
+Round 19 added `utils/validation.js` and `ui/bridge.js`/`ui/modal.js`,
+and Round 23 added `playback/tracks.js` — both rounds updated
+`common.just` and `plugin.js` (Round 23 explicitly called out
+`common.just` as "easy to miss") but neither touched the three GitHub
+Actions copies, which is exactly what actually ships to users via
+releases and the `develop-latest` build. Any plugin built by CI or the
+release workflow 404s on `utils/validation.js` and `playback/tracks.js`
+at runtime; `plugin.js`'s `Promise.all([...])` rejects, `loadAll()`
+throws, and `init()` — which creates both the OSD and header buttons —
+never runs. Locally-built plugins (`just build plugin`) were unaffected,
+which is why this didn't surface in dev testing.
+
+**Fix applied**: updated the file list in all three workflow copies
+(`publish.yml` ×2, `ci.yml` ×1) to match `common.just` exactly (30 files).
+Confirmed byte-for-byte identical via diff after the edit.
+
+**Not fixed**: the underlying duplication. There are now 4 independent
+places a new client script must be added (`plugin.js`, `common.just`,
+and 3 workflow steps across 2 files) for the button to survive a CI or
+release build — this is the second time keeping them in sync by hand has
+failed. Worth a follow-up to have the workflows source the file list from
+`common.just` (e.g. `just --evaluate client_js_files` or a `just build
+plugin`-only CI/release path) instead of hardcoding it a fourth time.
