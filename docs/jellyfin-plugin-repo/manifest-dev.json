@@ -8,12 +8,12 @@
     "category": "General",
     "versions": [
       {
-        "version": "0.0.66",
-        "changelog": "Merge pull request #33 from TIGamingTV/claude/github-issue-30-00frsa\n\nFix short JwtSecret crashing /JellyWatchParty/Token (issue #30 root cause)",
+        "version": "0.0.67",
+        "changelog": "Merge pull request #34 from TIGamingTV/claude/github-issue-30-00frsa\n\nFix ScriptInjectionMiddleware permanently disabling itself on transie…",
         "targetAbi": "10.11.11.0",
         "sourceUrl": "https://github.com/TIGamingTV/JellyWatchParty/releases/download/develop-latest/JellyWatchParty-dev.zip",
-        "checksum": "cf8d71836514fc665c56b684004740dc",
-        "timestamp": "2026-07-09T16:02:42Z"
+        "checksum": "fdba8c196d46ef61badd3ad73357cb9b",
+        "timestamp": "2026-07-09T16:34:32Z"
       }
     ]
   }
