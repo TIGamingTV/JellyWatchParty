@@ -8,12 +8,12 @@
     "category": "General",
     "versions": [
       {
-        "version": "0.0.33",
-        "changelog": "Merge pull request #16 from TIGamingTV/claude/project-improvements-additions-br8ilt\n\nClaude/project improvements additions br8ilt",
+        "version": "0.0.61",
+        "changelog": "Merge pull request #29 from TIGamingTV/claude/per-user-audio-subtitle-prefs-sqyqqt\n\nAllow hosts to switch audio/subtitle tracks without disrupting room sync",
         "targetAbi": "10.11.11.0",
         "sourceUrl": "https://github.com/TIGamingTV/JellyWatchParty/releases/download/develop-latest/JellyWatchParty-dev.zip",
-        "checksum": "ccaf1a14b3ef9d87ccb6aad93bdfc9b0",
-        "timestamp": "2026-07-06T11:39:07Z"
+        "checksum": "f70320e954567a5512d60ae2a272ce37",
+        "timestamp": "2026-07-09T12:21:40Z"
       }
     ]
   }
