@@ -261,7 +261,8 @@ public class JellyWatchPartyController : ControllerBase
                 auth_enabled = false,
                 user_id = userId,
                 user_name = userName,
-                session_server_url = config.SessionServerUrl ?? string.Empty
+                session_server_url = config.SessionServerUrl ?? string.Empty,
+                hide_native_sync_button = config.HideNativeSyncButton
             });
         }
 
@@ -274,7 +275,8 @@ public class JellyWatchPartyController : ControllerBase
             expires_in = config.TokenTtlSeconds,
             user_id = userId,
             user_name = userName,
-            session_server_url = config.SessionServerUrl ?? string.Empty
+            session_server_url = config.SessionServerUrl ?? string.Empty,
+            hide_native_sync_button = config.HideNativeSyncButton
         });
     }
 

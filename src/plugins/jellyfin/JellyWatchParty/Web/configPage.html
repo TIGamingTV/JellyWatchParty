@@ -46,6 +46,18 @@
                         </div>
                     </div>
 
+                    <!-- Interface Settings -->
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">Interface</h2>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label>
+                                <input is="emby-checkbox" type="checkbox" id="HideNativeSyncButton" />
+                                <span>Hide Jellyfin's built-in SyncPlay button</span>
+                            </label>
+                            <div class="fieldDescription checkboxFieldDescription">Removes Jellyfin's native SyncPlay button (the "groups" icon) from the web client, since JellyWatchParty replaces that feature. Applies to browsers after the next page load.</div>
+                        </div>
+                    </div>
+
                     <div>
                         <button is="emby-button" type="submit" class="raised button-submit block">
                             <span>Save</span>
@@ -144,6 +156,9 @@
                     $('#SessionServerUrl', page).val(config.SessionServerUrl || '');
                     updateSessionServerUrlWarning(page);
 
+                    // Interface settings
+                    $('#HideNativeSyncButton', page).prop('checked', config.HideNativeSyncButton || false);
+
                     Dashboard.hideLoadingMsg();
                 }).catch(function (err) {
                     Dashboard.hideLoadingMsg();
@@ -165,6 +180,9 @@
 
                     // Server settings
                     config.SessionServerUrl = $('#SessionServerUrl', page).val();
+
+                    // Interface settings
+                    config.HideNativeSyncButton = $('#HideNativeSyncButton', page).is(':checked');
 
                     return ApiClient.updatePluginConfiguration(JellyWatchPartyConfigurationPage.pluginId, config);
                 }).then(function () {
