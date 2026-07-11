@@ -92,6 +92,11 @@
           <button id="jwp-chat-send">Send</button>
         </div>
       </div>
+      <div class="jwp-section" style="border-top: 1px solid #333; padding-top: 12px; flex-shrink:0;">
+        <div class="jwp-label">Add a Device to This Room</div>
+        <div id="jwp-bridge-active"></div>
+        <div id="jwp-bridge-available"></div>
+      </div>
       <div class="jwp-meta" style="font-size:10px; color:#666; display:flex; justify-content:space-between; flex-shrink:0; padding-top:8px;">
           <span>RTT: <span class="jwp-latency">-</span></span>
           <span>ID: ${state.clientId.split('-')[1] || '...'}</span>
@@ -99,6 +104,7 @@
     `;
     const leaveBtn = panel.querySelector('#jwp-btn-leave');
     if (leaveBtn) leaveBtn.onclick = () => JWP.actions && JWP.actions.leaveRoom && JWP.actions.leaveRoom();
+    ui.updateBridgeListUI();
   };
 
   const setupChatInput = (panel) => {

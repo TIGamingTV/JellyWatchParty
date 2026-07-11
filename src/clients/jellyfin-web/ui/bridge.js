@@ -48,22 +48,25 @@
   // session can be attached as a *receiver* of it.
   const inRoom = () => Boolean(state && state.inRoom && state.roomId);
 
+  // Each eligible session gets one action, matching the panel context:
+  //   - in the lobby (not in a room) → Host: start a new room from this session.
+  //   - while in a room → Receiver: attach this session to the current room.
+  // The lobby renders this list in renderLobby; the in-room view renders it in
+  // renderRoom (see ui/render.js), so both contexts are reachable.
   const buildSessionRow = (session) => {
     const label = `${utils.escapeHtml(session.userName)} — ${utils.escapeHtml(session.deviceName)}` +
       (session.nowPlayingItemName ? `: ${utils.escapeHtml(session.nowPlayingItemName)}` : '');
     const row = document.createElement('div');
     row.className = 'jwp-room-item';
     row.style.cursor = 'default';
-    const receiverDisabled = inRoom() ? '' : ' disabled title="Join a room first"';
-    row.innerHTML = `<div>${label}</div>` +
-      '<div style="display:flex; gap:6px;">' +
-      '<button class="jwp-btn secondary jwp-bridge-host">Host</button>' +
-      `<button class="jwp-btn secondary jwp-bridge-receiver"${receiverDisabled}>Receiver</button>` +
-      '</div>';
-    row.querySelector('.jwp-bridge-host').onclick = () => startBridge(session.sessionId);
-    const receiverBtn = row.querySelector('.jwp-bridge-receiver');
     if (inRoom()) {
-      receiverBtn.onclick = () => followBridge(session.sessionId);
+      row.innerHTML = `<div>${label}</div>` +
+        '<button class="jwp-btn secondary jwp-bridge-receiver">Receiver</button>';
+      row.querySelector('.jwp-bridge-receiver').onclick = () => followBridge(session.sessionId);
+    } else {
+      row.innerHTML = `<div>${label}</div>` +
+        '<button class="jwp-btn secondary jwp-bridge-host">Host</button>';
+      row.querySelector('.jwp-bridge-host').onclick = () => startBridge(session.sessionId);
     }
     return row;
   };
