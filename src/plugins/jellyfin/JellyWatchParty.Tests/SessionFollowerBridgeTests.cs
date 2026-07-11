@@ -21,6 +21,17 @@ public class SessionFollowerBridgeTests
     }
 
     [Fact]
+    public void BuildReadyPayload_IsAnEmptyObject()
+    {
+        // The follower must send `ready` after joining (a headless bridge never
+        // buffers video), or the server's all_ready gate would delay every host
+        // play. The server reads only the envelope room, so the body is empty.
+        var payload = SessionFollowerBridge.BuildReadyPayload();
+
+        Assert.False(payload.HasValues);
+    }
+
+    [Fact]
     public void ParseRoomEvent_PlayerEventPlay_IsPlayingWithPosition()
     {
         var message = JObject.Parse("{\"type\":\"player_event\",\"payload\":{\"action\":\"play\",\"position\":42.5}}");

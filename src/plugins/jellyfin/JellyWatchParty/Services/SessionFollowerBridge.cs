@@ -80,7 +80,10 @@ public sealed class SessionFollowerBridge : IAsyncDisposable
         await SendAsync(BuildJoinRoomPayload(_userName), "join_room", _roomId, cancellationToken)
             .ConfigureAwait(false);
 
-        RoomId = _roomId;
+        // RoomId is set only once the server confirms the join with a
+        // room_state message (see HandleServerMessageAsync) — not optimistically
+        // here — so a rejected join (e.g. a password-protected room, which this
+        // bridge does not support) does not surface as a phantom connected bridge.
         _receiveLoop = Task.Run(() => ReceiveLoopAsync(_cts.Token), CancellationToken.None);
     }
 
@@ -170,6 +173,21 @@ public sealed class SessionFollowerBridge : IAsyncDisposable
 
         switch (message["type"]?.ToString())
         {
+            case "room_state":
+                // The join is confirmed. Mark ourselves ready *now* — a headless
+                // follower has no video to buffer, and if it never readied the
+                // server's all_ready gate (pending_play) would delay every host
+                // "play" for the whole room by MAX_READY_WAIT_MS. `ready` persists
+                // for the room's lifetime, so sending it once on join is enough.
+                RoomId = _roomId;
+                await SendAsync(BuildReadyPayload(), "ready", _roomId, cancellationToken).ConfigureAwait(false);
+                var initial = ParseRoomEvent(message);
+                if (initial.HasValue)
+                {
+                    await ApplyRoomStateAsync(initial.Value, cancellationToken).ConfigureAwait(false);
+                }
+
+                break;
             case "room_closed":
                 RoomId = null;
                 break;
@@ -268,6 +286,10 @@ public sealed class SessionFollowerBridge : IAsyncDisposable
     internal readonly record struct RoomPlaybackState(bool? IsPaused, double? PositionSeconds);
 
     internal static JObject BuildJoinRoomPayload(string userName) => new() { ["user_name"] = userName };
+
+    // The server's ready handler keys off the connection's client id and the
+    // envelope room only; the payload body is unused, so an empty object is fine.
+    internal static JObject BuildReadyPayload() => new();
 
     /// <summary>
     /// Extracts the follower-relevant playback state from an inbound server
