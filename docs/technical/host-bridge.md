@@ -152,13 +152,14 @@ field names out explicitly rather than relying on a naming policy.
 Device" section directly inside the normal lobby panel
 (`ui/render.js`'s `renderLobby`) — not the Jellyfin admin config page.
 It lists eligible sessions and active bridges (polling the two `GET`
-endpoints). Each eligible session offers two actions: **Host** (start a
-new room from it) and **Receiver** (attach it to the room this browser
-is currently in). The Receiver action is disabled unless the browser is
-in a room, since it needs a room id to pass to `Follow`. Active bridges
-show their role and can be stopped with a button. All calls use the same
-`ApiClient.accessToken()` pattern the rest of the client uses to call
-plugin endpoints.
+endpoints), and is rendered in **both** panel contexts: the pre-room
+lobby (`renderLobby`) and the in-room view (`renderRoom`). Each eligible
+session shows a single action matching the context: **Host** in the
+lobby (start a new room from that session) and **Receiver** while in a
+room (attach that session to the current room, passing `state.roomId`
+to `Follow`). Active bridges show their role and can be stopped with a
+button. All calls use the same `ApiClient.accessToken()` pattern the
+rest of the client uses to call plugin endpoints.
 
 ## Related
 

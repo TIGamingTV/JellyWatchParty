@@ -47,19 +47,19 @@ describe('bridge receiver gating', () => {
     );
   });
 
-  it('receiver action is disabled and unwired when not in a room', () => {
+  it('offers only a wired Host action when not in a room', () => {
     const row = buildSessionRow(session);
-    assert.match(row.innerHTML, /jwp-bridge-receiver/);
-    assert.match(row.innerHTML, /disabled/);
+    assert.match(row.innerHTML, /jwp-bridge-host/);
+    assert.doesNotMatch(row.innerHTML, /jwp-bridge-receiver/);
     assert.equal(typeof row.buttons['.jwp-bridge-host'].onclick, 'function');
-    assert.equal(row.buttons['.jwp-bridge-receiver'].onclick, null);
   });
 
-  it('receiver action is enabled and wired when in a room', () => {
+  it('offers only a wired Receiver action when in a room', () => {
     JWP.state.inRoom = true;
     JWP.state.roomId = 'ABC';
     const row = buildSessionRow(session);
-    assert.doesNotMatch(row.innerHTML, /disabled/);
+    assert.match(row.innerHTML, /jwp-bridge-receiver/);
+    assert.doesNotMatch(row.innerHTML, /jwp-bridge-host/);
     assert.equal(typeof row.buttons['.jwp-bridge-receiver'].onclick, 'function');
   });
 });
