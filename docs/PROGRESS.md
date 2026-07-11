@@ -1907,3 +1907,73 @@ stylesheet inject/remove/idempotency behaviour. Not separately
 browser-verified against a live Jellyfin instance as of this entry, but the
 CSS-injection approach mirrors existing client patterns and degrades to a
 harmless no-op when the flag is off (the default).
+
+---
+
+## Round 28 — Native Client Bridge: the receiver (follower) direction — official Android TV can now *follow* a room
+
+A user's friend couldn't see JellyWatchParty on the **official Jellyfin
+Android TV** app — expected, since JWP's UI is injected into jellyfin-web and
+native clients never load it. Investigation (which started from "can we hook
+Jellyfin's SyncPlay widget on Android TV?") established two facts: the official
+Android TV client has **no SyncPlay** (feature-request-only since 2020), but it
+**does** obey generic remote-control playstate commands — `PAUSE`/`UNPAUSE`/
+absolute `SEEK` — over its own websocket. That's the lever. The Host Bridge from
+Rounds 16–17 already made a native session a room **host**; this round adds the
+opposite direction — **receiver** — so a native client can *follow* a room. On
+branch `claude/jelly-sync-button-removal-jcjhty` (`df10642`, `e089ec6`,
+`54171e6`), **confirmed working on real hardware by the reporter** (both host
+and receiver).
+
+**How it works** — no client-side TV changes:
+- `Services/SessionFollowerBridge.cs` (new, the receive-only counterpart to
+  `SessionHostBridge`): opens its own `ClientWebSocket`, `auth`s, **joins** an
+  existing room (rather than creating one), and translates the host's inbound
+  `player_event`/`state_update` into
+  `ISessionManager.SendPlaystateCommand(controllingSessionId: "", sessionId, …)`
+  — an empty controlling-session id skips Jellyfin's control-permission path and
+  relays the command straight to the target's socket (verified against the
+  10.11 `SessionManager` source). Play/pause is re-sent only on a state change;
+  `Seek` fires only past a ~2 s drift and outside a short cooldown.
+- `HostBridgeManager` owns follower bridges alongside host bridges (a session is
+  one role or the other), plus `POST Bridge/{sessionId}/Follow?roomId=…`.
+- Web UI: the in-player picker offers one action per context — **Host** in the
+  lobby, **Receiver** while in a room (attaching the session to the current
+  room). Scope decision: the TV must already be playing the room's item; the
+  receiver keeps play/pause/position aligned but doesn't start playback remotely.
+
+**Two follow-up rounds of bugs, both the same "correct in isolation, wrong in
+integration" class** — worth recording because they're the kind of thing to
+watch for:
+1. *The Receiver button did nothing — not even a server log.* The picker was
+   rendered only in the pre-room lobby (`renderLobby`), where `inRoom()` is
+   always false, so `buildSessionRow` always drew the button disabled/unwired;
+   the in-room view had no picker at all. There was no reachable state where
+   Receiver was enabled. Fix: render the picker in `renderRoom` too, and give
+   each context exactly one action.
+2. *A full-code audit then found two more:* (a) the headless follower joined as
+   a counted room member but never sent `ready`, so the server's
+   `all_ready`/`pending_play` gate would have delayed **every** host play for
+   the whole room by `MAX_READY_WAIT_MS` (2 s) — fixed by sending `ready` on
+   join confirmation; (b) `RoomId` was set optimistically before the server
+   confirmed the join, so a rejected join showed as a phantom connected bridge —
+   fixed by setting it (and sending `ready`, and applying the initial snapshot)
+   only on the `room_state` reply, mirroring `SessionHostBridge`.
+
+**Documented limitations** (product decision): receivers don't support
+password-protected rooms (the follower's join can't carry the password), and
+bridges still don't reconnect after a websocket drop (shared with the host
+bridge since Round 16).
+
+**Anti-regression guard**: the round-1 button bug shipped because tests checked
+the row builder in isolation and never that the action was *reachable*. Added
+`tests/render-bridge-reachability.test.js`, which drives the real `render()` and
+asserts the bridge-picker container is present in **both** panel views
+(lobby + in-room) — verified to fail if either container is removed.
+
+**Verification**: `node --test` clean (44 assertions, incl. the reachability
+guard and follower translation-helper tests); new xUnit
+`SessionFollowerBridgeTests` cover the room-event → playstate translation. C#
+build/tests run in CI (the sandbox here has no .NET/Docker and the proxy blocks
+the SDK/NuGet). End-to-end host + receiver confirmed on the reporter's live
+Android TV.
