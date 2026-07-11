@@ -102,6 +102,10 @@
       if (data.session_server_url) {
         state.wsUrl = data.session_server_url;
       }
+      state.hideNativeSyncButton = data.hide_native_sync_button || false;
+      if (JWP.ui && JWP.ui.applyNativeSyncButtonVisibility) {
+        JWP.ui.applyNativeSyncButtonVisibility();
+      }
       if (data.auth_enabled && data.token) {
         state.authToken = data.token;
         const expiresIn = data.expires_in || 3600;

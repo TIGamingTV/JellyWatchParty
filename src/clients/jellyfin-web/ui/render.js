@@ -3,8 +3,28 @@
   const ui = JWP.ui = JWP.ui || {};
   const state = JWP.state;
   const utils = JWP.utils;
-  const { PANEL_ID, BTN_ID, DEFAULT_WS_URL } = JWP.constants;
+  const { PANEL_ID, BTN_ID, DEFAULT_WS_URL, SYNC_HIDE_STYLE_ID } = JWP.constants;
   const GLOBAL_BTN_ID = 'jwp-global-btn';
+
+  // Jellyfin's built-in SyncPlay button is `.headerSyncButton` (also carries
+  // `.syncButton`) — rendered in the app header and, during playback, in the
+  // player OSD header (see jellyfin-web libraryMenu.js / videoosd.scss). When
+  // the admin enables "Hide native SyncPlay button", JellyWatchParty's own
+  // watch-party controls replace it, so we hide it via an injected stylesheet.
+  // CSS (rather than removing the node) survives Jellyfin's SPA re-renders,
+  // which repeatedly rebuild the header DOM.
+  const applyNativeSyncButtonVisibility = () => {
+    const existing = document.getElementById(SYNC_HIDE_STYLE_ID);
+    if (state.hideNativeSyncButton) {
+      if (existing) return;
+      const style = document.createElement('style');
+      style.id = SYNC_HIDE_STYLE_ID;
+      style.textContent = '.headerSyncButton, .syncButton { display: none !important; }';
+      document.head.appendChild(style);
+    } else if (existing) {
+      existing.remove();
+    }
+  };
 
   const togglePanel = (e) => {
     if (e) {
@@ -163,5 +183,5 @@
     headerRight.prepend(btn);
   };
 
-  Object.assign(ui, { render, injectOsdButton, injectGlobalButton });
+  Object.assign(ui, { render, injectOsdButton, injectGlobalButton, applyNativeSyncButtonVisibility });
 })();

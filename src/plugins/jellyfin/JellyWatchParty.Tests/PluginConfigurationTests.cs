@@ -90,6 +90,22 @@ public class PluginConfigurationTests
         Assert.Equal(string.Empty, config.SessionServerUrl);
     }
 
+    [Fact]
+    public void HideNativeSyncButton_DefaultIsFalse()
+    {
+        var config = new PluginConfiguration();
+        Assert.False(config.HideNativeSyncButton);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void HideNativeSyncButton_RoundTripsValue(bool value)
+    {
+        var config = new PluginConfiguration { HideNativeSyncButton = value };
+        Assert.Equal(value, config.HideNativeSyncButton);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]
