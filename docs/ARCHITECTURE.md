@@ -79,7 +79,8 @@ C# plugin targeting the Jellyfin plugin ABI. Key files:
     (no disk fallback) — see `Web/` folder produced at build time, resource
     name pattern `JellyWatchParty.Plugin.Web.<path-with-dots-for-slashes>`
   - `/JellyWatchParty/Bridge/*` (any logged-in user — see below) — lists
-    bridgeable/active sessions and starts/stops a host bridge
+    bridgeable/active sessions and starts/stops a host bridge, or attaches a
+    session to a room as a receiver (`Bridge/{sessionId}/Follow`)
 - `ScriptInjectionMiddleware.cs` — intercepts requests for
   `/web/index.html` and injects a `<script>` tag pointing at
   `/JellyWatchParty/ClientScript` before the response is served. Its
@@ -102,6 +103,12 @@ C# plugin targeting the Jellyfin plugin ABI. Key files:
   the session server for one Jellyfin session, translating its
   `PlaybackStart`/`PlaybackProgress`/`PlaybackStopped` events into
   `create_room`/`player_event`/`state_update` messages.
+- `Services/SessionFollowerBridge.cs` — the receive-only counterpart: owns a
+  `ClientWebSocket` that `join_room`s an existing room and translates the
+  host's inbound `player_event`/`state_update` into
+  `ISessionManager.SendPlaystateCommand` calls (Pause/Unpause/absolute Seek)
+  against the session, so a native client (e.g. official Android TV) can
+  follow a room. Managed alongside host bridges by `HostBridgeManager`.
 
 **Critical fact**: for the browser/config-page path, this plugin has zero
 outbound network calls to the session server — it only ever hands the

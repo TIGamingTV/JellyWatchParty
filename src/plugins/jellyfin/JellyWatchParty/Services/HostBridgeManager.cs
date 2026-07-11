@@ -3,6 +3,7 @@ using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Session;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using JellyWatchParty.Plugin.Configuration;
 
 namespace JellyWatchParty.Plugin.Services;
 
@@ -41,6 +42,7 @@ public sealed class HostBridgeManager : IHostedService
     private readonly ISessionManager _sessionManager;
     private readonly ILogger<HostBridgeManager> _logger;
     private readonly ConcurrentDictionary<string, SessionHostBridge> _bridges = new();
+    private readonly ConcurrentDictionary<string, SessionFollowerBridge> _followers = new();
 
     public HostBridgeManager(ISessionManager sessionManager, ILogger<HostBridgeManager> logger)
     {
@@ -69,6 +71,14 @@ public sealed class HostBridgeManager : IHostedService
                 await bridge.StopAsync().ConfigureAwait(false);
             }
         }
+
+        foreach (var sessionId in _followers.Keys.ToList())
+        {
+            if (_followers.TryRemove(sessionId, out var follower))
+            {
+                await follower.StopAsync().ConfigureAwait(false);
+            }
+        }
     }
 
     /// <summary>
@@ -81,19 +91,23 @@ public sealed class HostBridgeManager : IHostedService
         return _sessionManager.Sessions
             .Where(s => s.NowPlayingItem != null
                 && !_bridges.ContainsKey(s.Id)
+                && !_followers.ContainsKey(s.Id)
                 && !IsInjectedClient(s.Client))
             .Select(s => new BridgeableSessionInfo(s.Id, s.UserName, s.DeviceName, s.Client, s.NowPlayingItem?.Name))
             .ToList();
     }
 
     /// <summary>
-    /// All currently active host bridges.
+    /// All currently active bridges — both hosts (a session driving a room)
+    /// and receivers (a session following a room).
     /// </summary>
     public IReadOnlyList<BridgeStatus> GetActiveBridges()
     {
-        return _bridges
-            .Select(kvp => new BridgeStatus(kvp.Key, kvp.Value.UserName, kvp.Value.RoomId, kvp.Value.Connected))
-            .ToList();
+        var hosts = _bridges
+            .Select(kvp => new BridgeStatus(kvp.Key, kvp.Value.UserName, kvp.Value.RoomId, kvp.Value.Connected, "host"));
+        var followers = _followers
+            .Select(kvp => new BridgeStatus(kvp.Key, kvp.Value.UserName, kvp.Value.RoomId, kvp.Value.Connected, "receiver"));
+        return hosts.Concat(followers).ToList();
     }
 
     /// <summary>
@@ -102,20 +116,7 @@ public sealed class HostBridgeManager : IHostedService
     /// </summary>
     public async Task<BridgeStatus> StartBridgeAsync(string sessionId)
     {
-        if (_bridges.ContainsKey(sessionId))
-        {
-            throw new InvalidOperationException($"Session '{sessionId}' is already bridged.");
-        }
-
-        var session = _sessionManager.Sessions.FirstOrDefault(s => s.Id == sessionId)
-            ?? throw new InvalidOperationException($"No active session with id '{sessionId}'.");
-
-        var config = Plugin.Instance?.Configuration
-            ?? throw new InvalidOperationException("JellyWatchParty plugin is not configured.");
-        if (string.IsNullOrWhiteSpace(config.SessionServerUrl))
-        {
-            throw new InvalidOperationException("Session Server URL is not configured.");
-        }
+        var (session, config) = PrepareBridge(sessionId);
 
         var bridge = new SessionHostBridge(session, config, _logger);
         if (!_bridges.TryAdd(sessionId, bridge))
@@ -139,11 +140,78 @@ public sealed class HostBridgeManager : IHostedService
             sessionId,
             bridge.UserName);
 
-        return new BridgeStatus(sessionId, bridge.UserName, bridge.RoomId, bridge.Connected);
+        return new BridgeStatus(sessionId, bridge.UserName, bridge.RoomId, bridge.Connected, "host");
     }
 
     /// <summary>
-    /// Stops an active host bridge, closing the room it was hosting.
+    /// Starts following the given JellyWatchParty room from the given Jellyfin
+    /// session (a "receiver"): the session's playback is driven to match the
+    /// room's host via remote-control playstate commands. The session must
+    /// already be playing the room's item.
+    /// </summary>
+    public async Task<BridgeStatus> StartFollowerAsync(string sessionId, string roomId)
+    {
+        if (string.IsNullOrWhiteSpace(roomId))
+        {
+            throw new InvalidOperationException("A room id is required to attach a receiver.");
+        }
+
+        var (session, config) = PrepareBridge(sessionId);
+
+        var follower = new SessionFollowerBridge(session, roomId, config, _sessionManager, _logger);
+        if (!_followers.TryAdd(sessionId, follower))
+        {
+            throw new InvalidOperationException($"Session '{sessionId}' is already bridged.");
+        }
+
+        try
+        {
+            await follower.StartAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch
+        {
+            _followers.TryRemove(sessionId, out _);
+            await follower.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
+
+        _logger.LogInformation(
+            "[JellyWatchParty] Started receiver bridge for session {SessionId} ({UserName}) following room {RoomId}",
+            sessionId,
+            follower.UserName,
+            roomId);
+
+        return new BridgeStatus(sessionId, follower.UserName, follower.RoomId, follower.Connected, "receiver");
+    }
+
+    /// <summary>
+    /// Validates that a session can be bridged (exists, not already bridged in
+    /// either role, and the plugin has a session-server URL) and returns the
+    /// session and configuration to build a bridge from.
+    /// </summary>
+    private (SessionInfo Session, PluginConfiguration Config) PrepareBridge(string sessionId)
+    {
+        if (_bridges.ContainsKey(sessionId) || _followers.ContainsKey(sessionId))
+        {
+            throw new InvalidOperationException($"Session '{sessionId}' is already bridged.");
+        }
+
+        var session = _sessionManager.Sessions.FirstOrDefault(s => s.Id == sessionId)
+            ?? throw new InvalidOperationException($"No active session with id '{sessionId}'.");
+
+        var config = Plugin.Instance?.Configuration
+            ?? throw new InvalidOperationException("JellyWatchParty plugin is not configured.");
+        if (string.IsNullOrWhiteSpace(config.SessionServerUrl))
+        {
+            throw new InvalidOperationException("Session Server URL is not configured.");
+        }
+
+        return (session, config);
+    }
+
+    /// <summary>
+    /// Stops an active bridge for the given session — closing the room it was
+    /// hosting, or detaching it as a receiver.
     /// </summary>
     public async Task StopBridgeAsync(string sessionId)
     {
@@ -151,6 +219,12 @@ public sealed class HostBridgeManager : IHostedService
         {
             await bridge.DisposeAsync().ConfigureAwait(false);
             _logger.LogInformation("[JellyWatchParty] Stopped host bridge for session {SessionId}", sessionId);
+        }
+
+        if (_followers.TryRemove(sessionId, out var follower))
+        {
+            await follower.DisposeAsync().ConfigureAwait(false);
+            _logger.LogInformation("[JellyWatchParty] Stopped receiver bridge for session {SessionId}", sessionId);
         }
     }
 
@@ -171,6 +245,12 @@ public sealed class HostBridgeManager : IHostedService
         if (_bridges.TryRemove(e.Session.Id, out var bridge))
         {
             _ = RunAndLogAsync(bridge.DisposeAsync().AsTask(), e.Session.Id);
+        }
+
+        // A receiver has nothing left to control once its session stops playing.
+        if (_followers.TryRemove(e.Session.Id, out var follower))
+        {
+            _ = RunAndLogAsync(follower.DisposeAsync().AsTask(), e.Session.Id);
         }
     }
 
