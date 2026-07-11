@@ -19,6 +19,14 @@ public sealed class SessionHostBridge : IAsyncDisposable
 {
     private const int ReceiveBufferSize = 8 * 1024;
 
+    // The session server drops connections with no inbound traffic after its
+    // ZOMBIE_TIMEOUT_MS (60s) reaper window. A bridged session only emits
+    // WebSocket frames when its playback state changes, so without a steady
+    // heartbeat a paused or otherwise idle bridge is silently reaped and
+    // removed from its room mid-session. Ping well inside that window,
+    // mirroring the web client's keepalive (see implem.md §1.9).
+    private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(20);
+
     private readonly string _sessionId;
     private readonly string _userId;
     private readonly string _userName;
@@ -27,7 +35,12 @@ public sealed class SessionHostBridge : IAsyncDisposable
     private readonly ClientWebSocket _socket = new();
     private readonly CancellationTokenSource _cts = new();
 
+    // ClientWebSocket forbids concurrent SendAsync calls; the heartbeat loop
+    // can otherwise overlap an event-driven send, so all sends serialize here.
+    private readonly SemaphoreSlim _sendLock = new(1, 1);
+
     private Task? _receiveLoop;
+    private Task? _heartbeatLoop;
     private bool? _lastIsPaused;
 
     public SessionHostBridge(SessionInfo session, PluginConfiguration config, ILogger logger)
@@ -56,6 +69,7 @@ public sealed class SessionHostBridge : IAsyncDisposable
 
         _lastIsPaused = session.PlayState?.IsPaused;
         _receiveLoop = Task.Run(() => ReceiveLoopAsync(_cts.Token), CancellationToken.None);
+        _heartbeatLoop = Task.Run(() => HeartbeatLoopAsync(_cts.Token), CancellationToken.None);
     }
 
     public async Task OnPlaybackProgressAsync(bool isPaused, long? positionTicks, CancellationToken cancellationToken)
@@ -85,6 +99,9 @@ public sealed class SessionHostBridge : IAsyncDisposable
         _cts.Cancel();
         if (_socket.State == WebSocketState.Open)
         {
+            // Take the send lock so the close frame can't race an in-flight
+            // heartbeat ping (concurrent sends throw on ClientWebSocket).
+            await _sendLock.WaitAsync().ConfigureAwait(false);
             try
             {
                 await _socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Bridge stopped", CancellationToken.None)
@@ -94,17 +111,24 @@ public sealed class SessionHostBridge : IAsyncDisposable
             {
                 // Socket already closing/closed — nothing to do.
             }
+            finally
+            {
+                _sendLock.Release();
+            }
         }
 
-        if (_receiveLoop != null)
+        foreach (var loop in new[] { _receiveLoop, _heartbeatLoop })
         {
-            try
+            if (loop != null)
             {
-                await _receiveLoop.ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is OperationCanceledException)
-            {
-                // Expected on stop.
+                try
+                {
+                    await loop.ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is OperationCanceledException)
+                {
+                    // Expected on stop.
+                }
             }
         }
     }
@@ -114,6 +138,7 @@ public sealed class SessionHostBridge : IAsyncDisposable
         await StopAsync().ConfigureAwait(false);
         _socket.Dispose();
         _cts.Dispose();
+        _sendLock.Dispose();
     }
 
     private async Task ReceiveLoopAsync(CancellationToken cancellationToken)
@@ -149,6 +174,35 @@ public sealed class SessionHostBridge : IAsyncDisposable
         catch (WebSocketException ex)
         {
             _logger.LogWarning(ex, "[JellyWatchParty] Host bridge for session {SessionId} lost its connection", _sessionId);
+        }
+    }
+
+    private async Task HeartbeatLoopAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                await Task.Delay(HeartbeatInterval, cancellationToken).ConfigureAwait(false);
+                if (_socket.State != WebSocketState.Open)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    await SendAsync(BuildPingPayload(), "ping", room: null, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is WebSocketException or ObjectDisposedException or InvalidOperationException)
+                {
+                    // Connection is going away; the receive loop handles teardown.
+                    break;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected on stop.
         }
     }
 
@@ -195,11 +249,26 @@ public sealed class SessionHostBridge : IAsyncDisposable
         }
 
         var bytes = Encoding.UTF8.GetBytes(envelope.ToString(Newtonsoft.Json.Formatting.None));
-        await _socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, cancellationToken)
-            .ConfigureAwait(false);
+
+        await _sendLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await _socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            _sendLock.Release();
+        }
     }
 
     private static double TicksToSeconds(long? ticks) => (ticks ?? 0) / (double)TimeSpan.TicksPerSecond;
+
+    // Keepalive. The server echoes ping->pong, but the point is the inbound
+    // frame itself: it refreshes the connection's last-seen timestamp so the
+    // server's zombie reaper leaves an otherwise-idle bridge in its room.
+    internal static JObject BuildPingPayload() =>
+        new() { ["client_ts"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() };
 
     internal static JObject BuildAuthPayload(string userId, string userName, PluginConfiguration config)
     {
