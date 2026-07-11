@@ -8,12 +8,12 @@
     "category": "General",
     "versions": [
       {
-        "version": "0.0.68",
-        "changelog": "Merge pull request #35 from TIGamingTV/claude/plugin-button-visibility-lc7g0a\n\nFix missing client JS files in CI/release workflows",
+        "version": "0.0.73",
+        "changelog": "Merge pull request #38 from TIGamingTV/claude/jelly-sync-button-removal-jcjhty\n\nAdd option to hide Jellyfin's native SyncPlay button",
         "targetAbi": "10.11.11.0",
         "sourceUrl": "https://github.com/TIGamingTV/JellyWatchParty/releases/download/develop-latest/JellyWatchParty-dev.zip",
-        "checksum": "4f7d802fb777f2d4399403dd68803e75",
-        "timestamp": "2026-07-09T17:25:45Z"
+        "checksum": "3867213f816ccdc0337f0af9999a16d4",
+        "timestamp": "2026-07-11T15:10:13Z"
       }
     ]
   }
