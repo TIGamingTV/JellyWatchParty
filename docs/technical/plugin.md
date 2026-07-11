@@ -361,6 +361,7 @@ The built DLL and dependencies are placed in `bin/Debug/net9.0/`.
 | `GET` | `/JellyWatchParty/Bridge/Sessions` | Jellyfin auth (any user) | Sessions eligible to bridge in as a room host — see [Host Bridge](host-bridge.md) |
 | `GET` | `/JellyWatchParty/Bridge/Status` | Jellyfin auth (any user) | Active bridges |
 | `POST` | `/JellyWatchParty/Bridge/{sessionId}/Start` | Jellyfin auth (any user) | Start bridging a session in as host |
+| `POST` | `/JellyWatchParty/Bridge/{sessionId}/Follow?roomId=…` | Jellyfin auth (any user) | Attach a session to a room as a receiver (follower) |
 | `POST` | `/JellyWatchParty/Bridge/{sessionId}/Stop` | Jellyfin auth (any user) | Stop an active bridge |
 
 The Bridge endpoints are gated with plain `[Authorize]` — **not** admin-only
