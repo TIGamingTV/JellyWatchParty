@@ -8,12 +8,12 @@
     "category": "General",
     "versions": [
       {
-        "version": "0.0.78",
-        "changelog": "Merge pull request #42 from TIGamingTV/claude/jelly-sync-button-removal-jcjhty\n\nFix: surface the receiver action in the in-room panel",
+        "version": "0.0.79",
+        "changelog": "Merge pull request #43 from TIGamingTV/claude/jelly-sync-button-removal-jcjhty\n\nHarden receiver bridge: readiness, join confirmation, reachability guard",
         "targetAbi": "10.11.11.0",
         "sourceUrl": "https://github.com/TIGamingTV/JellyWatchParty/releases/download/develop-latest/JellyWatchParty-dev.zip",
-        "checksum": "cfb30352b924279d6060a0062507fb05",
-        "timestamp": "2026-07-11T21:38:06Z"
+        "checksum": "6e20aae77919d23d76e18b91fe77ad61",
+        "timestamp": "2026-07-11T22:15:05Z"
       }
     ]
   }
