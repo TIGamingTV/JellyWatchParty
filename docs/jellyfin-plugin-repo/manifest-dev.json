@@ -8,12 +8,12 @@
     "category": "General",
     "versions": [
       {
-        "version": "0.0.77",
-        "changelog": "Merge pull request #41 from TIGamingTV/claude/jelly-sync-button-removal-jcjhty\n\nClaude/jelly jellyfin android tv client as receiver",
+        "version": "0.0.78",
+        "changelog": "Merge pull request #42 from TIGamingTV/claude/jelly-sync-button-removal-jcjhty\n\nFix: surface the receiver action in the in-room panel",
         "targetAbi": "10.11.11.0",
         "sourceUrl": "https://github.com/TIGamingTV/JellyWatchParty/releases/download/develop-latest/JellyWatchParty-dev.zip",
-        "checksum": "1dfd13e577c8f8db11909de76ca2d9b7",
-        "timestamp": "2026-07-11T17:23:45Z"
+        "checksum": "cfb30352b924279d6060a0062507fb05",
+        "timestamp": "2026-07-11T21:38:06Z"
       }
     ]
   }
