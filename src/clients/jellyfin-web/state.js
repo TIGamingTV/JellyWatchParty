@@ -45,6 +45,7 @@
     PANEL_ID: 'jwp-panel',
     BTN_ID: 'jwp-osd-btn',
     STYLE_ID: 'jwp-style',
+    SYNC_HIDE_STYLE_ID: 'jwp-hide-native-sync',
     HOME_SECTION_ID: 'jwp-home-section',
     protocol,
     host,
@@ -126,6 +127,8 @@
     syncStatus: 'unknown',  // 'unknown' | 'synced' | 'syncing' | 'pending_play' - for UX indicator (UX-P3)
     currentDrift: 0,       // Current playback drift in seconds (positive = behind host)
     pendingPlayUntil: 0,   // Timestamp when pending play ends (for spinner) (UX-P3)
+    // Admin plugin config (delivered via /JellyWatchParty/Token)
+    hideNativeSyncButton: false, // Hide Jellyfin's built-in SyncPlay button
     // Authentication
     authToken: null,
     authEnabled: false,

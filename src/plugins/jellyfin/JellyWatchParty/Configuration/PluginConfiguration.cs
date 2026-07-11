@@ -81,6 +81,16 @@ public class PluginConfiguration : BasePluginConfiguration
     public string SessionServerUrl { get; set; } = string.Empty;
 
     /// <summary>
+    /// When true, the web client hides Jellyfin's built-in SyncPlay button
+    /// (the "groups" icon in the header / player OSD). JellyWatchParty provides
+    /// its own watch-party controls that replace that feature, so admins can
+    /// remove the redundant native button to avoid confusion. Defaults to false
+    /// so upgrading an existing install never silently removes a native Jellyfin
+    /// control - it is opt-in from the plugin configuration page.
+    /// </summary>
+    public bool HideNativeSyncButton { get; set; }
+
+    /// <summary>
     /// Checks a Session Server URL for common misconfigurations and returns
     /// human-readable warnings. Does not reject anything - an empty result
     /// means no issues were found. Empty/whitespace input always passes
