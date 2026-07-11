@@ -1773,3 +1773,137 @@ release build — this is the second time keeping them in sync by hand has
 failed. Worth a follow-up to have the workflows source the file list from
 `common.just` (e.g. `just --evaluate client_js_files` or a `just build
 plugin`-only CI/release path) instead of hardcoding it a fourth time.
+
+---
+
+## Round 25 — Issue #30: "changing the Session Server URL does nothing / stuck Offline" (a cluster of independent root causes)
+
+GitHub [issue #30](https://github.com/TIGamingTV/JellyWatchParty/issues/30):
+editing the plugin's **Session Server URL** setting appeared to have no
+effect — the group-play widget stayed "Offline" no matter what was
+configured. Investigation found this single reported symptom was actually
+**four independent bugs stacked on top of each other**, each capable of
+producing the same "Offline / wrong URL" appearance. All four were fixed
+this round (each a separate commit on `develop`, all tagged against #30).
+
+**1. Lobby footer showed the wrong URL** (`ebc13b6`,
+`ui/indicators.js` + `ui/render.js`): the lobby footer always displayed
+the auto-detected `DEFAULT_WS_URL` (page host + `:3000`) instead of the
+admin-configured URL returned by `/JellyWatchParty/Token`. The underlying
+WebSocket connection already used the correct configured URL — only the
+*displayed* string was wrong — so the setting looked ignored even when it
+wasn't. Also made the footer refresh on lightweight re-renders so it
+reflects `state.wsUrl` as soon as it's fetched, not just on the first full
+render.
+
+**2. `/JellyWatchParty/Token` 500'd on a short `JwtSecret`** (`1132250`,
+`PluginConfiguration.cs` + `JellyWatchPartyController.cs` +
+`Services/SessionServerAuth.cs` + `SessionHostBridge.cs`): a non-empty
+`JwtSecret` under 128 bits (an accidentally-short value) made `GetToken()`
+throw `ArgumentOutOfRangeException` (IDX10653) deep in the JWT library on
+*every* call — only an **empty** secret was special-cased to skip signing.
+The endpoint 500'd, so the client never received `session_server_url` and
+silently fell back to the default WS URL — exactly the "setting does
+nothing, stuck Offline" symptom. Added
+`PluginConfiguration.HasUsableJwtSecret` (present **and** ≥ 32 chars,
+matching the already-documented recommendation) as the single source of
+truth, and gated both `GetToken()` and
+`SessionHostBridge.BuildAuthPayload()` on it instead of the bare
+empty-check. A too-short secret now degrades to the existing
+unauthenticated response (which always includes `session_server_url`)
+rather than crashing; `SessionServerAuth` also gained a defense-in-depth
+guard that fails fast with a clear message if ever called with an unusable
+secret directly.
+
+**3. `ScriptInjectionMiddleware` permanently disabled itself on a
+transient failure** (`94e63b6`, `ScriptInjectionMiddleware.cs`):
+`LoadContent()` was wrapped in a `Lazy<T>` whose factory runs exactly once
+per process. Because that factory caught its own exceptions and returned
+`null` instead of throwing, `Lazy<T>` treated the `null` as a
+successfully-computed value and cached it forever — so a single transient
+failure (e.g. `index.html` not fully written yet at first request)
+**permanently** disabled script injection for the rest of the process's
+life, with no log line anywhere to explain the vanished Watch Party
+button. Replaced the `Lazy<T>` with a cache that only stores success and
+retries on every request while unsuccessful, plus a warning log (with the
+real exception) on failure. Uses a small reference-type wrapper instead of
+a `(byte[], string)?` tuple so the cache field can be `volatile` for safe
+unsynchronized reads once populated (C# won't allow `volatile` on a
+`Nullable<T>`/struct field).
+
+**4. No validation/warning on a bad URL** (`7610314`, new
+`utils/validation.js` + `PluginConfiguration.ValidateSessionServerUrl` +
+config-page indicator): nothing validated the configured URL before it
+flowed into a browser's `new WebSocket()` call, so a wrong scheme, a
+malformed URL, or a Docker-internal hostname (the actual mistake in #30)
+produced a silent "Offline" with zero diagnostic. Added a shared
+validation rule set (malformed URL, wrong `ws`/`wss` scheme, mixed
+content, bare internal-looking hostname) mirrored in **three** places:
+`PluginConfiguration.ValidateSessionServerUrl` (C#, logged at plugin
+startup), a live warning indicator on the config page, and
+`utils/validateWsUrl` on the browser client (surfaced via `console.warn`
+and a one-time toast on first connect). **Warn-only by design** — nothing
+is blocked; values are still saved and used exactly as entered. Being a
+new client file, `utils/validation.js` was registered in `plugin.js` and
+`infra/just/common.just` (and picked up by Round 24's now-corrected
+workflow file lists).
+
+**Also this round** (documentation cleanup, `72693bb` + `9094718`):
+trimmed the stale nginx reverse-proxy config out of `docs/deployment.md`
+and simplified the remaining WebSocket-proxy snippet.
+
+**Verification**: `dotnet build`/`dotnet test` clean for the C# changes;
+new `PluginConfigurationTests`, `SessionServerAuthTests`, and
+`SessionHostBridgeTests` cover the short-secret and validation paths.
+`node --test` clean with new `validation.test.js` (44 assertions across
+the rule set). All four fixes were confirmed reaching the live deployment
+via the rolling `develop` plugin channel (manifest builds 64–67).
+
+---
+
+## Round 26 — Third-party client integration guide (`implem.md`)
+
+Added `implem.md` at the repo root (`f4bb541`, merged via PR #37): a
+protocol-level guide for anyone wanting a **third-party client** (Fladder,
+Swiftfin, etc.) to participate in JellyWatchParty rooms directly, rather
+than through the injected-JS web client. Documents the mandatory WebSocket
+protocol work needed for such a client to be actively driven by sync **as
+a guest** (the gap Round 15 established Fladder can't currently cross
+without native SyncPlay), plus the optional widget-triggered REST/WS calls
+for self-service room/chat/Host Bridge parity with the web client. This is
+documentation only — no product code changed — and complements the
+Host-Bridge (`Fladder-as-host`) path from Rounds 16–17, covering the still
+-open `Fladder-as-guest` direction from the protocol side.
+
+---
+
+## Round 27 — Admin toggle to hide Jellyfin's native SyncPlay button
+
+Since JellyWatchParty provides its own watch-party controls, Jellyfin's
+built-in SyncPlay button (the `groups` "people" icon in the header / player
+OSD — the exact icon that caused the collision back in Round 7) is
+redundant and confusing to have sitting right next to the JWP button. Added
+an opt-in admin setting to remove it (`5663612`, merged via PR #38).
+
+**Changes:**
+- `PluginConfiguration`: new `HideNativeSyncButton` bool, **default
+  `false`** — an upgrade never silently removes a native control the admin
+  didn't ask to hide.
+- `/JellyWatchParty/Token` now reports the flag to the web client in
+  **both** the auth-enabled and auth-disabled responses (following the
+  Round 17 lesson — explicit camelCase keys at the HTTP boundary, no
+  reliance on auto-casing).
+- Web client (`state.js`, `ws/auth.js`, `ui/render.js`) stores the flag and,
+  when enabled, injects a stylesheet hiding `.headerSyncButton` /
+  `.syncButton`. Using CSS (rather than removing the node once) keeps the
+  button hidden across Jellyfin's SPA header re-renders — the same
+  persistence concern that drives several other client-side patterns here.
+- `Web/configPage.html`: a new "Interface" section with the checkbox, wired
+  into the page's load/save.
+
+**Verification**: xUnit config default/round-trip tests plus
+`node:test` coverage (`native-sync.test.js`, 73 lines) exercising the
+stylesheet inject/remove/idempotency behaviour. Not separately
+browser-verified against a live Jellyfin instance as of this entry, but the
+CSS-injection approach mirrors existing client patterns and degrades to a
+harmless no-op when the flag is off (the default).
