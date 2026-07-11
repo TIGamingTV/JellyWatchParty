@@ -19,14 +19,19 @@ script — see [Installation](installation) if not.
 
 As the host, you control playback for everyone. When you play, pause, or seek, all participants follow.
 
-### Hosting from a TV App
+### Watching on a TV App
 
 If you're watching on a native/TV client that can't run the Watch Party
-UI at all (e.g. Fladder on Android TV), someone with browser access to
-the same server can bridge your session in as the room host instead of
-starting a room themselves — see [Host Bridge](technical/host-bridge).
-Guests still join normally from their own room list; nothing changes on
-their end.
+UI at all (e.g. the official Android TV app or Fladder), someone with
+browser access to the same server can bridge your session into a room —
+see [Host Bridge](technical/host-bridge) — in one of two ways:
+
+- **Host**: your TV session becomes the room's host. Guests join normally
+  from their own room list; nothing changes on their end.
+- **Receiver**: start playing the same item on the TV, then, from a browser
+  that's already in the room, add your TV session as a *receiver* — it will
+  follow the room's play, pause, and seek. (Works for rooms without a
+  password.)
 
 ## Joining a Watch Party
 

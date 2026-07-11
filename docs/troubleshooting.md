@@ -151,7 +151,7 @@ Or open Developer Tools (F12) > Network tab > filter "WS" to inspect WebSocket m
 
 **What happens if the host leaves?** A brief disconnect (network blip, backgrounded app) is invisible to participants for 90 seconds while the server waits for reconnection. If the host doesn't return and other participants remain, the earliest-joined one is automatically promoted to host and the room stays open. It only closes if no one is left.
 
-**Can I host from Fladder or another Android TV app?** Yes, via [Host Bridge](technical/host-bridge) — any logged-in user with browser access can bridge a native session in as host.
+**Can I use the official Android TV app (or Fladder) in a watch party?** Yes, via the [Native Client Bridge](technical/host-bridge) — any logged-in user with browser access can bridge the native session into a room as **host** (it drives the room) or, while in the room, as a **receiver** (it follows the room's play/pause/seek; the TV must already be playing the same item, and the room must not be password-protected).
 
 **Can I chat with other viewers?** Yes — real-time text chat in the panel, with the last 50 messages replayed to late joiners/reconnecting clients.
 
