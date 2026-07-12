@@ -46,7 +46,7 @@ public class ScriptInjectionMiddleware
     public async Task InvokeAsync(HttpContext context, ILogger<ScriptInjectionMiddleware> logger)
     {
         var path = context.Request.Path.Value?.TrimEnd('/');
-        if (path is "/web" or "/web/index.html")
+        if (Plugin.InjectionEnabled && path is "/web" or "/web/index.html")
         {
             var cached = GetOrLoadContent(logger);
             if (cached != null)

@@ -20,6 +20,15 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     /// Thread-safe: set once during plugin initialization by Jellyfin's plugin loader.
     /// </summary>
     public static Plugin? Instance { get; private set; }
+
+    /// <summary>
+    /// Gates all client-script injection paths (the startup middleware, the
+    /// File Transformation callback, and the direct file fallback). Set to
+    /// false when the plugin is being uninstalled so injection stops
+    /// immediately, without waiting for a server restart.
+    /// </summary>
+    public static bool InjectionEnabled { get; internal set; } = true;
+
     private readonly ILogger<Plugin> _logger;
 
     public Plugin(IApplicationPaths applicationPaths, IXmlSerializer xmlSerializer, ILogger<Plugin> logger)
@@ -64,6 +73,28 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     /// Gets the plugin version from the assembly (fixes L17).
     /// </summary>
     public static string PluginVersion => typeof(Plugin).Assembly.GetName().Version?.ToString(3) ?? "1.0.0";
+
+    /// <summary>
+    /// Called by Jellyfin when the plugin is being uninstalled. Reverses the
+    /// direct index.html injection so the web client is left clean instead of
+    /// referencing the plugin's (now removed) ClientScript endpoint, and stops
+    /// any remaining in-process injection paths from re-adding the script.
+    /// </summary>
+    public override void OnUninstalling()
+    {
+        InjectionEnabled = false;
+
+        try
+        {
+            FileTransformationIntegration.RemoveInjectedScriptFromIndexHtml(_logger);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[JellyWatchParty] Failed to clean up injected client script during uninstall.");
+        }
+
+        base.OnUninstalling();
+    }
 
     public IEnumerable<PluginPageInfo> GetPages()
     {

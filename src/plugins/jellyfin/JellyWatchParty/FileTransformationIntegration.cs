@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Runtime.Loader;
+using System.Text.RegularExpressions;
 using MediaBrowser.Model.Tasks;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;
@@ -15,6 +16,15 @@ public class FileTransformationIntegration : IScheduledTask
 {
     private const string ClientScriptPath = "../JellyWatchParty/ClientScript";
     private const string ScriptTag = $"<script src=\"{ClientScriptPath}\" defer></script>";
+
+    // Matches any <script> tag referencing the plugin's ClientScript endpoint
+    // (regardless of the exact src spelling or attribute order), along with the
+    // leading indentation and trailing newline InjectScript adds. Used to
+    // reverse a direct-file injection so an uninstall leaves index.html clean.
+    private static readonly Regex ScriptTagRegex = new(
+        @"[ \t]*<script\b[^>]*JellyWatchParty/ClientScript[^>]*>\s*</script>[ \t]*\r?\n?",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     private readonly ILogger<FileTransformationIntegration> _logger;
 
     public string Name => "JellyWatchParty File Transformation Registration";
@@ -38,6 +48,15 @@ public class FileTransformationIntegration : IScheduledTask
     public async Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
     {
         progress.Report(0);
+
+        // Injection is disabled while the plugin is being uninstalled, so the
+        // startup task never re-adds the script we're about to clean up.
+        if (!Plugin.InjectionEnabled)
+        {
+            _logger.LogInformation("[JellyWatchParty] Script injection is disabled; skipping registration.");
+            progress.Report(100);
+            return;
+        }
 
         if (TryRegisterFileTransformation())
         {
@@ -113,15 +132,14 @@ public class FileTransformationIntegration : IScheduledTask
     /// </summary>
     private async Task InjectIntoIndexHtmlFileAsync(CancellationToken cancellationToken)
     {
-        var webDir = Environment.GetEnvironmentVariable("JELLYFIN_WEB_DIR");
-        if (string.IsNullOrEmpty(webDir))
+        var indexPath = ResolveIndexHtmlPath();
+        if (string.IsNullOrEmpty(indexPath))
         {
             _logger.LogInformation("[JellyWatchParty] File Transformation plugin not available and JELLYFIN_WEB_DIR not set. "
                 + "Script injection will not be automatic — use Custom HTML instead.");
             return;
         }
 
-        var indexPath = Path.Combine(webDir, "index.html");
         if (!File.Exists(indexPath))
         {
             _logger.LogWarning("[JellyWatchParty] index.html not found at '{Path}'. "
@@ -182,6 +200,67 @@ public class FileTransformationIntegration : IScheduledTask
     }
 
     /// <summary>
+    /// Reverses <see cref="InjectScript"/>: removes any JellyWatchParty client
+    /// script tag (and the whitespace it was inserted with) from the given
+    /// contents. Returns the input unchanged when no tag is present.
+    /// </summary>
+    internal static string RemoveScript(string contents)
+    {
+        if (string.IsNullOrEmpty(contents))
+        {
+            return contents ?? string.Empty;
+        }
+
+        return ScriptTagRegex.Replace(contents, string.Empty);
+    }
+
+    /// <summary>
+    /// Resolves the physical path to the web client's index.html from
+    /// JELLYFIN_WEB_DIR, or null when the variable is not set.
+    /// </summary>
+    internal static string? ResolveIndexHtmlPath()
+    {
+        var webDir = Environment.GetEnvironmentVariable("JELLYFIN_WEB_DIR");
+        return string.IsNullOrEmpty(webDir) ? null : Path.Combine(webDir, "index.html");
+    }
+
+    /// <summary>
+    /// Removes a previously injected client script tag from the physical
+    /// index.html file. Called when the plugin is uninstalled so the direct
+    /// file injection is fully reversed instead of leaving a dangling script
+    /// tag that requests a now-nonexistent endpoint. Returns true when the
+    /// file was modified.
+    /// </summary>
+    internal static bool RemoveInjectedScriptFromIndexHtml(ILogger logger)
+    {
+        var indexPath = ResolveIndexHtmlPath();
+        if (string.IsNullOrEmpty(indexPath) || !File.Exists(indexPath))
+        {
+            return false;
+        }
+
+        try
+        {
+            var html = File.ReadAllText(indexPath);
+            var cleaned = RemoveScript(html);
+            if (cleaned == html)
+            {
+                return false;
+            }
+
+            File.WriteAllText(indexPath, cleaned);
+            logger.LogInformation("[JellyWatchParty] Removed injected client script from {Path}.", indexPath);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "[JellyWatchParty] Failed to remove injected client script from {Path}. "
+                + "You may need to remove the JellyWatchParty <script> tag from index.html manually.", indexPath);
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Callback invoked by the File Transformation plugin to inject the
     /// JellyWatchParty script tag into index.html.
     /// </summary>
@@ -208,6 +287,14 @@ public class FileTransformationIntegration : IScheduledTask
                     .GetProperty("Content")?
                 .GetValue(payload)?
                 .ToString();
+
+        // Once the plugin is being uninstalled, return index.html untouched so
+        // the File Transformation plugin stops serving the injected script even
+        // before the next server restart.
+        if (!Plugin.InjectionEnabled)
+        {
+            return contents ?? string.Empty;
+        }
 
         return InjectScript(contents ?? string.Empty);
     }
