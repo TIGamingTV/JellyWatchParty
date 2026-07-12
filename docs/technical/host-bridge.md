@@ -20,10 +20,20 @@ resulting room from their own room list exactly as they would any
 other room, and the room is indistinguishable from a browser-hosted one
 to them.
 
-This only makes hosting possible from native clients. Joining a room as
-a guest still requires a client that can run the injected UI (a
-browser, or Jellyfin Desktop via its native player adapter — see
-[Client: `utils/video.js`](client.md#module-utilsvideojs)).
+The bridge also supports the opposite direction — a **receiver**: a
+native session can be attached to a room this browser is already in and
+kept in sync with the host, driven by Jellyfin's generic remote-control
+playstate commands (which official clients such as the Android TV app
+honour: pause / unpause / absolute seek). This is how an official client
+that can't run the injected UI can still *follow* a party. The session
+must already be playing the room's item; the receiver keeps play/pause
+and position aligned but does not start playback remotely.
+
+So a native client can still participate as a guest via the receiver
+role. Running the injected UI directly (a browser, or Jellyfin Desktop
+via its native player adapter — see
+[Client: `utils/video.js`](client.md#module-utilsvideojs)) remains the
+way to join and drive a room from the client itself.
 
 ## How It Works
 
@@ -89,6 +99,47 @@ exact same protocol messages a browser host would send
 It tracks its own `RoomId` by watching for the `room_state` message the
 server sends back after `create_room`, and clears it on `room_closed`.
 
+### `Services/SessionFollowerBridge.cs`
+
+One instance per *receiver* session — the receive-only counterpart to
+`SessionHostBridge`. Owns a `ClientWebSocket` that `auth`s and **joins**
+an existing room (rather than creating one), then consumes the host's
+broadcast messages and translates them into remote-control commands:
+
+| Room message | → | Remote-control command |
+|---|---|---|
+| `room_state` (on join) / `state_update` — `play_state` + `position` | → | initial/ongoing `Pause`/`Unpause` and drift-correcting `Seek` |
+| `player_event` — `action: "play"`/`"pause"` + `position` | → | `Unpause`/`Pause`, plus `Seek` on large drift |
+
+Commands are sent via
+`ISessionManager.SendPlaystateCommand(controllingSessionId: "", sessionId, …)`
+— an empty controlling-session id skips Jellyfin's control-permission
+path and relays the command straight to the target session's socket.
+Play/pause is only re-sent on a state change, and `Seek` only fires when
+the session has drifted past a threshold (~2 s) and no seek has been
+issued within a short cooldown, so drift correction doesn't spam the
+client. `HostBridgeManager` owns follower bridges alongside host bridges
+(a session is one role or the other) and disposes a follower when its
+session stops playing.
+
+`RoomId` is set only when the server confirms the join with a `room_state`
+message — not optimistically at connect time — so a rejected join does not
+show up as a phantom connected bridge. On that same `room_state` the follower
+sends a `ready` message: a headless bridge has no video to buffer, and the
+server's play gate (`all_ready` / `pending_play`) would otherwise hold back
+every host `play` for the whole room until it timed out waiting for the
+follower to ready. `ready` persists for the room's lifetime, so it is sent
+once, on join.
+
+**Known limitations (receiver):**
+- **Password-protected rooms are not supported.** The follower's `join_room`
+  does not carry the room password (the web client doesn't retain it), so the
+  server rejects the join; the receiver simply never syncs.
+- **No reconnect.** Like `SessionHostBridge`, a follower does not re-establish
+  its WebSocket after a drop — it must be re-attached. It also does not tear
+  itself down on `room_closed` (it just stops following); use Stop, or it is
+  cleaned up when the session stops playing.
+
 ### `Services/SessionServerAuth.cs`
 
 Shared JWT-minting logic used by both the bridge (minting a token for
@@ -99,12 +150,15 @@ the *bridged session's* owner, not the HTTP caller) and the normal
 
 See [Plugin: REST API Reference](plugin.md#rest-api-reference) for the
 full endpoint table (`Bridge/Sessions`, `Bridge/Status`,
-`Bridge/{sessionId}/Start`, `Bridge/{sessionId}/Stop`) and auth gating.
+`Bridge/{sessionId}/Start`, `Bridge/{sessionId}/Stop`,
+`Bridge/{sessionId}/Follow?roomId=…`) and auth gating. `Follow` attaches
+the session to the given room as a receiver (the room-id comes from the
+room the calling browser is currently in).
 
 `Bridge/Sessions` returns `sessionId`, `userName`, `deviceName`, `client`,
 `nowPlayingItemName` per eligible session; `Bridge/Status` and the
-`Start`/`Stop` responses return `sessionId`, `userName`, `roomId`,
-`connected`. Response fields are camelCase — Jellyfin's controllers don't
+`Start`/`Follow`/`Stop` responses return `sessionId`, `userName`, `roomId`,
+`connected`, `role` (`"host"` or `"receiver"`). Response fields are camelCase — Jellyfin's controllers don't
 auto-camelCase JSON output, so the controller projects onto anonymous
 objects with the exact keys the UI expects, matching the existing
 `/Token` endpoint's `user_id`/`auth_enabled` convention of spelling
@@ -116,9 +170,14 @@ field names out explicitly rather than relying on a naming policy.
 Device" section directly inside the normal lobby panel
 (`ui/render.js`'s `renderLobby`) — not the Jellyfin admin config page.
 It lists eligible sessions and active bridges (polling the two `GET`
-endpoints) and lets the user Start/Stop a bridge with a button, using
-the same `ApiClient.accessToken()` pattern the rest of the client uses
-to call plugin endpoints.
+endpoints), and is rendered in **both** panel contexts: the pre-room
+lobby (`renderLobby`) and the in-room view (`renderRoom`). Each eligible
+session shows a single action matching the context: **Host** in the
+lobby (start a new room from that session) and **Receiver** while in a
+room (attach that session to the current room, passing `state.roomId`
+to `Follow`). Active bridges show their role and can be stopped with a
+button. All calls use the same `ApiClient.accessToken()` pattern the
+rest of the client uses to call plugin endpoints.
 
 ## Related
 

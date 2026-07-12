@@ -97,12 +97,18 @@ session server, web client) work together to make this happen.
 
 See [Security](security) for the full security model.
 
-### Host Bridge
+### Native Client Bridge
 
 Any logged-in user with browser access to the server can bridge a currently
-playing native/TV session (e.g. Fladder on Android TV, which can't run the
-injected UI) in as a room host — see [Host Bridge](technical/host-bridge).
-Guests still join normally; nothing changes on their end.
+playing native/TV session (e.g. the official Android TV app or Fladder, which
+can't run the injected UI) into a room — in either role — see
+[Host Bridge](technical/host-bridge):
+
+- **Host**: bring the native session in as the room's host. Guests still join
+  normally; nothing changes on their end.
+- **Receiver**: while you're in a room, attach a native session that's already
+  playing the same item so it follows the room's play/pause/seek. (Rooms
+  without a password only.)
 
 ## Compatibility
 
@@ -163,7 +169,7 @@ Safari uses its native HLS implementation, which behaves differently:
 1. **Host-only control** - Only the host can control playback (democratic mode planned)
 2. **Single media** - One media item per room (by design)
 3. **Ephemeral rooms** - Rooms are closed when the host leaves (with no other participants remaining) and doesn't reconnect within 90 seconds, or when the server restarts (by design); if other participants remain, host duties transfer automatically instead — see Automatic host transfer above
-4. **Guests need a browser or Jellyfin Media Player client** - The Watch Party UI (joining, chat, the room list) only exists in the injected web client and Jellyfin Desktop. Hosting is broader: [Host Bridge](technical/host-bridge) lets any native/TV client act as room host even though it can't run the UI itself — but someone still has to join as a guest from a supported client to actually watch.
+4. **Guests need a browser or Jellyfin Media Player client** - The Watch Party UI (joining, chat, the room list) only exists in the injected web client and Jellyfin Desktop. Native/TV clients are broader via the [Native Client Bridge](technical/host-bridge): any such client can be bridged in as a room **host**, or attached to a room as a **receiver** that follows playback — but neither role gives it the interactive UI (chat, room list), and someone still drives the session from a supported client.
 5. **Chat history is capped and in-memory** - The last 50 messages are replayed to joining/reattaching clients, but history is lost when a room closes (rooms are ephemeral by design)
 
 ## Roadmap

@@ -347,12 +347,36 @@ public class JellyWatchPartyController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Attaches the given Jellyfin session to an existing JellyWatchParty room
+    /// as a receiver (follower): the session's playback is driven to match the
+    /// room's host. The session must already be playing the room's item.
+    /// </summary>
+    /// <param name="sessionId">The Jellyfin session identifier to attach.</param>
+    /// <param name="roomId">The JellyWatchParty room to follow.</param>
+    [HttpPost("Bridge/{sessionId}/Follow")]
+    [Authorize]
+    [Produces("application/json")]
+    public async Task<ActionResult> StartFollower([FromRoute] string sessionId, [FromQuery] string roomId)
+    {
+        try
+        {
+            var status = await _hostBridgeManager.StartFollowerAsync(sessionId, roomId);
+            return Ok(ToBridgeStatusJson(status));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
     private static object ToBridgeStatusJson(BridgeStatus status) => new
     {
         sessionId = status.SessionId,
         userName = status.UserName,
         roomId = status.RoomId,
-        connected = status.Connected
+        connected = status.Connected,
+        role = status.Role
     };
 
     /// <summary>
