@@ -29,6 +29,17 @@ that can't run the injected UI can still *follow* a party. The session
 must already be playing the room's item; the receiver keeps play/pause
 and position aligned but does not start playback remotely.
 
+Both directions are **opt-in** and off by default. The host role is
+gated by `PluginConfiguration.AllowThirdPartyClientHost` and the receiver
+role by `PluginConfiguration.AllowSupportedClientReceiver` (admins toggle
+these in the plugin config page's **Client Bridging** section). The two
+flags ride along on the `/JellyWatchParty/Token` response
+(`allow_third_party_host` / `allow_supported_receiver`) so the injected
+client can hide the matching picker, and are enforced server-side:
+`Bridge/{sessionId}/Start` rejects when hosting is disabled,
+`Bridge/{sessionId}/Follow` when the receiver role is disabled, and
+`Bridge/Sessions` returns an empty list when neither is enabled.
+
 So a native client can still participate as a guest via the receiver
 role. Running the injected UI directly (a browser, or Jellyfin Desktop
 via its native player adapter — see

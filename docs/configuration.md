@@ -17,6 +17,9 @@ Access the plugin configuration page at **Dashboard** > **Plugins** > **JellyWat
 | Token TTL | `3600` | Token lifetime in seconds (1 hour default) |
 | Invite TTL | `3600` | Invite link lifetime in seconds (reserved for future use) |
 | Session Server URL | (empty) | Custom WebSocket server URL. If empty, uses `ws(s)://[host]:3000/ws`. Invalid or suspicious values (wrong scheme, malformed URL, bare internal hostname) show a non-blocking warning in the config page and browser console/toast — the value is still saved and used as entered. |
+| Hide native SyncPlay button | `false` | Hides Jellyfin's built-in SyncPlay button in the web client, since JellyWatchParty replaces that feature. |
+| Allow third-party clients to host | `false` | Opt-in. Lets a native/third-party client that can't run the injected script (Fladder, Swiftfin, Infuse, official mobile apps, …) be bridged in as a room **host**. While off, the "Host From Another Device" picker is hidden and the server rejects host-bridge requests. See [Host Bridge](technical/host-bridge). |
+| Allow supported clients as receivers | `false` | Opt-in. Lets a supported native client (such as the official Jellyfin Android TV app) be attached to a room as a **receiver** that follows the host via remote-control commands. While off, the "Add a Device to This Room" picker is hidden and the server rejects receiver requests. See [Host Bridge](technical/host-bridge). |
 
 ### JWT Secret Guidelines
 

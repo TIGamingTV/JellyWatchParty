@@ -103,6 +103,8 @@
         state.wsUrl = data.session_server_url;
       }
       state.hideNativeSyncButton = data.hide_native_sync_button || false;
+      state.allowThirdPartyHost = data.allow_third_party_host || false;
+      state.allowSupportedReceiver = data.allow_supported_receiver || false;
       if (JWP.ui && JWP.ui.applyNativeSyncButtonVisibility) {
         JWP.ui.applyNativeSyncButtonVisibility();
       }

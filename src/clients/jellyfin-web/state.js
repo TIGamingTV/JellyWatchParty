@@ -129,6 +129,8 @@
     pendingPlayUntil: 0,   // Timestamp when pending play ends (for spinner) (UX-P3)
     // Admin plugin config (delivered via /JellyWatchParty/Token)
     hideNativeSyncButton: false, // Hide Jellyfin's built-in SyncPlay button
+    allowThirdPartyHost: false,  // Opt-in: bridge a third-party client in as a room host
+    allowSupportedReceiver: false, // Opt-in: attach a supported client (e.g. Android TV) as a receiver
     // Authentication
     authToken: null,
     authEnabled: false,
