@@ -8,12 +8,12 @@
     "category": "General",
     "versions": [
       {
-        "version": "0.0.83",
-        "changelog": "Merge pull request #47 from TIGamingTV/main",
+        "version": "0.0.84",
+        "changelog": "Merge pull request #48 from TIGamingTV/claude/third-party-client-opt-in-2fs5t5",
         "targetAbi": "10.11.11.0",
         "sourceUrl": "https://github.com/TIGamingTV/JellyWatchParty/releases/download/develop-latest/JellyWatchParty-dev.zip",
-        "checksum": "adeed3d7f8c4a6f9b9b205d7d0dcf2b0",
-        "timestamp": "2026-07-12T00:19:51Z"
+        "checksum": "31a8989e30e159b4a887127fa6c0977b",
+        "timestamp": "2026-07-12T00:40:00Z"
       }
     ]
   }
