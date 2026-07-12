@@ -262,7 +262,9 @@ public class JellyWatchPartyController : ControllerBase
                 user_id = userId,
                 user_name = userName,
                 session_server_url = config.SessionServerUrl ?? string.Empty,
-                hide_native_sync_button = config.HideNativeSyncButton
+                hide_native_sync_button = config.HideNativeSyncButton,
+                allow_third_party_host = config.AllowThirdPartyClientHost,
+                allow_supported_receiver = config.AllowSupportedClientReceiver
             });
         }
 
@@ -276,7 +278,9 @@ public class JellyWatchPartyController : ControllerBase
             user_id = userId,
             user_name = userName,
             session_server_url = config.SessionServerUrl ?? string.Empty,
-            hide_native_sync_button = config.HideNativeSyncButton
+            hide_native_sync_button = config.HideNativeSyncButton,
+            allow_third_party_host = config.AllowThirdPartyClientHost,
+            allow_supported_receiver = config.AllowSupportedClientReceiver
         });
     }
 
@@ -297,6 +301,17 @@ public class JellyWatchPartyController : ControllerBase
     [Produces("application/json")]
     public ActionResult GetBridgeableSessions()
     {
+        // Both bridge roles are opt-in (see PluginConfiguration). When an admin
+        // has enabled neither, there is nothing a user could do with the list,
+        // so return it empty rather than advertising sessions that can't be
+        // bridged.
+        var config = Plugin.Instance?.Configuration;
+        if (config == null
+            || (!config.AllowThirdPartyClientHost && !config.AllowSupportedClientReceiver))
+        {
+            return Ok(Array.Empty<object>());
+        }
+
         // Jellyfin's controllers do not auto-camelCase JSON output (see the
         // existing /Token endpoint, which spells out user_id/auth_enabled
         // literally) — project onto anonymous objects with the exact keys
@@ -336,6 +351,11 @@ public class JellyWatchPartyController : ControllerBase
     [Produces("application/json")]
     public async Task<ActionResult> StartBridge([FromRoute] string sessionId)
     {
+        if (Plugin.Instance?.Configuration.AllowThirdPartyClientHost != true)
+        {
+            return BadRequest(new { error = "Hosting from a third-party client is disabled. An administrator can enable it in the JellyWatchParty plugin settings." });
+        }
+
         try
         {
             var status = await _hostBridgeManager.StartBridgeAsync(sessionId);
@@ -359,6 +379,11 @@ public class JellyWatchPartyController : ControllerBase
     [Produces("application/json")]
     public async Task<ActionResult> StartFollower([FromRoute] string sessionId, [FromQuery] string roomId)
     {
+        if (Plugin.Instance?.Configuration.AllowSupportedClientReceiver != true)
+        {
+            return BadRequest(new { error = "Attaching a supported client as a receiver is disabled. An administrator can enable it in the JellyWatchParty plugin settings." });
+        }
+
         try
         {
             var status = await _hostBridgeManager.StartFollowerAsync(sessionId, roomId);

@@ -58,6 +58,25 @@
                         </div>
                     </div>
 
+                    <!-- Native / Third-Party Client Bridging -->
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">Client Bridging</h2>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label>
+                                <input is="emby-checkbox" type="checkbox" id="AllowThirdPartyClientHost" />
+                                <span>Allow third-party clients to host</span>
+                            </label>
+                            <div class="fieldDescription checkboxFieldDescription">Lets third-party / native clients that can't run the JellyWatchParty script (Fladder, Swiftfin, Infuse, official mobile apps, …) be bridged in as a room host. The server mirrors that session's playback into a new room. Off by default.</div>
+                        </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label>
+                                <input is="emby-checkbox" type="checkbox" id="AllowSupportedClientReceiver" />
+                                <span>Allow supported clients as receivers</span>
+                            </label>
+                            <div class="fieldDescription checkboxFieldDescription">Lets supported native clients (such as the official Jellyfin Android TV app) be attached to a room as a receiver, following the host via remote-control commands. Off by default.</div>
+                        </div>
+                    </div>
+
                     <div>
                         <button is="emby-button" type="submit" class="raised button-submit block">
                             <span>Save</span>
@@ -159,6 +178,10 @@
                     // Interface settings
                     $('#HideNativeSyncButton', page).prop('checked', config.HideNativeSyncButton || false);
 
+                    // Client bridging settings
+                    $('#AllowThirdPartyClientHost', page).prop('checked', config.AllowThirdPartyClientHost || false);
+                    $('#AllowSupportedClientReceiver', page).prop('checked', config.AllowSupportedClientReceiver || false);
+
                     Dashboard.hideLoadingMsg();
                 }).catch(function (err) {
                     Dashboard.hideLoadingMsg();
@@ -183,6 +206,10 @@
 
                     // Interface settings
                     config.HideNativeSyncButton = $('#HideNativeSyncButton', page).is(':checked');
+
+                    // Client bridging settings
+                    config.AllowThirdPartyClientHost = $('#AllowThirdPartyClientHost', page).is(':checked');
+                    config.AllowSupportedClientReceiver = $('#AllowSupportedClientReceiver', page).is(':checked');
 
                     return ApiClient.updatePluginConfiguration(JellyWatchPartyConfigurationPage.pluginId, config);
                 }).then(function () {

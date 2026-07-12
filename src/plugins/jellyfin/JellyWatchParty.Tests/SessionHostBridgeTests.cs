@@ -126,6 +126,22 @@ public class SessionHostBridgeTests
     }
 
     [Fact]
+    public void BuildPingPayload_CarriesAClientTimestamp()
+    {
+        // The heartbeat exists so an idle bridge keeps generating inbound
+        // frames and the session server's zombie reaper doesn't evict it from
+        // its room. The body just needs a client_ts, mirroring the web client.
+        var before = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var payload = SessionHostBridge.BuildPingPayload();
+        var after = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+        var clientTs = payload["client_ts"];
+        Assert.NotNull(clientTs);
+        var value = (long)clientTs!;
+        Assert.InRange(value, before, after);
+    }
+
+    [Fact]
     public void BuildAuthPayload_EmptySecret_FallsBackToUserIdAndName()
     {
         var config = new PluginConfiguration { JwtSecret = string.Empty };

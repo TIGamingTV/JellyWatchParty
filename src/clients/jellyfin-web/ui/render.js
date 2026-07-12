@@ -38,6 +38,14 @@
   };
 
   const renderLobby = (panel) => {
+    // The native-client host bridge is an opt-in admin feature: only surface
+    // the "Host From Another Device" picker when an admin has enabled it.
+    const bridgeSection = state.allowThirdPartyHost ? `
+          <div class="jwp-section" style="border-top: 1px solid #333; padding-top: 15px;">
+            <div class="jwp-label">Host From Another Device (e.g. Fladder)</div>
+            <div id="jwp-bridge-active"></div>
+            <div id="jwp-bridge-available"></div>
+          </div>` : '';
     panel.innerHTML = `
       <div class="jwp-header"><span>JellyWatchParty</span> <span id="jwp-ws-indicator"></span></div>
       <div class="jwp-lobby-container">
@@ -48,11 +56,7 @@
           <div class="jwp-section" style="border-top: 1px solid #333; padding-top: 15px;">
             <button class="jwp-btn" style="width:100%" id="jwp-btn-create">Create Room</button>
           </div>
-          <div class="jwp-section" style="border-top: 1px solid #333; padding-top: 15px;">
-            <div class="jwp-label">Host From Another Device (e.g. Fladder)</div>
-            <div id="jwp-bridge-active"></div>
-            <div id="jwp-bridge-available"></div>
-          </div>
+          ${bridgeSection}
       </div>
       <div class="jwp-footer" id="jwp-server-footer">Server: ${(state.wsUrl || DEFAULT_WS_URL).replace(/^wss?:\/\//, '').replace('/ws', '')}</div>
     `;
@@ -73,6 +77,14 @@
 
   const renderRoom = (panel) => {
     const syncIndicator = ui.buildSyncStatusIndicator();
+    // Attaching a supported client (e.g. Android TV) as a receiver of this
+    // room is an opt-in admin feature: only surface the picker when enabled.
+    const bridgeSection = state.allowSupportedReceiver ? `
+      <div class="jwp-section" style="border-top: 1px solid #333; padding-top: 12px; flex-shrink:0;">
+        <div class="jwp-label">Add a Device to This Room</div>
+        <div id="jwp-bridge-active"></div>
+        <div id="jwp-bridge-available"></div>
+      </div>` : '';
     panel.innerHTML = `
       <div class="jwp-header">
         <span style="color:#69f0ae">\u25CF</span>
@@ -92,11 +104,7 @@
           <button id="jwp-chat-send">Send</button>
         </div>
       </div>
-      <div class="jwp-section" style="border-top: 1px solid #333; padding-top: 12px; flex-shrink:0;">
-        <div class="jwp-label">Add a Device to This Room</div>
-        <div id="jwp-bridge-active"></div>
-        <div id="jwp-bridge-available"></div>
-      </div>
+      ${bridgeSection}
       <div class="jwp-meta" style="font-size:10px; color:#666; display:flex; justify-content:space-between; flex-shrink:0; padding-top:8px;">
           <span>RTT: <span class="jwp-latency">-</span></span>
           <span>ID: ${state.clientId.split('-')[1] || '...'}</span>

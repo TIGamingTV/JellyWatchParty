@@ -66,6 +66,10 @@ describe('bridge picker reachability across panel views', () => {
     JWP.state.participantCount = 1;
     JWP.state.roomId = '';
     JWP.state.inRoom = false;
+    // Both bridge roles are opt-in admin features; enable them so the picker
+    // renders. Gating-off behaviour is covered separately below.
+    JWP.state.allowThirdPartyHost = true;
+    JWP.state.allowSupportedReceiver = true;
   });
 
   it('lobby view contains the bridge picker container', () => {
@@ -80,6 +84,54 @@ describe('bridge picker reachability across panel views', () => {
     JWP.state.roomId = 'ROOM1';
     JWP.ui.render(true);
     assert.match(panel.innerHTML, /id="jwp-bridge-available"/);
+    assert.match(panel.innerHTML, /Add a Device to This Room/);
+  });
+});
+
+describe('bridge picker opt-in gating', () => {
+  let panel;
+
+  beforeEach(() => {
+    panel = makePanel();
+    installDom(panel);
+    stubUi();
+    JWP.state.clientId = 'jwp-testclient';
+    JWP.state.roomName = 'Test Room';
+    JWP.state.isHost = false;
+    JWP.state.participantCount = 1;
+    JWP.state.roomId = '';
+    JWP.state.inRoom = false;
+    JWP.state.allowThirdPartyHost = false;
+    JWP.state.allowSupportedReceiver = false;
+  });
+
+  it('lobby hides the host picker when third-party hosting is disabled', () => {
+    JWP.state.inRoom = false;
+    JWP.ui.render(true);
+    assert.doesNotMatch(panel.innerHTML, /Host From Another Device/);
+    assert.doesNotMatch(panel.innerHTML, /id="jwp-bridge-available"/);
+  });
+
+  it('lobby shows the host picker only when third-party hosting is enabled', () => {
+    JWP.state.allowThirdPartyHost = true;
+    JWP.state.inRoom = false;
+    JWP.ui.render(true);
+    assert.match(panel.innerHTML, /Host From Another Device/);
+  });
+
+  it('in-room hides the receiver picker when supported receivers are disabled', () => {
+    JWP.state.inRoom = true;
+    JWP.state.roomId = 'ROOM1';
+    JWP.ui.render(true);
+    assert.doesNotMatch(panel.innerHTML, /Add a Device to This Room/);
+    assert.doesNotMatch(panel.innerHTML, /id="jwp-bridge-available"/);
+  });
+
+  it('in-room shows the receiver picker only when supported receivers are enabled', () => {
+    JWP.state.allowSupportedReceiver = true;
+    JWP.state.inRoom = true;
+    JWP.state.roomId = 'ROOM1';
+    JWP.ui.render(true);
     assert.match(panel.innerHTML, /Add a Device to This Room/);
   });
 });

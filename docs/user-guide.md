@@ -33,6 +33,12 @@ see [Host Bridge](technical/host-bridge) — in one of two ways:
   follow the room's play, pause, and seek. (Works for rooms without a
   password.)
 
+> **Both roles are opt-in.** An administrator must enable them from the
+> plugin configuration page (**Client Bridging** section): *Allow
+> third-party clients to host* enables the Host role, and *Allow supported
+> clients as receivers* enables the Receiver role. Until enabled, the
+> corresponding picker does not appear in the Watch Party panel.
+
 ## Joining a Watch Party
 
 ### From the Player

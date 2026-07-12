@@ -79,6 +79,12 @@
   };
 
   const updateBridgeListUI = () => {
+    // The bridge sections are only rendered when the matching admin opt-in is
+    // enabled (see ui/render.js). If neither container is present there is
+    // nothing to populate, so skip the network round-trips entirely.
+    if (!document.getElementById('jwp-bridge-available') && !document.getElementById('jwp-bridge-active')) {
+      return;
+    }
     Promise.all([
       apiFetch('/JellyWatchParty/Bridge/Sessions').then((r) => (r.ok ? r.json() : [])),
       apiFetch('/JellyWatchParty/Bridge/Status').then((r) => (r.ok ? r.json() : []))
