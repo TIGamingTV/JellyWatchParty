@@ -8,12 +8,12 @@
     "category": "General",
     "versions": [
       {
-        "version": "0.0.82",
-        "changelog": "Merge pull request #46 from TIGamingTV/claude/repository-audit-s2xw4b",
+        "version": "0.0.83",
+        "changelog": "Merge pull request #47 from TIGamingTV/main",
         "targetAbi": "10.11.11.0",
         "sourceUrl": "https://github.com/TIGamingTV/JellyWatchParty/releases/download/develop-latest/JellyWatchParty-dev.zip",
-        "checksum": "d988961166c41e010aa504ffb73b3098",
-        "timestamp": "2026-07-12T00:17:35Z"
+        "checksum": "adeed3d7f8c4a6f9b9b205d7d0dcf2b0",
+        "timestamp": "2026-07-12T00:19:51Z"
       }
     ]
   }
