@@ -171,7 +171,18 @@ jobs:
 
       - name: Build plugin
         working-directory: src/plugins/jellyfin/JellyWatchParty
-        run: dotnet publish -c Release -o dist
+        run: |
+          VERSION="${{ github.event.release.tag_name }}"
+          VERSION="${VERSION#v}"  # strip optional 'v' prefix to match the manifest version
+          # Stamp the release version into the assembly so it matches the
+          # plugin repository manifest. If they differ, Jellyfin rewrites the
+          # installed meta.json down to the assembly version (1.0.0.0). The
+          # dashboard then sends the manifest version to
+          # POST /Plugins/{id}/{version}/Disable, which no longer matches any
+          # loaded plugin — the enable/disable toggle 404s and the plugin
+          # can't be turned off (and it always shows an update as available).
+          dotnet publish -c Release -o dist \
+            -p:Version="$VERSION" -p:AssemblyVersion="$VERSION" -p:FileVersion="$VERSION"
 
       - name: Create plugin zip
         run: |
@@ -359,7 +370,12 @@ jobs:
 
       - name: Build plugin
         working-directory: src/plugins/jellyfin/JellyWatchParty
-        run: dotnet publish -c Release -o dist
+        run: |
+          VERSION="0.0.${{ github.run_number }}"
+          # Keep the assembly version identical to the develop manifest version
+          # (see the release build for why a mismatch breaks the disable toggle).
+          dotnet publish -c Release -o dist \
+            -p:Version="$VERSION" -p:AssemblyVersion="$VERSION" -p:FileVersion="$VERSION"
 
       - name: Package develop build
         id: package
