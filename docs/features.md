@@ -110,6 +110,13 @@ can't run the injected UI) into a room — in either role — see
   playing the same item so it follows the room's play/pause/seek. (Rooms
   without a password only.)
 
+Both roles are **opt-in** and disabled by default. An administrator enables
+them independently from the plugin configuration page (**Client Bridging**
+section): *Allow third-party clients to host* for the Host role and *Allow
+supported clients as receivers* for the Receiver role. While a role is
+disabled its picker is hidden in the Watch Party panel and the server rejects
+the corresponding bridge request.
+
 ## Compatibility
 
 ### Jellyfin Versions

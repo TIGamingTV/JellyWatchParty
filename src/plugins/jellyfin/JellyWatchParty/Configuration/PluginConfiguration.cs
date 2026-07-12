@@ -91,6 +91,27 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool HideNativeSyncButton { get; set; }
 
     /// <summary>
+    /// When true, third-party / native Jellyfin clients that cannot run the
+    /// injected JellyWatchParty script (Fladder, Swiftfin, Infuse, official
+    /// mobile apps, ...) may be bridged in as a room <em>host</em>: the server
+    /// mirrors that session's playback into a brand-new room for others to
+    /// join. This is a server-side workaround, so it is opt-in - defaults to
+    /// false so it stays off until an admin deliberately enables it from the
+    /// plugin configuration page.
+    /// </summary>
+    public bool AllowThirdPartyClientHost { get; set; }
+
+    /// <summary>
+    /// When true, supported native clients (such as the official Jellyfin
+    /// Android TV app) may be attached to an existing room as a
+    /// <em>receiver</em>: the server drives that session to follow the room's
+    /// host via remote-control playstate commands. Opt-in - defaults to false
+    /// so it stays off until an admin deliberately enables it from the plugin
+    /// configuration page.
+    /// </summary>
+    public bool AllowSupportedClientReceiver { get; set; }
+
+    /// <summary>
     /// Checks a Session Server URL for common misconfigurations and returns
     /// human-readable warnings. Does not reject anything - an empty result
     /// means no issues were found. Empty/whitespace input always passes

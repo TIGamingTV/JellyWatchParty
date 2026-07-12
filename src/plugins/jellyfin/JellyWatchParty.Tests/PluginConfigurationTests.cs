@@ -106,6 +106,38 @@ public class PluginConfigurationTests
         Assert.Equal(value, config.HideNativeSyncButton);
     }
 
+    [Fact]
+    public void AllowThirdPartyClientHost_DefaultIsFalse()
+    {
+        var config = new PluginConfiguration();
+        Assert.False(config.AllowThirdPartyClientHost);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void AllowThirdPartyClientHost_RoundTripsValue(bool value)
+    {
+        var config = new PluginConfiguration { AllowThirdPartyClientHost = value };
+        Assert.Equal(value, config.AllowThirdPartyClientHost);
+    }
+
+    [Fact]
+    public void AllowSupportedClientReceiver_DefaultIsFalse()
+    {
+        var config = new PluginConfiguration();
+        Assert.False(config.AllowSupportedClientReceiver);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void AllowSupportedClientReceiver_RoundTripsValue(bool value)
+    {
+        var config = new PluginConfiguration { AllowSupportedClientReceiver = value };
+        Assert.Equal(value, config.AllowSupportedClientReceiver);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]
