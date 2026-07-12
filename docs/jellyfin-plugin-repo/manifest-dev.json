@@ -8,12 +8,12 @@
     "category": "General",
     "versions": [
       {
-        "version": "0.0.80",
-        "changelog": "Merge pull request #44 from TIGamingTV/claude/jelly-sync-button-removal-jcjhty\n\ndocs: log Round 28 (receiver bridge) and document the receiver role",
+        "version": "0.0.82",
+        "changelog": "Merge pull request #46 from TIGamingTV/claude/repository-audit-s2xw4b",
         "targetAbi": "10.11.11.0",
         "sourceUrl": "https://github.com/TIGamingTV/JellyWatchParty/releases/download/develop-latest/JellyWatchParty-dev.zip",
-        "checksum": "e529bf56644d49dcb55fd0c4d09725fb",
-        "timestamp": "2026-07-11T22:37:45Z"
+        "checksum": "d988961166c41e010aa504ffb73b3098",
+        "timestamp": "2026-07-12T00:17:35Z"
       }
     ]
   }
