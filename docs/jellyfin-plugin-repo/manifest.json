@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.7.0.0",
+        "changelog": "New Feature/Fix:\r\n- Plugin can now be disabled. \r\n\r\n## What's Changed\r\n* Add plugin uninstall cleanup and injection control by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/50\r\n\r\n\r\n**Full Changelog**: https://github.com/TIGamingTV/JellyWatchParty/compare/v1.6.0.0...v1.7.0.0\n",
+        "targetAbi": "10.11.11.0",
+        "sourceUrl": "https://github.com/TIGamingTV/JellyWatchParty/releases/download/v1.7.0.0/JellyWatchParty-v1.7.0.0.zip",
+        "checksum": "618af021142534bd949757a8a3417773",
+        "timestamp": "2026-07-12T11:20:00Z"
+      },
+      {
         "version": "1.6.0.0",
         "changelog": "New Features:\r\n- Clients such as Jellyfin Andoid TV (official) that already have the needed api infrastructure to control playback on the clients can now be selected as receiver.\r\n- The new receiver feature and the host feature are now opt-in and need to be enabled via the plugin config page. \r\n\r\n\r\n\r\n\r\n\r\n## What's Changed\r\n* jelly jellyfin android tv client as receiver  by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/41\r\n* Fix: surface the receiver action in the in-room panel by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/42\r\n* Harden receiver bridge: readiness, join confirmation, reachability guard by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/43\r\n* docs: log Round 28 (receiver bridge) and document the receiver role by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/44\r\n* Develop by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/45\r\n\r\n\r\n**Full Changelog**: https://github.com/TIGamingTV/JellyWatchParty/compare/v1.5.0.0...v1.6.0.0\n",
         "targetAbi": "10.11.11.0",
