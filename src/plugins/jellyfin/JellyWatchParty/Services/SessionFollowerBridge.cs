@@ -34,6 +34,13 @@ public sealed class SessionFollowerBridge : IAsyncDisposable
     private const double DriftThresholdSeconds = 2.0;
     private static readonly TimeSpan SeekCooldown = TimeSpan.FromSeconds(3);
 
+    // A follower emits no WebSocket frames at all in steady state (host events
+    // arrive inbound; the resulting Seek/Pause/Unpause go to the Jellyfin
+    // session, not back over this socket), so without a heartbeat the session
+    // server's zombie reaper (ZOMBIE_TIMEOUT_MS, 60s) silently ejects it from
+    // the room. Ping well inside that window (see implem.md §1.9).
+    private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(20);
+
     private readonly string _sessionId;
     private readonly string _userId;
     private readonly string _userName;
@@ -44,7 +51,12 @@ public sealed class SessionFollowerBridge : IAsyncDisposable
     private readonly ClientWebSocket _socket = new();
     private readonly CancellationTokenSource _cts = new();
 
+    // ClientWebSocket forbids concurrent SendAsync calls; the heartbeat loop
+    // can otherwise overlap the receive loop's sends, so all sends serialize here.
+    private readonly SemaphoreSlim _sendLock = new(1, 1);
+
     private Task? _receiveLoop;
+    private Task? _heartbeatLoop;
     private bool? _lastCommandedPaused;
     private DateTime _lastSeekAt = DateTime.MinValue;
 
@@ -85,6 +97,7 @@ public sealed class SessionFollowerBridge : IAsyncDisposable
         // here — so a rejected join (e.g. a password-protected room, which this
         // bridge does not support) does not surface as a phantom connected bridge.
         _receiveLoop = Task.Run(() => ReceiveLoopAsync(_cts.Token), CancellationToken.None);
+        _heartbeatLoop = Task.Run(() => HeartbeatLoopAsync(_cts.Token), CancellationToken.None);
     }
 
     public async Task StopAsync()
@@ -92,6 +105,9 @@ public sealed class SessionFollowerBridge : IAsyncDisposable
         _cts.Cancel();
         if (_socket.State == WebSocketState.Open)
         {
+            // Take the send lock so the close frame can't race an in-flight
+            // heartbeat ping (concurrent sends throw on ClientWebSocket).
+            await _sendLock.WaitAsync().ConfigureAwait(false);
             try
             {
                 await _socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Bridge stopped", CancellationToken.None)
@@ -101,17 +117,24 @@ public sealed class SessionFollowerBridge : IAsyncDisposable
             {
                 // Socket already closing/closed — nothing to do.
             }
+            finally
+            {
+                _sendLock.Release();
+            }
         }
 
-        if (_receiveLoop != null)
+        foreach (var loop in new[] { _receiveLoop, _heartbeatLoop })
         {
-            try
+            if (loop != null)
             {
-                await _receiveLoop.ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                // Expected on stop.
+                try
+                {
+                    await loop.ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    // Expected on stop.
+                }
             }
         }
     }
@@ -121,6 +144,37 @@ public sealed class SessionFollowerBridge : IAsyncDisposable
         await StopAsync().ConfigureAwait(false);
         _socket.Dispose();
         _cts.Dispose();
+        _sendLock.Dispose();
+    }
+
+    private async Task HeartbeatLoopAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                await Task.Delay(HeartbeatInterval, cancellationToken).ConfigureAwait(false);
+                if (_socket.State != WebSocketState.Open)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    await SendAsync(SessionHostBridge.BuildPingPayload(), "ping", room: null, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is WebSocketException or ObjectDisposedException or InvalidOperationException)
+                {
+                    // Connection is going away; the receive loop handles teardown.
+                    break;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected on stop.
+        }
     }
 
     private async Task ReceiveLoopAsync(CancellationToken cancellationToken)
@@ -271,8 +325,17 @@ public sealed class SessionFollowerBridge : IAsyncDisposable
         }
 
         var bytes = Encoding.UTF8.GetBytes(envelope.ToString(Newtonsoft.Json.Formatting.None));
-        await _socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, cancellationToken)
-            .ConfigureAwait(false);
+
+        await _sendLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await _socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            _sendLock.Release();
+        }
     }
 
     private static double TicksToSeconds(long? ticks) => (ticks ?? 0) / (double)TimeSpan.TicksPerSecond;
