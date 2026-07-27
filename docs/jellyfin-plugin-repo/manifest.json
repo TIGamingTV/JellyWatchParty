@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.8.0.0",
+        "changelog": "This release brings a fix for #51 \r\n\r\n**Full Changelog**: https://github.com/TIGamingTV/JellyWatchParty/compare/v1.7.0.0...v1.8.0.0",
+        "targetAbi": "10.11.11.0",
+        "sourceUrl": "https://github.com/TIGamingTV/JellyWatchParty/releases/download/v1.8.0.0/JellyWatchParty-v1.8.0.0.zip",
+        "checksum": "70e0772f270afcac6eb2300fcd7842d4",
+        "timestamp": "2026-07-27T20:15:24Z"
+      },
+      {
         "version": "1.7.0.0",
         "changelog": "New Feature/Fix:\r\n- Plugin can now be disabled. \r\n\r\n## What's Changed\r\n* Add plugin uninstall cleanup and injection control by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/50\r\n\r\n\r\n**Full Changelog**: https://github.com/TIGamingTV/JellyWatchParty/compare/v1.6.0.0...v1.7.0.0\n",
         "targetAbi": "10.11.11.0",
