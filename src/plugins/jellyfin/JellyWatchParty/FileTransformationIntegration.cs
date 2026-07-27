@@ -71,6 +71,62 @@ public class FileTransformationIntegration : IScheduledTask
     }
 
     /// <summary>
+    /// Resolves File Transformation's public <c>RegisterTransformation</c> entry
+    /// point via reflection, or null when the plugin is absent or the installed
+    /// version is incompatible. Pass a logger to report an incompatible version;
+    /// callers that only probe for availability pass null to stay quiet.
+    /// </summary>
+    private static MethodInfo? ResolveRegisterTransformationMethod(ILogger? logger)
+    {
+        var ftAssembly = AssemblyLoadContext.All
+            .SelectMany(ctx => ctx.Assemblies)
+            .FirstOrDefault(asm => asm.FullName?.Contains("Jellyfin.Plugin.FileTransformation") ?? false);
+
+        if (ftAssembly == null)
+        {
+            return null;
+        }
+
+        var pluginInterface = ftAssembly.GetType("Jellyfin.Plugin.FileTransformation.PluginInterface");
+        if (pluginInterface == null)
+        {
+            logger?.LogWarning("[JellyWatchParty] File Transformation plugin found but PluginInterface type not available. "
+                + "The installed version may be incompatible.");
+            return null;
+        }
+
+        var registerMethod = pluginInterface.GetMethod("RegisterTransformation", BindingFlags.Public | BindingFlags.Static);
+        if (registerMethod == null)
+        {
+            logger?.LogWarning("[JellyWatchParty] File Transformation plugin found but RegisterTransformation method not available. "
+                + "The installed version may be incompatible.");
+            return null;
+        }
+
+        return registerMethod;
+    }
+
+    /// <summary>
+    /// True when a usable File Transformation plugin is loaded in this process.
+    ///
+    /// When it is, File Transformation owns index.html: it reads the file and
+    /// applies every registered plugin's transformation in turn. Any injection
+    /// path of ours that serves index.html itself would discard those other
+    /// transformations, so the request-level middleware defers to it.
+    /// </summary>
+    internal static bool IsFileTransformationAvailable()
+    {
+        try
+        {
+            return ResolveRegisterTransformationMethod(null) != null;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Attempts to register with the File Transformation plugin via reflection.
     /// Returns true if registration succeeded.
     /// </summary>
@@ -78,28 +134,9 @@ public class FileTransformationIntegration : IScheduledTask
     {
         try
         {
-            var ftAssembly = AssemblyLoadContext.All
-                .SelectMany(ctx => ctx.Assemblies)
-                .FirstOrDefault(asm => asm.FullName?.Contains("Jellyfin.Plugin.FileTransformation") ?? false);
-
-            if (ftAssembly == null)
-            {
-                return false;
-            }
-
-            var pluginInterface = ftAssembly.GetType("Jellyfin.Plugin.FileTransformation.PluginInterface");
-            if (pluginInterface == null)
-            {
-                _logger.LogWarning("[JellyWatchParty] File Transformation plugin found but PluginInterface type not available. "
-                    + "The installed version may be incompatible.");
-                return false;
-            }
-
-            var registerMethod = pluginInterface.GetMethod("RegisterTransformation", BindingFlags.Public | BindingFlags.Static);
+            var registerMethod = ResolveRegisterTransformationMethod(_logger);
             if (registerMethod == null)
             {
-                _logger.LogWarning("[JellyWatchParty] File Transformation plugin found but RegisterTransformation method not available. "
-                    + "The installed version may be incompatible.");
                 return false;
             }
 
@@ -163,15 +200,25 @@ public class FileTransformationIntegration : IScheduledTask
         }
         catch (UnauthorizedAccessException)
         {
-            _logger.LogInformation("[JellyWatchParty] No write permission to {Path}. "
-                + "Using controller-level index.html interception instead.", indexPath);
+            _logger.LogInformation("[JellyWatchParty] No write permission to {Path}. {Fallback}", indexPath, FallbackHint);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[JellyWatchParty] Failed to inject script into {Path}. "
-                + "Using controller-level index.html interception instead.", indexPath);
+            _logger.LogWarning(ex, "[JellyWatchParty] Failed to inject script into {Path}. {Fallback}", indexPath, FallbackHint);
         }
     }
+
+    /// <summary>
+    /// Describes what happens after direct file injection fails. The
+    /// request-level middleware only takes over when File Transformation is
+    /// absent — with it installed the middleware stands down so other plugins'
+    /// transformations survive, which leaves Custom HTML as the manual option.
+    /// </summary>
+    private static string FallbackHint => IsFileTransformationAvailable()
+        ? "The File Transformation plugin is installed but registration failed, and request-level injection "
+            + "stays disabled so other plugins' index.html changes are preserved. "
+            + "Add the JellyWatchParty <script> tag via Dashboard > General > Custom HTML instead."
+        : "Using request-level index.html injection instead.";
 
     /// <summary>
     /// Core injection logic: inserts the script tag before &lt;/body&gt; or &lt;/head&gt;

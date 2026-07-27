@@ -3,6 +3,7 @@ using Xunit;
 
 namespace JellyWatchParty.Plugin.Tests;
 
+[Collection(InjectionStateCollection.Name)]
 public class FileTransformationIntegrationTests
 {
     private const string ScriptTag = "<script src=\"../JellyWatchParty/ClientScript\" defer></script>";

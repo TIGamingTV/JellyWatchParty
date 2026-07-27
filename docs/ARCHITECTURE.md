@@ -83,7 +83,12 @@ C# plugin targeting the Jellyfin plugin ABI. Key files:
     session to a room as a receiver (`Bridge/{sessionId}/Follow`)
 - `ScriptInjectionMiddleware.cs` — intercepts requests for
   `/web/index.html` and injects a `<script>` tag pointing at
-  `/JellyWatchParty/ClientScript` before the response is served. Its
+  `/JellyWatchParty/ClientScript` before the response is served. This is a
+  **fallback for servers without file-transformation only**: it answers the
+  request itself without calling the rest of the pipeline, so when
+  file-transformation is installed the middleware stands down and lets it
+  serve `index.html` — otherwise it would discard the injections of every
+  other plugin that goes through file-transformation. Its
   `ServiceRegistrator` also registers `HostBridgeManager` as a singleton +
   hosted service.
 - `Services/SessionServerAuth.cs` — JWT minting, shared by the `/Token`
@@ -242,10 +247,13 @@ implementation detail behind that, for contributors.
 
 `FileTransformationIntegration.cs` detects whether file-transformation
 is installed and, if so, registers a transformation that injects the
-client `<script>` tag before `</body>`. If file-transformation isn't
-installed, `ScriptInjectionMiddleware` still handles injection the
-normal way and the admin can also always fall back to the manual
-Custom HTML method.
+client `<script>` tag before `</body>`. When file-transformation is
+installed it owns `index.html` and composes every registered plugin's
+transformation, so this is the only injection path that runs — the
+direct-file fallback and `ScriptInjectionMiddleware` both stand down.
+If file-transformation isn't installed, `ScriptInjectionMiddleware`
+still handles injection the normal way and the admin can also always
+fall back to the manual Custom HTML method.
 
 **Registration payload:**
 

@@ -16,6 +16,14 @@ namespace JellyWatchParty.Plugin;
 ///
 /// Registered via IStartupFilter so it runs BEFORE Jellyfin's static file
 /// middleware, which would otherwise serve the unmodified index.html.
+///
+/// This is a LAST-RESORT fallback, used only when the File Transformation
+/// plugin is not available. It answers the request from the physical
+/// index.html and never calls the rest of the pipeline, so anything else that
+/// serves index.html - notably File Transformation, through which plugins like
+/// Jellyfin Enhanced, Media Bar and Custom Tabs inject themselves - would be
+/// bypassed entirely. Whenever File Transformation is present it owns
+/// index.html and this middleware stands down.
 /// </summary>
 public class ScriptInjectionMiddleware
 {
@@ -38,6 +46,16 @@ public class ScriptInjectionMiddleware
     private static volatile CachedContent? _cachedContent;
     private static readonly object _loadLock = new();
 
+    // Probes for a usable File Transformation plugin. Overridable so tests can
+    // exercise both the "stands down" and "takes over" branches without having
+    // to load a real File Transformation assembly.
+    internal static Func<bool> FileTransformationProbe { get; set; }
+        = FileTransformationIntegration.IsFileTransformationAvailable;
+
+    // 0 until the stand-down reason has been logged, so it is reported once per
+    // process rather than on every page load.
+    private static int _deferralLogged;
+
     public ScriptInjectionMiddleware(RequestDelegate next)
     {
         _next = next;
@@ -46,7 +64,7 @@ public class ScriptInjectionMiddleware
     public async Task InvokeAsync(HttpContext context, ILogger<ScriptInjectionMiddleware> logger)
     {
         var path = context.Request.Path.Value?.TrimEnd('/');
-        if (Plugin.InjectionEnabled && path is "/web" or "/web/index.html")
+        if (Plugin.InjectionEnabled && path is "/web" or "/web/index.html" && !ShouldDeferToFileTransformation(logger))
         {
             var cached = GetOrLoadContent(logger);
             if (cached != null)
@@ -68,6 +86,42 @@ public class ScriptInjectionMiddleware
         }
 
         await _next(context);
+    }
+
+    /// <summary>
+    /// True when the File Transformation plugin is available and should be left
+    /// to serve index.html. Serving it ourselves would short-circuit the
+    /// pipeline and silently drop the index.html changes made by every other
+    /// plugin that injects through File Transformation; our own script still
+    /// gets in via the transformation registered in
+    /// <see cref="FileTransformationIntegration"/>.
+    /// </summary>
+    private static bool ShouldDeferToFileTransformation(ILogger logger)
+    {
+        if (!FileTransformationProbe())
+        {
+            return false;
+        }
+
+        if (Interlocked.Exchange(ref _deferralLogged, 1) == 0)
+        {
+            logger.LogInformation("[JellyWatchParty] File Transformation plugin detected; "
+                + "leaving index.html to it so other plugins' injections are preserved. "
+                + "The Watch Party script is added through the registered transformation instead.");
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Clears the process-wide state this middleware memoises, so tests do not
+    /// leak a cached index.html or a "already logged" flag between cases.
+    /// </summary>
+    internal static void ResetForTests()
+    {
+        _cachedContent = null;
+        _deferralLogged = 0;
+        FileTransformationProbe = FileTransformationIntegration.IsFileTransformationAvailable;
     }
 
     private static CachedContent? GetOrLoadContent(ILogger logger)
