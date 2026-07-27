@@ -17,6 +17,25 @@ public class FileTransformationIntegration : IScheduledTask
     private const string ClientScriptPath = "../JellyWatchParty/ClientScript";
     private const string ScriptTag = $"<script src=\"{ClientScriptPath}\" defer></script>";
 
+    /// <summary>
+    /// File name pattern registered with the File Transformation plugin.
+    ///
+    /// It MUST match both with and without a leading slash, because File
+    /// Transformation tests it against two different strings:
+    ///
+    ///  - <c>NeedsTransformation(subpath)</c> regex-matches the <b>raw</b>
+    ///    subpath handed over by ASP.NET's static file middleware. That is a
+    ///    <c>PathString</c>, so it always starts with a slash: "/index.html".
+    ///  - <c>RunTransformation(path)</c> first normalises with
+    ///    <c>TrimStart('/')</c>, so it matches against "index.html".
+    ///
+    /// A start-anchored "^index\.html$" therefore passes the second gate but
+    /// fails the first, so the provider serves the untransformed file and the
+    /// callback is never invoked. Keep the leading "(^|/)" alternation.
+    /// Anchoring the end keeps this from matching unrelated files.
+    /// </summary>
+    internal const string IndexHtmlPattern = @"(^|/)index\.html$";
+
     // Matches any <script> tag referencing the plugin's ClientScript endpoint
     // (regardless of the exact src spelling or attribute order), along with the
     // leading indentation and trailing newline InjectScript adds. Used to
@@ -162,7 +181,7 @@ public class FileTransformationIntegration : IScheduledTask
             var payload = new JObject
             {
                 ["id"] = Guid.Parse(Plugin.PluginGuid),
-                ["fileNamePattern"] = @"^index\.html$",
+                ["fileNamePattern"] = IndexHtmlPattern,
                 ["callbackAssembly"] = typeof(FileTransformationIntegration).Assembly.FullName,
                 ["callbackClass"] = typeof(FileTransformationIntegration).FullName,
                 ["callbackMethod"] = nameof(TransformIndexHtml)
@@ -170,7 +189,10 @@ public class FileTransformationIntegration : IScheduledTask
 
             registerMethod.Invoke(null, new object?[] { payload });
 
-            _logger.LogInformation("[JellyWatchParty] Registered index.html transformation with File Transformation plugin.");
+            _logger.LogInformation("[JellyWatchParty] Registered index.html transformation with File Transformation "
+                + "using pattern '{Pattern}'. Client script injection is now delegated to File Transformation; if the "
+                + "Watch Party button does not appear, check its log for a matching 'Received transformation "
+                + "registration' entry.", IndexHtmlPattern);
             return true;
         }
         catch (Exception ex)

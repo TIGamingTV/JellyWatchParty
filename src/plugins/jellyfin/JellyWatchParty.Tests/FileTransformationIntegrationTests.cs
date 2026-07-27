@@ -124,6 +124,38 @@ public class FileTransformationIntegrationTests
         }
     }
 
+    // -- IndexHtmlPattern (the pattern registered with File Transformation) --
+    //
+    // File Transformation applies a transformation only if BOTH of its gates
+    // match, and the two gates test the pattern against different strings:
+    //
+    //   NeedsTransformation(subpath) -> raw subpath from ASP.NET's static file
+    //       middleware, a PathString, so always leading-slashed: "/index.html"
+    //   RunTransformation(path)      -> same value after TrimStart('/'):
+    //       "index.html"
+    //
+    // A start-anchored pattern passes the second and silently fails the first,
+    // which leaves the client script uninjected wherever File Transformation is
+    // installed. These tests pin both forms.
+
+    [Theory]
+    [InlineData("/index.html")]  // NeedsTransformation gate (raw subpath)
+    [InlineData("index.html")]   // RunTransformation gate (normalised)
+    public void IndexHtmlPattern_MatchesBothFormsFileTransformationTestsAgainst(string path)
+    {
+        Assert.Matches(FileTransformationIntegration.IndexHtmlPattern, path);
+    }
+
+    [Theory]
+    [InlineData("main.jellyfin.bundle.js")]
+    [InlineData("/main.jellyfin.bundle.js")]
+    [InlineData("/index.html.map")]
+    [InlineData("/notindex.html.bak")]
+    public void IndexHtmlPattern_DoesNotMatchUnrelatedFiles(string path)
+    {
+        Assert.DoesNotMatch(FileTransformationIntegration.IndexHtmlPattern, path);
+    }
+
     // -- IsFileTransformationAvailable (decides whether the middleware stands down) --
 
     [Fact]
