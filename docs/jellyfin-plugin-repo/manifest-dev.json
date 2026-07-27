@@ -8,12 +8,12 @@
     "category": "General",
     "versions": [
       {
-        "version": "0.0.84",
-        "changelog": "Merge pull request #48 from TIGamingTV/claude/third-party-client-opt-in-2fs5t5",
+        "version": "0.0.93",
+        "changelog": "Memoise the File Transformation probe and cover the upgrade path\n\nFollow-up review of the #51 fix.\n\nThe availability probe scans every assembly in every load context, and it\nran on each /web request — i.e. on every full page load, under the lock\nAssemblyLoadContext.All takes. Latch a positive result instead: plugin\nassemblies are never unloaded mid-process, so once File Transformation\nhas been seen the answer cannot change.\n\nThe latch is deliberately positive-only. Caching a negative would risk\npinning noFileTransformation from a probe that ran before its\nassembly finished loading, and a stale negative is exactly what makes the\nmiddleware trample other plugins again — the bug being fixed. A stale\npositive is not reachable.\n\nMemoising inside IsFileTransformationAvailable rather than in the\nmiddleware also keeps the middleware's test seam honest: tests swap the\ndelegate wholesale and never touch the latch.\n\nAdded tests: the probe must report false when File Transformation is not\nloaded (a false positive would make the middleware stand down on servers\nthat have no File Transformation, leaving the script uninjected), it must\nbe stable across repeated calls, and the physical-file upgrade path must\nnot double-inject.\n\nThat last one confirms the fallback chain composes: when an older version\nhas already patched index.html on disk, File Transformation reads the\npatched file and runs our callback over it, and InjectScript's\nalready-present check makes the second pass a no-op.\n\nAlso document the full three-step injection chain in ARCHITECTURE.md.",
         "targetAbi": "10.11.11.0",
         "sourceUrl": "https://github.com/TIGamingTV/JellyWatchParty/releases/download/develop-latest/JellyWatchParty-dev.zip",
-        "checksum": "31a8989e30e159b4a887127fa6c0977b",
-        "timestamp": "2026-07-12T00:40:00Z"
+        "checksum": "00575a9435177e53428daa49c4d63750",
+        "timestamp": "2026-07-27T19:02:34Z"
       }
     ]
   }
