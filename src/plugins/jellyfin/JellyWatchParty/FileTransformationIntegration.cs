@@ -106,19 +106,38 @@ public class FileTransformationIntegration : IScheduledTask
         return registerMethod;
     }
 
+    // Latched once File Transformation has been seen. A plugin assembly is
+    // never unloaded mid-process, so a positive result stays valid and saves
+    // rescanning every loaded assembly on each page load. Deliberately
+    // positive-only: caching a negative would risk latching "no File
+    // Transformation" from a probe that ran before its assembly was loaded,
+    // which is precisely how the middleware used to trample other plugins.
+    private static volatile bool _fileTransformationDetected;
+
     /// <summary>
     /// True when a usable File Transformation plugin is loaded in this process.
     ///
-    /// When it is, File Transformation owns index.html: it reads the file and
-    /// applies every registered plugin's transformation in turn. Any injection
-    /// path of ours that serves index.html itself would discard those other
-    /// transformations, so the request-level middleware defers to it.
+    /// When it is, File Transformation owns index.html: its file provider reads
+    /// the file and runs every registered plugin's transformation as a pipeline.
+    /// Any injection path of ours that serves index.html itself would discard
+    /// those other transformations, so the request-level middleware defers to it.
     /// </summary>
     internal static bool IsFileTransformationAvailable()
     {
+        if (_fileTransformationDetected)
+        {
+            return true;
+        }
+
         try
         {
-            return ResolveRegisterTransformationMethod(null) != null;
+            if (ResolveRegisterTransformationMethod(null) == null)
+            {
+                return false;
+            }
+
+            _fileTransformationDetected = true;
+            return true;
         }
         catch
         {

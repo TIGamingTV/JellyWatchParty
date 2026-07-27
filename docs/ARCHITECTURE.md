@@ -247,13 +247,28 @@ implementation detail behind that, for contributors.
 
 `FileTransformationIntegration.cs` detects whether file-transformation
 is installed and, if so, registers a transformation that injects the
-client `<script>` tag before `</body>`. When file-transformation is
-installed it owns `index.html` and composes every registered plugin's
-transformation, so this is the only injection path that runs — the
-direct-file fallback and `ScriptInjectionMiddleware` both stand down.
-If file-transformation isn't installed, `ScriptInjectionMiddleware`
-still handles injection the normal way and the admin can also always
-fall back to the manual Custom HTML method.
+client `<script>` tag before `</body>`.
+
+When file-transformation is installed it owns `index.html`: its
+`PhysicalTransformedFileProvider` replaces the file provider behind the
+static-file middleware and runs every registered plugin's transformation
+as a pipeline (it re-runs per request and caches nothing). So the three
+injection paths form a chain, in priority order:
+
+1. **Registered transformation** — the normal path when
+   file-transformation is installed.
+2. **Direct-file injection** — only if registering the transformation
+   fails. This still composes correctly with file-transformation, which
+   reads the patched file off disk and layers the other plugins'
+   transformations on top. `InjectScript` is a no-op when the tag is
+   already present, so the two paths can't double-inject.
+3. **`ScriptInjectionMiddleware`** — only when file-transformation is
+   *absent*. It short-circuits the pipeline, so running it alongside
+   file-transformation would discard every other plugin's injection
+   (see #51).
+
+If all three are unavailable the admin can always fall back to the
+manual Custom HTML method.
 
 **Registration payload:**
 

@@ -124,6 +124,45 @@ public class FileTransformationIntegrationTests
         }
     }
 
+    // -- IsFileTransformationAvailable (decides whether the middleware stands down) --
+
+    [Fact]
+    public void IsFileTransformationAvailable_IsFalse_WhenPluginNotLoaded()
+    {
+        // No File Transformation assembly is loaded in the test process. A false
+        // positive here would make the middleware stand down on servers that
+        // have no File Transformation at all, leaving the script uninjected.
+        Assert.False(FileTransformationIntegration.IsFileTransformationAvailable());
+    }
+
+    [Fact]
+    public void IsFileTransformationAvailable_IsStable_AcrossRepeatedCalls()
+    {
+        // The result is memoised on success, so repeated probing must not start
+        // reporting a different answer.
+        var first = FileTransformationIntegration.IsFileTransformationAvailable();
+        Assert.Equal(first, FileTransformationIntegration.IsFileTransformationAvailable());
+        Assert.Equal(first, FileTransformationIntegration.IsFileTransformationAvailable());
+    }
+
+    // -- Injection composes with a tag already present in the physical file --
+
+    [Fact]
+    public void InjectScript_DoesNotDoubleInject_WhenPhysicalFileAlreadyPatched()
+    {
+        // Upgrade path: an older version wrote the tag straight into index.html.
+        // File Transformation then reads that file and runs our callback over
+        // it, which must not add a second copy of the script.
+        var physicallyPatched = FileTransformationIntegration.InjectScript(
+            "<html><head></head><body><h1>Jellyfin</h1></body></html>");
+
+        var afterTransform = FileTransformationIntegration.TransformIndexHtml(MakePayload(physicallyPatched));
+
+        Assert.Equal(physicallyPatched, afterTransform);
+        var occurrences = afterTransform.Split("JellyWatchParty/ClientScript").Length - 1;
+        Assert.Equal(1, occurrences);
+    }
+
     // -- RemoveScript (reverses InjectScript) --
 
     [Fact]
