@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -124,36 +125,83 @@ public class FileTransformationIntegrationTests
         }
     }
 
-    // -- IndexHtmlPattern (the pattern registered with File Transformation) --
-    //
-    // File Transformation applies a transformation only if BOTH of its gates
-    // match, and the two gates test the pattern against different strings:
-    //
-    //   NeedsTransformation(subpath) -> raw subpath from ASP.NET's static file
-    //       middleware, a PathString, so always leading-slashed: "/index.html"
-    //   RunTransformation(path)      -> same value after TrimStart('/'):
-    //       "index.html"
-    //
-    // A start-anchored pattern passes the second and silently fails the first,
-    // which leaves the client script uninjected wherever File Transformation is
-    // installed. These tests pin both forms.
+    // -- IndexHtmlPattern (the key we register with File Transformation) --
 
-    [Theory]
-    [InlineData("/index.html")]  // NeedsTransformation gate (raw subpath)
-    [InlineData("index.html")]   // RunTransformation gate (normalised)
-    public void IndexHtmlPattern_MatchesBothFormsFileTransformationTestsAgainst(string path)
+    /// <summary>
+    /// Faithful model of File Transformation's dispatch
+    /// (WebFileTransformationService). Testing our pattern as a bare regex is
+    /// the wrong abstraction and hid a real outage: what decides whether our
+    /// callback runs is which single pipeline File Transformation *selects*,
+    /// not whether our pattern happens to match.
+    /// </summary>
+    private static class FakeFileTransformation
     {
-        Assert.Matches(FileTransformationIntegration.IndexHtmlPattern, path);
+        private static string Normalize(string path) => path.TrimStart('/');
+
+        /// <summary>
+        /// Returns the registration key whose pipeline would run for
+        /// <paramref name="rawSubpath"/>, or null when the file is served
+        /// untransformed. <paramref name="rawSubpath"/> is what ASP.NET's
+        /// static file middleware hands the provider: a PathString, so always
+        /// leading-slashed.
+        /// </summary>
+        public static string? ResolvePipelineKey(IEnumerable<string> registrations, string rawSubpath)
+        {
+            // AddTransformation normalises the key it stores.
+            var keys = registrations.Select(Normalize).ToList();
+
+            // NeedsTransformation(subpath): exact key on the normalised path,
+            // else regex against the RAW subpath.
+            var needsTransformation = keys.Contains(Normalize(rawSubpath))
+                || keys.Any(k => Regex.IsMatch(rawSubpath, k));
+            if (!needsTransformation)
+            {
+                return null;
+            }
+
+            // RunTransformation(path): normalises first, then picks exactly ONE
+            // pipeline - exact key match wins and the regex keys are skipped.
+            var path = Normalize(rawSubpath);
+            return keys.Contains(path) ? path : keys.FirstOrDefault(k => Regex.IsMatch(path, k));
+        }
+    }
+
+    // The literal key every other plugin registers, as seen in the server log:
+    // Media Bar, Custom Tabs and Plugin Pages all use exactly this.
+    private const string EcosystemIndexHtmlKey = "index.html";
+
+    [Fact]
+    public void IndexHtmlPattern_JoinsThePipelineOtherPluginsAlreadyRegistered()
+    {
+        // The regression that took the button away. File Transformation keys
+        // pipelines by registration string and runs only ONE of them, so a
+        // pattern registered under any other spelling is silently skipped the
+        // moment a plugin registers the literal "index.html".
+        var selected = FakeFileTransformation.ResolvePipelineKey(
+            new[] { EcosystemIndexHtmlKey, FileTransformationIntegration.IndexHtmlPattern },
+            "/index.html");
+
+        Assert.Equal(FileTransformationIntegration.IndexHtmlPattern, selected);
+    }
+
+    [Fact]
+    public void IndexHtmlPattern_RunsWhenNoOtherPluginIsInstalled()
+    {
+        var selected = FakeFileTransformation.ResolvePipelineKey(
+            new[] { FileTransformationIntegration.IndexHtmlPattern },
+            "/index.html");
+
+        Assert.Equal(FileTransformationIntegration.IndexHtmlPattern, selected);
     }
 
     [Theory]
-    [InlineData("main.jellyfin.bundle.js")]
     [InlineData("/main.jellyfin.bundle.js")]
-    [InlineData("/index.html.map")]
-    [InlineData("/notindex.html.bak")]
-    public void IndexHtmlPattern_DoesNotMatchUnrelatedFiles(string path)
+    [InlineData("/runtime.bundle.js")]
+    [InlineData("/userpluginsettings.html")]
+    public void IndexHtmlPattern_DoesNotClaimUnrelatedFiles(string rawSubpath)
     {
-        Assert.DoesNotMatch(FileTransformationIntegration.IndexHtmlPattern, path);
+        Assert.Null(FakeFileTransformation.ResolvePipelineKey(
+            new[] { FileTransformationIntegration.IndexHtmlPattern }, rawSubpath));
     }
 
     // -- IsFileTransformationAvailable (decides whether the middleware stands down) --

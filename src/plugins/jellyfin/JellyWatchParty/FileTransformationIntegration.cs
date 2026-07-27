@@ -20,21 +20,28 @@ public class FileTransformationIntegration : IScheduledTask
     /// <summary>
     /// File name pattern registered with the File Transformation plugin.
     ///
-    /// It MUST match both with and without a leading slash, because File
-    /// Transformation tests it against two different strings:
+    /// This MUST stay the exact literal "index.html" — not a regex, and not a
+    /// cleverer pattern that merely <i>matches</i> index.html.
     ///
-    ///  - <c>NeedsTransformation(subpath)</c> regex-matches the <b>raw</b>
-    ///    subpath handed over by ASP.NET's static file middleware. That is a
-    ///    <c>PathString</c>, so it always starts with a slash: "/index.html".
-    ///  - <c>RunTransformation(path)</c> first normalises with
-    ///    <c>TrimStart('/')</c>, so it matches against "index.html".
+    /// File Transformation keys its pipelines by the registration string, and
+    /// <c>RunTransformation</c> selects exactly one pipeline per file:
     ///
-    /// A start-anchored "^index\.html$" therefore passes the second gate but
-    /// fails the first, so the provider serves the untransformed file and the
-    /// callback is never invoked. Keep the leading "(^|/)" alternation.
-    /// Anchoring the end keeps this from matching unrelated files.
+    /// <code>
+    /// if (m_fileTransformations.ContainsKey(path))   // exact key wins
+    ///     pipeline = m_fileTransformations[path];
+    /// else { /* regex keys — only consulted when no exact key matched */ }
+    /// </code>
+    ///
+    /// Every other plugin in the ecosystem (Media Bar, Custom Tabs, Plugin
+    /// Pages, Jellyfin Enhanced) registers the literal "index.html", so that
+    /// exact key always exists in practice and the regex branch is dead code.
+    /// Registering any other spelling puts us in a separate pipeline that is
+    /// then never selected, and our script silently stops being injected —
+    /// with a perfectly healthy-looking "Received transformation registration"
+    /// line in the log. Using the same key puts us in the shared pipeline
+    /// alongside them, which is what makes all of the injections compose.
     /// </summary>
-    internal const string IndexHtmlPattern = @"(^|/)index\.html$";
+    internal const string IndexHtmlPattern = "index.html";
 
     // Matches any <script> tag referencing the plugin's ClientScript endpoint
     // (regardless of the exact src spelling or attribute order), along with the
