@@ -56,6 +56,11 @@ public class ScriptInjectionMiddleware
     // process rather than on every page load.
     private static int _deferralLogged;
 
+    // Latched once File Transformation has been handed a request for index.html
+    // and demonstrably did not run our transformation. From then on we stop
+    // deferring to it - see VerifyFileTransformationRan.
+    private static volatile bool _fileTransformationUnverified;
+
     public ScriptInjectionMiddleware(RequestDelegate next)
     {
         _next = next;
@@ -64,28 +69,73 @@ public class ScriptInjectionMiddleware
     public async Task InvokeAsync(HttpContext context, ILogger<ScriptInjectionMiddleware> logger)
     {
         var path = context.Request.Path.Value?.TrimEnd('/');
-        if (Plugin.InjectionEnabled && path is "/web" or "/web/index.html" && !ShouldDeferToFileTransformation(logger))
+        if (!Plugin.InjectionEnabled || path is not ("/web" or "/web/index.html"))
         {
-            var cached = GetOrLoadContent(logger);
-            if (cached != null)
-            {
-                var requestETag = context.Request.Headers.IfNoneMatch.FirstOrDefault();
-                if (!string.IsNullOrEmpty(requestETag) && requestETag == cached.ETag)
-                {
-                    context.Response.StatusCode = 304;
-                    return;
-                }
+            await _next(context);
+            return;
+        }
 
-                context.Response.ContentType = "text/html; charset=utf-8";
-                context.Response.Headers.CacheControl = "no-cache";
-                context.Response.Headers.ETag = cached.ETag;
-                context.Response.ContentLength = cached.Content.Length;
-                await context.Response.Body.WriteAsync(cached.Content);
+        if (ShouldDeferToFileTransformation(logger))
+        {
+            // Let File Transformation serve index.html, then check that it
+            // really did run our transformation. If it did not, we stop
+            // deferring and take the request over from here on.
+            await _next(context);
+            VerifyFileTransformationRan(context, logger);
+            return;
+        }
+
+        var cached = GetOrLoadContent(logger);
+        if (cached != null)
+        {
+            var requestETag = context.Request.Headers.IfNoneMatch.FirstOrDefault();
+            if (!string.IsNullOrEmpty(requestETag) && requestETag == cached.ETag)
+            {
+                context.Response.StatusCode = 304;
                 return;
             }
+
+            context.Response.ContentType = "text/html; charset=utf-8";
+            context.Response.Headers.CacheControl = "no-cache";
+            context.Response.Headers.ETag = cached.ETag;
+            context.Response.ContentLength = cached.Content.Length;
+            await context.Response.Body.WriteAsync(cached.Content);
+            return;
         }
 
         await _next(context);
+    }
+
+    /// <summary>
+    /// Checks, after File Transformation has been given a request for
+    /// index.html to serve, that it actually invoked our transformation
+    /// callback. When it did not, the plugin is loaded but not functional -
+    /// which on its own would leave us deferring forever to something that
+    /// never injects the script, with nothing in the log to say so. Latching
+    /// <see cref="_fileTransformationUnverified"/> hands index.html back to
+    /// this middleware from the next request onwards.
+    /// </summary>
+    private static void VerifyFileTransformationRan(HttpContext context, ILogger logger)
+    {
+        if (_fileTransformationUnverified || FileTransformationIntegration.TransformationInvoked)
+        {
+            return;
+        }
+
+        // Anything other than a rendered 200 - a 304 from the browser's cache,
+        // a 404, an error - means File Transformation was never asked to
+        // produce a body, so this request says nothing either way.
+        if (context.Response.StatusCode != StatusCodes.Status200OK)
+        {
+            return;
+        }
+
+        _fileTransformationUnverified = true;
+        logger.LogWarning("[JellyWatchParty] The File Transformation plugin is loaded but did not run the "
+            + "Watch Party transformation while serving index.html, so the client script was not injected. "
+            + "This usually means the installed File Transformation build does not support this Jellyfin "
+            + "version. Falling back to request-level injection from the next page load; note that other "
+            + "plugins' index.html changes will not be applied while this fallback is active.");
     }
 
     /// <summary>
@@ -98,7 +148,7 @@ public class ScriptInjectionMiddleware
     /// </summary>
     private static bool ShouldDeferToFileTransformation(ILogger logger)
     {
-        if (!FileTransformationProbe())
+        if (_fileTransformationUnverified || !FileTransformationProbe())
         {
             return false;
         }
@@ -121,7 +171,9 @@ public class ScriptInjectionMiddleware
     {
         _cachedContent = null;
         _deferralLogged = 0;
+        _fileTransformationUnverified = false;
         FileTransformationProbe = FileTransformationIntegration.IsFileTransformationAvailable;
+        FileTransformationIntegration.ResetForTests();
     }
 
     private static CachedContent? GetOrLoadContent(ILogger logger)

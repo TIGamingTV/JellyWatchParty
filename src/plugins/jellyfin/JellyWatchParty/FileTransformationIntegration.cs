@@ -140,6 +140,34 @@ public class FileTransformationIntegration : IScheduledTask
     // which is precisely how the middleware used to trample other plugins.
     private static volatile bool _fileTransformationDetected;
 
+    // Set the first time File Transformation actually calls TransformIndexHtml.
+    // IsFileTransformationAvailable only proves an assembly is loaded and
+    // exposes the right entry point - it cannot tell a working File
+    // Transformation from one that loaded but never serves index.html (which
+    // is exactly what a build targeting an older Jellyfin ABI can do). Without
+    // this, a broken File Transformation makes the middleware stand down AND
+    // makes registration report success, so the script silently never gets
+    // injected and the log looks perfectly healthy.
+    private static volatile bool _transformationInvoked;
+
+    /// <summary>
+    /// True once File Transformation has actually invoked our callback, i.e.
+    /// it is demonstrably serving index.html through the pipeline we
+    /// registered with - as opposed to merely being loaded in the process.
+    /// </summary>
+    internal static bool TransformationInvoked => _transformationInvoked;
+
+    /// <summary>
+    /// Clears the process-wide detection state this class memoises, so tests do
+    /// not leak a latched "File Transformation is present/working" verdict
+    /// between cases.
+    /// </summary>
+    internal static void ResetForTests()
+    {
+        _fileTransformationDetected = false;
+        _transformationInvoked = false;
+    }
+
     /// <summary>
     /// True when a usable File Transformation plugin is loaded in this process.
     ///
@@ -147,6 +175,9 @@ public class FileTransformationIntegration : IScheduledTask
     /// the file and runs every registered plugin's transformation as a pipeline.
     /// Any injection path of ours that serves index.html itself would discard
     /// those other transformations, so the request-level middleware defers to it.
+    ///
+    /// See <see cref="TransformationInvoked"/> for why "loaded" is not the same
+    /// as "working".
     /// </summary>
     internal static bool IsFileTransformationAvailable()
     {
@@ -361,6 +392,11 @@ public class FileTransformationIntegration : IScheduledTask
     /// </summary>
     public static string TransformIndexHtml(object payload)
     {
+        // Record the call before anything else, including the uninstall
+        // short-circuit below: what this proves is that File Transformation
+        // reaches us at all, which is true regardless of what we return.
+        _transformationInvoked = true;
+
         var contents = payload is JObject jobj
             ? jobj["contents"]?.ToString()
                 ?? jobj["Contents"]?.ToString()
