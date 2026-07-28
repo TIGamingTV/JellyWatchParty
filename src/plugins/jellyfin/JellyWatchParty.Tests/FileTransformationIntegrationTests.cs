@@ -125,6 +125,40 @@ public class FileTransformationIntegrationTests
         }
     }
 
+    [Fact]
+    public void TransformIndexHtml_RecordsThatFileTransformationReachedUs()
+    {
+        FileTransformationIntegration.ResetForTests();
+        Assert.False(FileTransformationIntegration.TransformationInvoked);
+
+        FileTransformationIntegration.TransformIndexHtml(
+            MakePayload("<html><head></head><body></body></html>"));
+
+        Assert.True(FileTransformationIntegration.TransformationInvoked);
+    }
+
+    [Fact]
+    public void TransformIndexHtml_RecordsTheCall_EvenWhileUninstalling()
+    {
+        // The flag answers "does File Transformation reach us at all", which is
+        // true regardless of what we choose to return - so an uninstall in
+        // progress must not make a working File Transformation look broken.
+        FileTransformationIntegration.ResetForTests();
+        Plugin.InjectionEnabled = false;
+        try
+        {
+            FileTransformationIntegration.TransformIndexHtml(
+                MakePayload("<html><head></head><body></body></html>"));
+
+            Assert.True(FileTransformationIntegration.TransformationInvoked);
+        }
+        finally
+        {
+            Plugin.InjectionEnabled = true;
+            FileTransformationIntegration.ResetForTests();
+        }
+    }
+
     // -- IndexHtmlPattern (the key we register with File Transformation) --
 
     /// <summary>
