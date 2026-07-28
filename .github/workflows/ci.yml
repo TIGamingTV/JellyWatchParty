@@ -9,6 +9,9 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  # Must match TargetFramework in src/plugins/jellyfin/Directory.Build.props.
+  # See docs/JELLYFIN-12-MIGRATION.md before changing.
+  DOTNET_VERSION: '9.0.x'
 
 jobs:
   rust-tests:
@@ -60,7 +63,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '9.0.x'
+          dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Copy JS files to plugin Web directory
         run: |

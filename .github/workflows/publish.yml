@@ -9,6 +9,12 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: tigamingtv/jwp-session-server
+  # Must match TargetFramework in src/plugins/jellyfin/Directory.Build.props.
+  DOTNET_VERSION: '9.0.x'
+  # The Jellyfin ABI published builds declare. Jellyfin treats this as a
+  # minimum, not an exact match, so a newer server will happily install a
+  # build declaring an older ABI. See docs/JELLYFIN-12-MIGRATION.md.
+  JELLYFIN_TARGET_ABI: '10.11.11.0'
 permissions:
   contents: write
   packages: write
@@ -157,7 +163,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '9.0.x'
+          dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Copy JS files to plugin Web directory
         working-directory: src/plugins/jellyfin
@@ -321,11 +327,12 @@ jobs:
           jq --arg version "$VERSION" \
              --arg checksum "$CHECKSUM" \
              --arg timestamp "$TIMESTAMP" \
+             --arg abi "$JELLYFIN_TARGET_ABI" \
              --argjson changelog "$CHANGELOG" \
              '.[0].versions = [{
                "version": $version,
                "changelog": $changelog,
-               "targetAbi": "10.11.11.0",
+               "targetAbi": $abi,
                "sourceUrl": "https://github.com/TIGamingTV/JellyWatchParty/releases/download/v\($version)/JellyWatchParty-v\($version).zip",
                "checksum": $checksum,
                "timestamp": $timestamp
@@ -366,7 +373,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '9.0.x'
+          dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Copy JS files to plugin Web directory
         working-directory: src/plugins/jellyfin
@@ -442,11 +449,12 @@ jobs:
           jq --arg version "$VERSION" \
              --arg checksum "$CHECKSUM" \
              --arg timestamp "$TIMESTAMP" \
+             --arg abi "$JELLYFIN_TARGET_ABI" \
              --argjson changelog "$CHANGELOG" \
              '.[0].versions = [{
                "version": $version,
                "changelog": $changelog,
-               "targetAbi": "10.11.11.0",
+               "targetAbi": $abi,
                "sourceUrl": "https://github.com/TIGamingTV/JellyWatchParty/releases/download/develop-latest/JellyWatchParty-dev.zip",
                "checksum": $checksum,
                "timestamp": $timestamp

@@ -1,0 +1,18 @@
+<Project>
+  <!--
+    The Jellyfin release this plugin is built for, in one place.
+
+    Jellyfin pins plugins to a framework and an ABI: 10.11.x is net9.0 against
+    the 10.11.x Jellyfin packages, while Jellyfin 12 is net10.0 against the
+    12.x packages (Jellyfin.Controller 12.x ships lib/net10.0 only, so the two
+    move together and cannot be mixed in one build).
+
+    Switching Jellyfin major version starts with these two properties, plus
+    JELLYFIN_TARGET_ABI and DOTNET_VERSION in .github/workflows/. The full
+    checklist is in docs/JELLYFIN-12-MIGRATION.md.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <JellyfinPackageVersion>10.11.11</JellyfinPackageVersion>
+  </PropertyGroup>
+</Project>
