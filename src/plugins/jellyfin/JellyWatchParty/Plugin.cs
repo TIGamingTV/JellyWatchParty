@@ -58,6 +58,65 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         {
             _logger.LogWarning("[JellyWatchParty] SessionServerUrl: {Warning}", warning);
         }
+
+        LogServerCompatibility();
+    }
+
+    /// <summary>
+    /// The Jellyfin version this build was compiled against, taken from the
+    /// MediaBrowser.Common reference recorded in our own assembly.
+    /// </summary>
+    internal static Version? TargetedServerVersion => typeof(Plugin).Assembly
+        .GetReferencedAssemblies()
+        .FirstOrDefault(a => string.Equals(a.Name, "MediaBrowser.Common", StringComparison.Ordinal))
+        ?.Version;
+
+    /// <summary>
+    /// The Jellyfin version actually running, taken from the MediaBrowser.Common
+    /// assembly loaded into this process. Read from the loaded assembly rather
+    /// than injected, so a failure to resolve it can never stop the plugin from
+    /// loading.
+    /// </summary>
+    internal static Version? RunningServerVersion => typeof(BasePlugin).Assembly.GetName().Version;
+
+    /// <summary>
+    /// True when the server is a whole major version ahead of what this build
+    /// targets. Jellyfin treats a plugin's targetAbi as a floor rather than a
+    /// match, so a build for an older Jellyfin installs happily on a newer
+    /// server and then misbehaves in ways that are hard to attribute.
+    /// </summary>
+    internal static bool IsServerNewerMajor(Version? running, Version? targeted)
+        => running is not null && targeted is not null && running.Major > targeted.Major;
+
+    /// <summary>
+    /// Records which Jellyfin this build expects and which one it actually got,
+    /// so a version mismatch shows up as one line in the server log instead of
+    /// as a feature that silently does nothing.
+    /// </summary>
+    private void LogServerCompatibility()
+    {
+        try
+        {
+            var running = RunningServerVersion;
+            var targeted = TargetedServerVersion;
+
+            if (IsServerNewerMajor(running, targeted))
+            {
+                _logger.LogWarning("[JellyWatchParty] This build targets Jellyfin {Targeted} but the server is "
+                    + "{Running}. That combination is not supported - install the JellyWatchParty release built "
+                    + "for Jellyfin {RunningMajor}. Expect the Watch Party UI to be missing or unable to "
+                    + "authenticate until you do.", targeted, running, running!.Major);
+            }
+            else
+            {
+                _logger.LogInformation("[JellyWatchParty] Jellyfin {Running} detected (this build targets "
+                    + "{Targeted}).", running, targeted);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "[JellyWatchParty] Could not determine the Jellyfin server version.");
+        }
     }
 
     public override string Name => "JellyWatchParty";
