@@ -123,6 +123,7 @@ the corresponding bridge request.
 
 | Version | Status |
 |---------|--------|
+| 12.x | Not supported yet |
 | 10.11.x | Supported (current target) |
 | 10.9.x - 10.10.x | Not tested |
 | 10.8.x and earlier | Not supported |
