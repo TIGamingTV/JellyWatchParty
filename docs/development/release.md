@@ -387,6 +387,6 @@ See [Upgrade Procedure](docs/deployment.md#upgrade-procedure).
 
 ## Next Steps
 
-- [Contributing](contributing.md) - How to contribute
-- [Testing](testing.md) - Testing before release
-- [Deployment](../deployment.md) - Production deployment
+- [Contributing]({{ '/development/contributing/' | relative_url }}) - How to contribute
+- [Testing]({{ '/development/testing/' | relative_url }}) - Testing before release
+- [Deployment]({{ '/deployment/' | relative_url }}) - Production deployment

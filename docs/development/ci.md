@@ -12,7 +12,7 @@ JellyWatchParty uses GitHub Actions for continuous integration and security scan
 
 `develop` is the integration branch — PRs land there first. `main` only receives
 merges from `develop` (or hotfix branches) and is what releases are cut from.
-See [Release](release) for the full flow.
+See [Release]({{ '/development/release/' | relative_url }}) for the full flow.
 
 ## Workflows
 
@@ -97,7 +97,7 @@ Users can then install/update the plugin directly from Jellyfin's plugin interfa
 
 On every push to `develop` that touches the plugin or client JS, the same
 thing happens against a separate develop channel — see
-[Release: Develop Plugin Channel](release#develop-plugin-channel) for how
+[Release: Develop Plugin Channel]({{ '/development/release/' | relative_url }}#develop-plugin-channel) for how
 testers install it.
 
 #### Docker Image
@@ -212,6 +212,6 @@ Current alert policy:
 
 ## Next Steps
 
-- [Setup](setup) - Development environment
-- [Contributing](contributing) - Contribution guidelines
-- [Testing](testing) - Test documentation
+- [Setup]({{ '/development/setup/' | relative_url }}) - Development environment
+- [Contributing]({{ '/development/contributing/' | relative_url }}) - Contribution guidelines
+- [Testing]({{ '/development/testing/' | relative_url }}) - Test documentation

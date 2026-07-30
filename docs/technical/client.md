@@ -151,7 +151,7 @@ signals.
 re-render if already showing the right view (lobby vs. in-room) and
 just refreshing indicators/lists instead. `renderLobby(panel)` builds
 the room list, "Create Room" button, and the Host Bridge section (see
-[Host Bridge](host-bridge.md)). `renderRoom(panel)` builds the in-room
+[Host Bridge]({{ '/technical/host-bridge/' | relative_url }})). `renderRoom(panel)` builds the in-room
 view (name, participants, sync indicator, chat, RTT, leave/close
 button). Also `injectOsdButton()` (button in the video OSD controls)
 and `injectGlobalButton()` (a persistent header button, since Jellyfin's
@@ -185,7 +185,7 @@ by `STYLE_ID`.
 
 ### `ui/bridge.js`
 Renders the Host Bridge picker inside the lobby panel — see
-[Host Bridge](host-bridge.md) for the full feature writeup.
+[Host Bridge]({{ '/technical/host-bridge/' | relative_url }}) for the full feature writeup.
 
 ## Module: `playback/` — Video Binding and Sync
 
@@ -217,11 +217,11 @@ times at 500ms intervals on failure.
 ### `playback/sync.js`
 `watchReady()`/`notifyReady()` send the `ready` message once the video
 can play (`readyState >= 2`), which unblocks the server's pending-play
-handshake for late joiners (see [Sync Algorithms](sync.md)).
+handshake for late joiners (see [Sync Algorithms]({{ '/technical/sync/' | relative_url }})).
 
 `syncLoop()` (called every `SYNC_LOOP_MS` for non-hosts) is the
 hysteresis drift controller documented in full in
-[Sync Algorithms](sync.md): resets to 1x whenever not applicable (host,
+[Sync Algorithms]({{ '/technical/sync/' | relative_url }}): resets to 1x whenever not applicable (host,
 not in room, not playing, buffering, paused), otherwise computes
 `drift = expected - video.currentTime` and only starts a correction
 burst once `|drift|` exceeds `DRIFT_CORRECTION_ENTER_SEC`, holding it
@@ -241,7 +241,7 @@ the host: it monkey-patches `playbackManager.setAudioStreamIndex`/
 `setSubtitleStreamIndex` (feature-detected, since a track switch can force
 Jellyfin to reload the stream and fire the same `waiting`/`pause`/
 `seeked`/`play` events `bind.js` listens for) so that a host's own local
-track switch engages the `isSyncing` lock (see [Sync Algorithms](sync.md)
+track switch engages the `isSyncing` lock (see [Sync Algorithms]({{ '/technical/sync/' | relative_url }})
 §5A) for `TRACK_SWITCH_SUPPRESS_MS` instead of broadcasting a spurious
 pause/seek to the room. A settle-shortcut (one-shot `canplay`/`playing`
 listeners) collapses that window back down once the reload visibly
@@ -288,7 +288,7 @@ existing socket rather than reconnecting.
 ### `ws/connection.js`
 `connect()` opens the WebSocket, appending the client's **persistent**
 `client_id` (a UUID generated once and stored in `localStorage`, see
-[Server: Persistent Client ID](server#persistent-client-id)) as a
+[Server: Persistent Client ID]({{ '/technical/server/' | relative_url }}#persistent-client-id)) as a
 `?client_id=` query param — this is what lets the server reattach a
 reconnecting client to its existing room/host state instead of treating
 it as new. `onWsClose` reconnects with exponential backoff

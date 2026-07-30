@@ -43,7 +43,7 @@ client can hide the matching picker, and are enforced server-side:
 So a native client can still participate as a guest via the receiver
 role. Running the injected UI directly (a browser, or Jellyfin Desktop
 via its native player adapter — see
-[Client: `utils/video.js`](client.md#module-utilsvideojs)) remains the
+[Client: `utils/video.js`]({{ '/technical/client/' | relative_url }}#module-utilsvideojs)) remains the
 way to join and drive a room from the client itself.
 
 ## How It Works
@@ -99,7 +99,7 @@ and disposes the bridge automatically.
 One instance per bridged session. Owns a `ClientWebSocket` connection to
 the session server and translates Jellyfin session events into the
 exact same protocol messages a browser host would send
-(see [Protocol](protocol.md)):
+(see [Protocol]({{ '/technical/protocol/' | relative_url }})):
 
 | Jellyfin event | → | Protocol message |
 |---|---|---|
@@ -159,7 +159,7 @@ the *bridged session's* owner, not the HTTP caller) and the normal
 
 ## REST Endpoints
 
-See [Plugin: REST API Reference](plugin.md#rest-api-reference) for the
+See [Plugin: REST API Reference]({{ '/technical/plugin/' | relative_url }}#rest-api-reference) for the
 full endpoint table (`Bridge/Sessions`, `Bridge/Status`,
 `Bridge/{sessionId}/Start`, `Bridge/{sessionId}/Stop`,
 `Bridge/{sessionId}/Follow?roomId=…`) and auth gating. `Follow` attaches
@@ -192,6 +192,6 @@ rest of the client uses to call plugin endpoints.
 
 ## Related
 
-- [Features: Known Limitations](../features.md#known-limitations) — how this changes the "web only" caveat
-- [Troubleshooting & FAQ: Can I host from Fladder or another Android TV app?](../troubleshooting.md#usage)
-- [User Guide: Hosting from a TV App](../user-guide.md#hosting-from-a-tv-app)
+- [Features: Known Limitations]({{ '/features/' | relative_url }}#known-limitations) — how this changes the "web only" caveat
+- [Troubleshooting & FAQ: Can I host from Fladder or another Android TV app?]({{ '/troubleshooting/' | relative_url }}#usage)
+- [User Guide: Watching on a TV App]({{ '/user-guide/' | relative_url }}#watching-on-a-tv-app)
