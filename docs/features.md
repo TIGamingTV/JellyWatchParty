@@ -34,7 +34,7 @@ Watching media together remotely is challenging:
 3. **Synchronized playback** - Everyone sees the same frame at the same time
 4. **Continuous sync** - Background algorithms keep everyone aligned
 
-See [Core Structure](core-structure) for how the three components (plugin,
+See [Core Structure](core-structure/) for how the three components (plugin,
 session server, web client) work together to make this happen.
 
 ## Comparison with Alternatives
