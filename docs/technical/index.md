@@ -12,4 +12,4 @@ internals, plugin internals (including the REST API), sync algorithms,
 and Host Bridge.
 
 For a high-level, non-implementation overview of how the system fits
-together, see [Core Structure](../core-structure) instead.
+together, see [Core Structure]({{ '/core-structure/' | relative_url }}) instead.

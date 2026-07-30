@@ -6,7 +6,7 @@ nav_order: 4
 # Core Structure
 
 This page explains how JellyWatchParty is built at a system level. For
-implementation-level detail, see the [Technical Reference](technical)
+implementation-level detail, see the [Technical Reference]({{ '/technical/' | relative_url }})
 section (Protocol, Server, Client, Plugin, Sync Algorithms, Host Bridge).
 
 ## System Overview
@@ -61,13 +61,13 @@ Integrates with Jellyfin's plugin system.
 - Provide configuration UI for JWT settings
 - Generate JWT tokens for authenticated users
 - Bridge native (non-browser) Jellyfin sessions in as room hosts — see
-  [Host Bridge](technical/host-bridge)
+  [Host Bridge]({{ '/technical/host-bridge/' | relative_url }})
 
 For the normal browser flow, the plugin backend makes **no** outbound
 network calls to the session server — it only ever hands the browser a
 token and a URL, and the browser does the talking. The one exception is
 Host Bridge, which opens its own WebSocket to the session server on behalf
-of a bridged native session. Full detail: [Plugin](technical/plugin).
+of a bridged native session. Full detail: [Plugin]({{ '/technical/plugin/' | relative_url }}).
 
 ### 2. Session Server (Rust)
 
@@ -80,7 +80,7 @@ A lightweight WebSocket server that manages rooms and relays messages.
 
 All state is in-memory (`Arc<RwLock<HashMap<...>>>`) — no database, and
 everything is lost on restart, since rooms are ephemeral by design. Full
-detail: [Server](technical/server).
+detail: [Server]({{ '/technical/server/' | relative_url }}).
 
 ### 3. Web Client (JavaScript)
 
@@ -92,7 +92,7 @@ Modular JavaScript injected into Jellyfin's web interface.
 - Intercept video playback events and apply synchronized playback commands
 - Correct drift with playback rate adjustment, and synchronize clocks with the server
 
-Full detail: [Client](technical/client).
+Full detail: [Client]({{ '/technical/client/' | relative_url }}).
 
 ## Data Flow
 
@@ -157,7 +157,7 @@ Host                            Server                    Participants
   │                                ├── room_list ──────────────►│
 ```
 
-See [Server: Reconnect and Room Lifecycle](technical/server#reconnect-and-room-lifecycle)
+See [Server: Reconnect and Room Lifecycle]({{ '/technical/server/' | relative_url }}#reconnect-and-room-lifecycle)
 for the full mechanics, including the persistent client ID that makes
 reattachment possible.
 
@@ -184,7 +184,7 @@ Room   { room_id, name, host_id, clients, ready_clients, pending_play, state,
 
 **Client** (`JWP.state`): `ws`, `roomId`, `clientId`, `isHost`, `serverOffsetMs`,
 `lastSyncPosition`, `lastSyncServerTs`, `isSyncing`, `isBuffering`, and more —
-see [Client: `state.js`](technical/client#module-statejs) for the full list.
+see [Client: `state.js`]({{ '/technical/client/' | relative_url }}#module-statejs) for the full list.
 
 ## Security Model
 
@@ -194,7 +194,7 @@ see [Client: `state.js`](technical/client#module-statejs) for the full list.
 - **Rate limiting**: 30 messages/sec per client, 10 token requests/min per user
 - **Message size**: 64KB maximum
 
-See [Security](security) for the full security model and threat analysis.
+See [Security]({{ '/security/' | relative_url }}) for the full security model and threat analysis.
 
 ## Operational Limits
 
@@ -215,6 +215,6 @@ See [Security](security) for the full security model and threat analysis.
 | Sync loop interval | 500ms | Client-side drift check |
 
 For scaling limits and capacity planning, see
-[Deployment: Capacity Planning](deployment#capacity-planning). For the
+[Deployment: Capacity Planning]({{ '/deployment/' | relative_url }}#capacity-planning). For the
 detailed sync algorithms behind drift correction and clock sync, see
-[Sync Algorithms](technical/sync).
+[Sync Algorithms]({{ '/technical/sync/' | relative_url }}).

@@ -7,7 +7,7 @@ nav_order: 5
 
 Before using JellyWatchParty, ensure your Jellyfin administrator has
 installed the plugin, started the session server, and enabled the client
-script — see [Installation](installation) if not.
+script — see [Installation]({{ '/installation/' | relative_url }}) if not.
 
 ## Creating a Watch Party
 
@@ -24,7 +24,7 @@ As the host, you control playback for everyone. When you play, pause, or seek, a
 If you're watching on a native/TV client that can't run the Watch Party
 UI at all (e.g. the official Android TV app or Fladder), someone with
 browser access to the same server can bridge your session into a room —
-see [Host Bridge](technical/host-bridge) — in one of two ways:
+see [Host Bridge]({{ '/technical/host-bridge/' | relative_url }}) — in one of two ways:
 
 - **Host**: your TV session becomes the room's host. Guests join normally
   from their own room list; nothing changes on their end.
@@ -71,7 +71,7 @@ The Jellyfin homepage displays active watch parties in a dedicated "Watch Partie
 | Pause | All clients pause |
 | Seek | All clients jump to that position |
 | Close panel | Room stays active |
-| Leave room | Room closes, all participants disconnected (unless another participant remains — see [Features: Automatic host transfer](features#current-features)) |
+| Leave room | Room closes, all participants disconnected (unless another participant remains — see [Features: Automatic host transfer]({{ '/features/' | relative_url }}#current-features)) |
 
 ## Participant Experience
 
@@ -135,6 +135,6 @@ The "Out of sync" state is normal for a few seconds after joining or after the h
 
 ## Something Not Working?
 
-See [Troubleshooting & FAQ](troubleshooting) for common issues like the
+See [Troubleshooting & FAQ]({{ '/troubleshooting/' | relative_url }}) for common issues like the
 Watch Party button not appearing, sync problems, or rooms closing
 unexpectedly.

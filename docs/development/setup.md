@@ -146,6 +146,7 @@ JellyWatchParty/
 Run `just` for a full list (with submodules). Key commands:
 
 ### Development
+
 | Command | Description |
 |---------|-------------|
 | `just up` | Start full development environment |
@@ -156,6 +157,7 @@ Run `just` for a full list (with submodules). Key commands:
 | `just status` | Show service status with health checks |
 
 ### Build (`just build ...`)
+
 | Command | Description |
 |---------|-------------|
 | `just build` | Build the Jellyfin plugin (default) |
@@ -167,6 +169,7 @@ Run `just` for a full list (with submodules). Key commands:
 | `just release` | Build release artifacts (zip) |
 
 ### Testing (`just test ...`)
+
 | Command | Description |
 |---------|-------------|
 | `just test` | Run all tests (Rust + .NET) |
@@ -174,6 +177,7 @@ Run `just` for a full list (with submodules). Key commands:
 | `just test plugin` | Run .NET plugin tests |
 
 ### Linting (`just lint ...`)
+
 | Command | Description |
 |---------|-------------|
 | `just lint` | Run all linters (Rust + JS) |
@@ -183,6 +187,7 @@ Run `just` for a full list (with submodules). Key commands:
 | `just check` | Run cargo check (fast compile check) |
 
 ### Logs (`just logs ...`)
+
 | Command | Description |
 |---------|-------------|
 | `just logs` | Follow logs from all services |
@@ -190,6 +195,7 @@ Run `just` for a full list (with submodules). Key commands:
 | `just logs jellyfin` | Follow Jellyfin logs |
 
 ### Clean (`just clean ...`)
+
 | Command | Description |
 |---------|-------------|
 | `just clean` | Clean all build artifacts |
@@ -199,6 +205,7 @@ Run `just` for a full list (with submodules). Key commands:
 | `just reset` | Full reset (containers + artifacts) |
 
 ### Shell (`just shell ...`)
+
 | Command | Description |
 |---------|-------------|
 | `just shell server` | Open shell in session server container |
@@ -341,7 +348,7 @@ Things to test:
 
 **Tip:** Use `just watch` to automatically restart Jellyfin when JS files change, avoiding stale cache issues.
 
-For other issues (plugin not loading, WebSocket connection problems, build errors), see the [Troubleshooting & FAQ](../troubleshooting.md).
+For other issues (plugin not loading, WebSocket connection problems, build errors), see the [Troubleshooting & FAQ]({{ '/troubleshooting/' | relative_url }}).
 
 ## Build Optimization (Rust)
 
@@ -443,6 +450,6 @@ LOG_LEVEL=debug
 
 ## Next Steps
 
-- [Contributing](contributing.md) - How to contribute
-- [Testing](testing.md) - Running tests
-- [Core Structure](../core-structure.md) - System design
+- [Contributing]({{ '/development/contributing/' | relative_url }}) - How to contribute
+- [Testing]({{ '/development/testing/' | relative_url }}) - Running tests
+- [Core Structure]({{ '/core-structure/' | relative_url }}) - System design

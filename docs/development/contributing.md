@@ -215,7 +215,7 @@ dotnet test JellyWatchParty.Tests/JellyWatchParty.Tests.csproj
 
 All pull requests are validated by GitHub Actions CI and must pass before
 merging. Run `just fmt`, `just lint`, `just test`, and `just build` locally
-to check before pushing. See [CI/CD](ci.md) for the full pipeline
+to check before pushing. See [CI/CD]({{ '/development/ci/' | relative_url }}) for the full pipeline
 (workflows, jobs, security scans, and how to fix common CI failures).
 
 ## Code of Conduct

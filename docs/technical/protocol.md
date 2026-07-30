@@ -24,7 +24,7 @@ dropped connection, so it can reattach the client to its existing room
 membership (and resend `room_state`) instead of treating it as brand
 new. Only values that look like a real UUIDv4 are trusted; anything
 else is ignored and the server mints a fresh ID instead. See
-[Server: Persistent Client ID](server#persistent-client-id) for the
+[Server: Persistent Client ID]({{ '/technical/server/' | relative_url }}#persistent-client-id) for the
 reattachment mechanics.
 
 ## Message Format
@@ -360,7 +360,7 @@ Full room state. Sent after `create_room` or `join_room`.
 
 Sent after `create_room`, `join_room`, and on reattachment after a
 dropped-connection reconnect (see
-[Server: Reconnect and Room Lifecycle](server#reconnect-and-room-lifecycle)).
+[Server: Reconnect and Room Lifecycle]({{ '/technical/server/' | relative_url }}#reconnect-and-room-lifecycle)).
 
 ### `participants_update`
 

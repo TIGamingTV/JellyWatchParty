@@ -91,9 +91,9 @@ Serves the client JS *loader* (`plugin.js`) with caching support. The
 loader then fetches each individual module via
 `GET /JellyWatchParty/Client/{*path}` (`GetClientModule`, same embedded-
 resource/ETag caching model) — the client is not shipped as one
-pre-bundled file. See [Client](client.md) for the module list, and the
+pre-bundled file. See [Client]({{ '/technical/client/' | relative_url }}) for the module list, and the
 [REST API Reference](#rest-api-reference) below for the full endpoint
-list, including the [Host Bridge](host-bridge.md) endpoints this
+list, including the [Host Bridge]({{ '/technical/host-bridge/' | relative_url }}) endpoints this
 controller also exposes.
 
 ```csharp
@@ -358,7 +358,7 @@ The built DLL and dependencies are placed in `bin/Debug/net9.0/`.
 | `GET` | `/JellyWatchParty/ClientScript` | None | Client JS loader (`plugin.js`), ETag-cached |
 | `GET` | `/JellyWatchParty/Client/{*path}` | None | Individual client module by path, e.g. `Client/playback/sync.js` |
 | `GET` | `/JellyWatchParty/Token` | Jellyfin auth | Issues a JWT (or no-auth response) for the current user |
-| `GET` | `/JellyWatchParty/Bridge/Sessions` | Jellyfin auth (any user) | Sessions eligible to bridge in as a room host — see [Host Bridge](host-bridge.md) |
+| `GET` | `/JellyWatchParty/Bridge/Sessions` | Jellyfin auth (any user) | Sessions eligible to bridge in as a room host — see [Host Bridge]({{ '/technical/host-bridge/' | relative_url }}) |
 | `GET` | `/JellyWatchParty/Bridge/Status` | Jellyfin auth (any user) | Active bridges |
 | `POST` | `/JellyWatchParty/Bridge/{sessionId}/Start` | Jellyfin auth (any user) | Start bridging a session in as host |
 | `POST` | `/JellyWatchParty/Bridge/{sessionId}/Follow?roomId=…` | Jellyfin auth (any user) | Attach a session to a room as a receiver (follower) |
@@ -412,10 +412,10 @@ curl -X POST \
   "http://localhost:8096/System/Configuration/Plugin/0f2fd0fd-09ff-4f49-9f1c-4a8f421a4b7d"
 ```
 
-See [Configuration](../configuration) for the field reference and examples.
+See [Configuration]({{ '/configuration/' | relative_url }}) for the field reference and examples.
 
 ### WebSocket API
 
 The session server itself uses WebSocket, not REST, for real-time
 communication — endpoint `ws(s)://<host>:3000/ws`. See
-[Protocol](protocol.md) for the complete message specification.
+[Protocol]({{ '/technical/protocol/' | relative_url }}) for the complete message specification.
