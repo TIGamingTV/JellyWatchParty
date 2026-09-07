@@ -106,7 +106,7 @@ just build
 cd src/server
 cargo build --release
 
-# C# plugin
+# C# plugin - builds both net9.0 (Jellyfin 10.11) and net10.0 (Jellyfin 12)
 cd src/plugins/jellyfin/JellyWatchParty
 dotnet build -c Release
 ```
@@ -117,7 +117,8 @@ dotnet build -c Release
 |-----------|-----------------|
 | Session Server | `src/server/target/release/session-server` |
 | Session Server (Windows) | `jwp-session-server-windows-vX.Y.Z.zip` (CI-built, attached to GitHub Release) |
-| Plugin DLL | `src/plugins/jellyfin/JellyWatchParty/bin/Release/net9.0/JellyWatchParty.dll` |
+| Plugin DLL (Jellyfin 10.11) | `src/plugins/jellyfin/JellyWatchParty/bin/Release/net9.0/JellyWatchParty.dll` |
+| Plugin DLL (Jellyfin 12) | `src/plugins/jellyfin/JellyWatchParty/bin/Release/net10.0/JellyWatchParty.dll` |
 
 ## Release Steps
 
@@ -178,9 +179,11 @@ Or via GitHub UI:
 
 The workflow will automatically:
 - Build and push Docker images to GHCR
-- Build and attach the Jellyfin plugin zip
+- Build and attach a Jellyfin plugin zip per supported Jellyfin generation
+  (10.11 and, once released, 12.x — see
+  [Jellyfin 12 Migration]({{ '/jellyfin-12-migration/' | relative_url }}))
 - Build and attach a standalone Windows session server binary
-- Update `manifest.json` for the plugin repository
+- Update `manifest.json` with one `targetAbi` entry per plugin zip
 
 ### 8. Merge Back into `develop`
 
@@ -315,7 +318,9 @@ See [Develop Plugin Channel](#develop-plugin-channel) above.
 #### Via Direct Download
 
 1. Go to [Releases](https://github.com/TIGamingTV/JellyWatchParty/releases)
-2. Download `JellyWatchParty-vX.Y.Z.zip`
+2. Download the zip matching your Jellyfin generation:
+   `JellyWatchParty-vX.Y.Z-jellyfin10.zip` for 10.11.x, or
+   `JellyWatchParty-vX.Y.Z-jellyfin12.zip` for 12.x (once released)
 3. Extract to Jellyfin plugins folder
 4. Restart Jellyfin
 
