@@ -8,6 +8,22 @@
     "category": "General",
     "versions": [
       {
+        "version": "2.0.0.0",
+        "changelog": "**This release brings JWP to jellyfin-rc7**\r\n\r\n## What's Changed\r\n* docs: fix broken tables and dead internal links by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/56\r\n* Implement dual-target build for Jellyfin 10.11 + 12.x support by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/57\r\n* Claude/jellyfin v12 rc3 testing sakmhg by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/59\r\n* Restore the dual-target Jellyfin 10.11 + 12.x build clobbered by the #59 merge by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/60\r\n\r\n\r\n**Full Changelog**: https://github.com/TIGamingTV/JellyWatchParty/compare/v1.8.0.0...v2.0.0.0",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/TIGamingTV/JellyWatchParty/releases/download/v2.0.0.0/JellyWatchParty-v2.0.0.0-jellyfin12.zip",
+        "checksum": "14c79f31773f7b6917b1622fd1facd9d",
+        "timestamp": "2026-09-07T16:23:42Z"
+      },
+      {
+        "version": "2.0.0.0",
+        "changelog": "**This release brings JWP to jellyfin-rc7**\r\n\r\n## What's Changed\r\n* docs: fix broken tables and dead internal links by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/56\r\n* Implement dual-target build for Jellyfin 10.11 + 12.x support by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/57\r\n* Claude/jellyfin v12 rc3 testing sakmhg by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/59\r\n* Restore the dual-target Jellyfin 10.11 + 12.x build clobbered by the #59 merge by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/60\r\n\r\n\r\n**Full Changelog**: https://github.com/TIGamingTV/JellyWatchParty/compare/v1.8.0.0...v2.0.0.0",
+        "targetAbi": "10.11.11.0",
+        "sourceUrl": "https://github.com/TIGamingTV/JellyWatchParty/releases/download/v2.0.0.0/JellyWatchParty-v2.0.0.0-jellyfin10.zip",
+        "checksum": "55b0d611dbb82d34fb2aff6fefb395a6",
+        "timestamp": "2026-09-07T16:23:42Z"
+      },
+      {
         "version": "1.8.0.0",
         "changelog": "This release brings a fix for #51 \r\n\r\n**Full Changelog**: https://github.com/TIGamingTV/JellyWatchParty/compare/v1.7.0.0...v1.8.0.0",
         "targetAbi": "10.11.11.0",
