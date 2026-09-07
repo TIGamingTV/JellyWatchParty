@@ -18,6 +18,12 @@ JellyWatchParty enables synchronized media playback for [Jellyfin](https://jelly
 
 Forked from https://github.com/mhbxyz/OpenWatchParty
 
+> **Jellyfin 12 is not released yet, so it isn't supported yet either.**
+> Releases currently target Jellyfin 10.11 only. A dual-target build for
+> Jellyfin 12 is prepared and tested in CI (see the
+> [Jellyfin 12 Migration notes](https://tigamingtv.github.io/JellyWatchParty/jellyfin-12-migration/))
+> and will ship as soon as Jellyfin 12.0 goes stable.
+
 ## Quick Start with the File transformation Plugin
 
 ### Users

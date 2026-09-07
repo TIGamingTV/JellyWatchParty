@@ -34,6 +34,44 @@
     return { apiClient, accessToken, serverAddress };
   };
 
+  // Builds a Jellyfin `Authorization` header using the MediaBrowser scheme.
+  //
+  // This is the only token transport Jellyfin accepts unconditionally. The
+  // X-Emby-Token header we used to rely on is gated behind the server's
+  // EnableLegacyAuthorization setting, which Jellyfin 12 both defaults to
+  // false for new installs and force-disables on upgrade - so on a 12 server
+  // an X-Emby-Token-only request to /JellyWatchParty/Token gets a 401 and the
+  // whole feature goes quiet. The MediaBrowser scheme works on 10.11 and 12
+  // alike, and also survives an admin turning legacy auth off on 10.11.
+  //
+  // Descriptive parts are omitted rather than sent empty when ApiClient does
+  // not expose them, since Jellyfin parses the header positionally by name and
+  // a Device="undefined" is worse than no Device at all.
+  const buildAuthHeader = (apiClient, accessToken) => {
+    const quote = (value) => `"${String(value).replace(/"/g, '')}"`;
+    const part = (name, accessor) => {
+      if (!apiClient || typeof apiClient[accessor] !== 'function') return null;
+      let value;
+      try {
+        value = apiClient[accessor]();
+      } catch (e) {
+        return null;
+      }
+      if (value === null || value === undefined || value === '') return null;
+      return `${name}=${quote(value)}`;
+    };
+
+    const parts = [
+      part('Client', 'appName'),
+      part('Device', 'deviceName'),
+      part('DeviceId', 'deviceId'),
+      part('Version', 'appVersion'),
+      `Token=${quote(accessToken)}`
+    ].filter(Boolean);
+
+    return `MediaBrowser ${parts.join(', ')}`;
+  };
+
   const waitForApiClient = (maxWaitMs = 10000, intervalMs = 250) => {
     return new Promise((resolve) => {
       let elapsed = 0;
@@ -85,10 +123,15 @@
         state.userName = getJellyfinUsername();
         return null;
       }
-      const { accessToken, serverAddress } = apiAccess;
+      const { apiClient, accessToken, serverAddress } = apiAccess;
       const tokenUrl = `${serverAddress}/JellyWatchParty/Token`;
       const response = await fetch(tokenUrl, {
-        headers: { 'X-Emby-Token': accessToken }
+        headers: {
+          Authorization: buildAuthHeader(apiClient, accessToken),
+          // Kept alongside the modern header: harmless where legacy auth is
+          // off, and keeps very old servers working.
+          'X-Emby-Token': accessToken
+        }
       });
       if (!response.ok) {
         console.warn('[JellyWatchParty] Failed to fetch auth token:', response.status);
@@ -125,5 +168,5 @@
     }
   };
 
-  Object.assign(actions, { fetchAuthToken });
+  Object.assign(actions, { fetchAuthToken, buildAuthHeader });
 })();

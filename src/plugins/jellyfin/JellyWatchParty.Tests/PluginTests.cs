@@ -42,4 +42,42 @@ public class PluginTests
         Assert.True(parts.Length >= 2, "Version should have at least major.minor parts");
         Assert.All(parts, part => Assert.True(int.TryParse(part, out _), $"Version part '{part}' should be numeric"));
     }
+
+    // -- Server version diagnostics --
+
+    [Fact]
+    public void TargetedServerVersion_IsResolvedFromTheMediaBrowserCommonReference()
+    {
+        Assert.NotNull(Plugin.TargetedServerVersion);
+    }
+
+    [Fact]
+    public void RunningServerVersion_IsResolvedFromTheLoadedAssembly()
+    {
+        Assert.NotNull(Plugin.RunningServerVersion);
+    }
+
+    [Fact]
+    public void IsServerNewerMajor_FlagsAServerAWholeMajorAhead()
+    {
+        // The case this exists for: a 10.11-targeted build installed on
+        // Jellyfin 12, which Jellyfin allows because targetAbi is a floor.
+        Assert.True(Plugin.IsServerNewerMajor(new Version("12.0.0.0"), new Version("10.11.11.0")));
+    }
+
+    [Theory]
+    [InlineData("10.11.11.0", "10.11.11.0")]
+    [InlineData("10.11.12.0", "10.11.11.0")]
+    [InlineData("10.10.7.0", "10.11.11.0")]
+    public void IsServerNewerMajor_IsQuietWithinTheSameMajor(string running, string targeted)
+    {
+        Assert.False(Plugin.IsServerNewerMajor(new Version(running), new Version(targeted)));
+    }
+
+    [Fact]
+    public void IsServerNewerMajor_IsQuietWhenEitherVersionIsUnknown()
+    {
+        Assert.False(Plugin.IsServerNewerMajor(null, new Version("10.11.11.0")));
+        Assert.False(Plugin.IsServerNewerMajor(new Version("12.0.0.0"), null));
+    }
 }

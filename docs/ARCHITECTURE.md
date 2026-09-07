@@ -65,8 +65,10 @@ external database, everything is in-memory and lost on restart.
 
 C# plugin targeting the Jellyfin plugin ABI. Key files:
 
-- `JellyWatchPartyPlugin.csproj` — package metadata, Jellyfin SDK version
-  pins (`Jellyfin.Controller`, `Jellyfin.Model`, currently `10.11.11`).
+- `JellyWatchPartyPlugin.csproj` — package metadata; multi-targets `net9.0`
+  (Jellyfin 10.11.x) and `net10.0` (Jellyfin 12.x), with the
+  `Jellyfin.Controller`/`Jellyfin.Model` version per framework pinned in
+  `Directory.Build.props`.
 - `Plugin.cs` — plugin entry point, registers config page.
 - `Configuration/PluginConfiguration.cs` — plugin settings, notably
   `SessionServerUrl` (a plain string, e.g. `wss://host/ws` — used verbatim,
