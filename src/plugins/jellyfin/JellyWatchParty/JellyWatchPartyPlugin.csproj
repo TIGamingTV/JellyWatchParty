@@ -1,5 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- TargetFramework and JellyfinPackageVersion come from Directory.Build.props -->
+  <!-- TargetFrameworks and JellyfinPackageVersion come from Directory.Build.props -->
+  <!-- Building publishes one assembly per Jellyfin generation (net9.0 for
+       10.11.x, net10.0 for 12.x); see docs/jellyfin-12-migration.md. -->
   <PropertyGroup>
     <RootNamespace>JellyWatchParty.Plugin</RootNamespace>
     <Nullable>enable</Nullable>
