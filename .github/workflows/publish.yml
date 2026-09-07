@@ -9,6 +9,12 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: tigamingtv/jwp-session-server
+  # Must match TargetFramework in src/plugins/jellyfin/Directory.Build.props.
+  DOTNET_VERSION: '9.0.x'
+  # The Jellyfin ABI published builds declare. Jellyfin treats this as a
+  # minimum, not an exact match, so a newer server will happily install a
+  # build declaring an older ABI. See docs/JELLYFIN-12-MIGRATION.md.
+  JELLYFIN_TARGET_ABI: '10.11.11.0'
 permissions:
   contents: write
   packages: write
@@ -173,7 +179,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: ${{ matrix.dotnet-version }}
+          dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Copy JS files to plugin Web directory
         working-directory: src/plugins/jellyfin
@@ -365,8 +371,19 @@ jobs:
           done
 
           # Update manifest.json using jq
-          jq --argjson newVersions "$NEW_VERSIONS" \
-             '.[0].versions = $newVersions + .[0].versions' \
+          jq --arg version "$VERSION" \
+             --arg checksum "$CHECKSUM" \
+             --arg timestamp "$TIMESTAMP" \
+             --arg abi "$JELLYFIN_TARGET_ABI" \
+             --argjson changelog "$CHANGELOG" \
+             '.[0].versions = [{
+               "version": $version,
+               "changelog": $changelog,
+               "targetAbi": $abi,
+               "sourceUrl": "https://github.com/TIGamingTV/JellyWatchParty/releases/download/v\($version)/JellyWatchParty-v\($version).zip",
+               "checksum": $checksum,
+               "timestamp": $timestamp
+             }] + .[0].versions' \
              docs/jellyfin-plugin-repo/manifest.json > manifest.tmp.json
 
           mv manifest.tmp.json docs/jellyfin-plugin-repo/manifest.json
@@ -411,7 +428,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: ${{ matrix.dotnet-version }}
+          dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Copy JS files to plugin Web directory
         working-directory: src/plugins/jellyfin
@@ -494,32 +511,19 @@ jobs:
           TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           CHANGELOG=$(printf '%s' "$HEAD_COMMIT_MESSAGE" | jq -Rs '.')
 
-          NEW_VERSIONS='[]'
-          for entry in '12:12.0.0.0' '10:10.11.11.0'; do
-            JELLYFIN="${entry%%:*}"
-            ABI="${entry##*:}"
-            ZIP_NAME="JellyWatchParty-dev-jellyfin${JELLYFIN}.zip"
-            CHECKSUM=$(md5sum "artifacts/$ZIP_NAME" | awk '{print $1}')
-
-            NEW_VERSIONS=$(jq --arg version "$VERSION" \
-               --arg checksum "$CHECKSUM" \
-               --arg timestamp "$TIMESTAMP" \
-               --arg abi "$ABI" \
-               --arg url "https://github.com/TIGamingTV/JellyWatchParty/releases/download/develop-latest/${ZIP_NAME}" \
-               --argjson changelog "$CHANGELOG" \
-               --argjson acc "$NEW_VERSIONS" \
-               '$acc + [{
-                 "version": $version,
-                 "changelog": $changelog,
-                 "targetAbi": $abi,
-                 "sourceUrl": $url,
-                 "checksum": $checksum,
-                 "timestamp": $timestamp
-               }]' <<< 'null')
-          done
-
-          jq --argjson newVersions "$NEW_VERSIONS" \
-             '.[0].versions = $newVersions' \
+          jq --arg version "$VERSION" \
+             --arg checksum "$CHECKSUM" \
+             --arg timestamp "$TIMESTAMP" \
+             --arg abi "$JELLYFIN_TARGET_ABI" \
+             --argjson changelog "$CHANGELOG" \
+             '.[0].versions = [{
+               "version": $version,
+               "changelog": $changelog,
+               "targetAbi": $abi,
+               "sourceUrl": "https://github.com/TIGamingTV/JellyWatchParty/releases/download/develop-latest/JellyWatchParty-dev.zip",
+               "checksum": $checksum,
+               "timestamp": $timestamp
+             }]' \
              docs/jellyfin-plugin-repo/manifest-dev.json > manifest-dev.tmp.json
 
           mv manifest-dev.tmp.json docs/jellyfin-plugin-repo/manifest-dev.json

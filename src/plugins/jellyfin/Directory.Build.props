@@ -1,35 +1,18 @@
 <Project>
   <!--
-    Both Jellyfin generations this plugin builds for, in one place.
+    The Jellyfin release this plugin is built for, in one place.
 
     Jellyfin pins plugins to a framework and an ABI: 10.11.x is net9.0 against
     the 10.11.x Jellyfin packages, while Jellyfin 12 is net10.0 against the
     12.x packages (Jellyfin.Controller 12.x ships lib/net10.0 only, so the two
-    move together and cannot be mixed in one build). Multi-targeting builds
-    one assembly per generation from the same source and test suite - see
-    docs/jellyfin-12-migration.md.
+    move together and cannot be mixed in one build).
+
+    Switching Jellyfin major version starts with these two properties, plus
+    JELLYFIN_TARGET_ABI and DOTNET_VERSION in .github/workflows/. The full
+    checklist is in docs/JELLYFIN-12-MIGRATION.md.
   -->
   <PropertyGroup>
-    <TargetFrameworks>net9.0;net10.0</TargetFrameworks>
-  </PropertyGroup>
-
-  <!-- Jellyfin 10.11.x -->
-  <PropertyGroup Condition="'$(TargetFramework)' == 'net9.0'">
+    <TargetFramework>net9.0</TargetFramework>
     <JellyfinPackageVersion>10.11.11</JellyfinPackageVersion>
-    <JellyfinTargetAbi>10.11.11.0</JellyfinTargetAbi>
-  </PropertyGroup>
-
-  <!--
-    Jellyfin 12.x. Pinned to the latest release candidate until 12.0 ships
-    stable - bump JellyfinPackageVersion to the stable release at that point
-    (JellyfinTargetAbi can stay "12.0.0.0") and re-run the test suite; the API
-    this plugin uses has been byte-identical across every RC so far, so no
-    source changes are expected. Nothing else needs to change - the CI and
-    publish workflows read the ABI from their own build matrices, not from
-    here. See docs/jellyfin-12-migration.md.
-  -->
-  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0'">
-    <JellyfinPackageVersion>12.0.0-rc7</JellyfinPackageVersion>
-    <JellyfinTargetAbi>12.0.0.0</JellyfinTargetAbi>
   </PropertyGroup>
 </Project>

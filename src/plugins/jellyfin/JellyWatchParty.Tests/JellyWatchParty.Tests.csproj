@@ -1,7 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- TargetFrameworks and JellyfinPackageVersion come from Directory.Build.props -->
-  <!-- `dotnet test` runs this project once per framework, exercising the
-       plugin against both Jellyfin generations from one test suite. -->
+  <!-- TargetFramework and JellyfinPackageVersion come from Directory.Build.props -->
   <PropertyGroup>
     <RootNamespace>JellyWatchParty.Plugin.Tests</RootNamespace>
     <Nullable>enable</Nullable>
