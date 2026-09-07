@@ -9,13 +9,13 @@ nav_order: 7
 
 1. [ ] Session server running? (`curl http://localhost:3000/health`)
 2. [ ] Plugin installed? (Check Dashboard > Plugins)
-3. [ ] Script tag in Custom HTML? (Dashboard > General) — or is [file-transformation](installation#enable-the-client-script) installed?
+3. [ ] Script tag in Custom HTML? (Dashboard > General) — or is [file-transformation]({{ '/installation/' | relative_url }}#enable-the-client-script) installed?
 4. [ ] Browser cache cleared? (Ctrl+F5)
 5. [ ] Correct WebSocket URL configured?
 6. [ ] Firewall allowing the session server port (default 3000)?
 
-Related: [Core Structure](core-structure) for expected system behavior,
-[Security](security) for authentication/CORS issues, [Configuration](configuration)
+Related: [Core Structure]({{ '/core-structure/' | relative_url }}) for expected system behavior,
+[Security]({{ '/security/' | relative_url }}) for authentication/CORS issues, [Configuration]({{ '/configuration/' | relative_url }})
 for server and plugin settings.
 
 ## Common Issues
@@ -47,24 +47,24 @@ Participants out of sync, playback drifting apart, or frequent jumping/stutterin
 4. **HLS/transcoding** — transcoded streams have higher latency; try direct play or reduce quality if network is slow
 5. **Check everyone has the same media** — different versions may have different durations
 
-Technical details: [Sync Algorithms](technical/sync).
+Technical details: [Sync Algorithms]({{ '/technical/sync/' | relative_url }}).
 
 ### Room Closes Unexpectedly
 
 Causes: the host disconnected (network dropped, browser closed, computer slept) and didn't reconnect within 90 seconds and no other participant remained to be promoted; or the server restarted (rooms are in-memory/ephemeral). Check server logs for errors if this happens with a stable host connection.
 
-Technical details: [Core Structure: Host Disconnect](core-structure#host-disconnect-grace-period-then-closure).
+Technical details: [Core Structure: Host Disconnect]({{ '/core-structure/' | relative_url }}#host-disconnect-grace-period-then-closure).
 
 ### Authentication Errors
 
 1. **Check JWT configuration matches** — plugin JWT Secret must match server `JWT_SECRET`; both must be configured or both must be empty
 2. **Check token expiration** — default 1 hour; refresh the page for a new token
 3. **Rate limiting** — max 10 token requests per minute; wait and try again
-4. **JWT Secret is set but very short** — the widget shows "Offline" and changing the Session Server URL setting seems to have no effect: check the Jellyfin server logs for repeated errors on `GET /JellyWatchParty/Token`. A JWT Secret under 32 characters is treated as unusable and disables authentication (see [Configuration: JWT Secret Guidelines](configuration#jwt-secret-guidelines)) — set a proper secret with `openssl rand -base64 32`, or clear the field entirely to explicitly run without authentication.
+4. **JWT Secret is set but very short** — the widget shows "Offline" and changing the Session Server URL setting seems to have no effect: check the Jellyfin server logs for repeated errors on `GET /JellyWatchParty/Token`. A JWT Secret under 32 characters is treated as unusable and disables authentication (see [Configuration: JWT Secret Guidelines]({{ '/configuration/' | relative_url }}#jwt-secret-guidelines)) — set a proper secret with `openssl rand -base64 32`, or clear the field entirely to explicitly run without authentication.
 
 ### HLS Streaming Issues
 
-Sync works initially but drifts during playback, frequent buffering interrupts sync, position jumps backward, or "false pauses" trigger unwanted sync events. HLS chunks video into small segments, causing buffering gaps, position reporting delays, and `readyState` changes during segment loads. JellyWatchParty filters most of this automatically (see [Sync Algorithms: HLS Handling](technical/sync#5-hls-handling-and-feedback-loop-prevention)); if issues persist:
+Sync works initially but drifts during playback, frequent buffering interrupts sync, position jumps backward, or "false pauses" trigger unwanted sync events. HLS chunks video into small segments, causing buffering gaps, position reporting delays, and `readyState` changes during segment loads. JellyWatchParty filters most of this automatically (see [Sync Algorithms: HLS Handling]({{ '/technical/sync/' | relative_url }}#5-hls-handling-and-feedback-loop-prevention)); if issues persist:
 
 - Reduce bitrate/quality in Jellyfin playback settings
 - Prefer Direct Play or Direct Stream over full transcoding (Dashboard > Playback > Active Devices shows which is in use)
@@ -113,7 +113,7 @@ Or open Developer Tools (F12) > Network tab > filter "WS" to inspect WebSocket m
 
 **Memory (server):** rooms are in-memory (~1KB/client, ~5KB/room); restart to clear if needed.
 
-**Slow sync:** reduce `SYNC_LEAD_MS` if latency is low, increase if latency is high (see [Sync Algorithms](technical/sync)); check client hardware.
+**Slow sync:** reduce `SYNC_LEAD_MS` if latency is low, increase if latency is high (see [Sync Algorithms]({{ '/technical/sync/' | relative_url }})); check client hardware.
 
 ## Reset Procedures
 
@@ -141,7 +141,7 @@ Or open Developer Tools (F12) > Network tab > filter "WS" to inspect WebSocket m
 
 **Can I run everything on one machine?** Yes — Jellyfin and the session server use different ports (8096 and 3000 by default).
 
-**Is Docker required?** No, but recommended. See [Installation](installation) for native build options.
+**Is Docker required?** No, but recommended. See [Installation]({{ '/installation/' | relative_url }}) for native build options.
 
 **Why do I need to add a script tag manually?** Since Jellyfin 10.9, plugins can't automatically inject scripts for security reasons — the manual step (or the file-transformation plugin) ensures administrators explicitly approve script injection.
 
@@ -151,7 +151,7 @@ Or open Developer Tools (F12) > Network tab > filter "WS" to inspect WebSocket m
 
 **What happens if the host leaves?** A brief disconnect (network blip, backgrounded app) is invisible to participants for 90 seconds while the server waits for reconnection. If the host doesn't return and other participants remain, the earliest-joined one is automatically promoted to host and the room stays open. It only closes if no one is left.
 
-**Can I use the official Android TV app (or Fladder) in a watch party?** Yes, via the [Native Client Bridge](technical/host-bridge) — any logged-in user with browser access can bridge the native session into a room as **host** (it drives the room) or, while in the room, as a **receiver** (it follows the room's play/pause/seek; the TV must already be playing the same item, and the room must not be password-protected).
+**Can I use the official Android TV app (or Fladder) in a watch party?** Yes, via the [Native Client Bridge]({{ '/technical/host-bridge/' | relative_url }}) — any logged-in user with browser access can bridge the native session into a room as **host** (it drives the room) or, while in the room, as a **receiver** (it follows the room's play/pause/seek; the TV must already be playing the same item, and the room must not be password-protected).
 
 **Can I chat with other viewers?** Yes — real-time text chat in the panel, with the last 50 messages replayed to late joiners/reconnecting clients.
 
@@ -163,7 +163,7 @@ Or open Developer Tools (F12) > Network tab > filter "WS" to inspect WebSocket m
 
 **How accurate is the sync?** Typically within 100-200ms, using clock synchronization and drift correction.
 
-**Why do I see slight speed changes?** Playback speed is adjusted (0.85x-2.0x) to gradually correct drift without jarring seeks — imperceptible in most cases. See [Sync Algorithms](technical/sync).
+**Why do I see slight speed changes?** Playback speed is adjusted (0.85x-2.0x) to gradually correct drift without jarring seeks — imperceptible in most cases. See [Sync Algorithms]({{ '/technical/sync/' | relative_url }}).
 
 **What if I'm several seconds behind?** If drift exceeds 2.0 seconds, the client seeks directly instead of adjusting speed.
 
@@ -173,11 +173,11 @@ Or open Developer Tools (F12) > Network tab > filter "WS" to inspect WebSocket m
 
 **What ports are used?** 8096 (Jellyfin) and 3000 (session server) by default.
 
-**What protocol is used?** WebSocket with JSON messages — see [Protocol](technical/protocol).
+**What protocol is used?** WebSocket with JSON messages — see [Protocol]({{ '/technical/protocol/' | relative_url }}).
 
-**Is the connection encrypted?** It can be — use WSS with HTTPS. See [Security](security).
+**Is the connection encrypted?** It can be — use WSS with HTTPS. See [Security]({{ '/security/' | relative_url }}).
 
-**How is authentication handled?** Optional JWT tokens — see [Security](security).
+**How is authentication handled?** Optional JWT tokens — see [Security]({{ '/security/' | relative_url }}).
 
 ## Getting Help
 

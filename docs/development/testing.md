@@ -233,7 +233,7 @@ Create test users in Jellyfin:
 
 ## Continuous Integration
 
-Tests run automatically on every push and pull request via GitHub Actions. See [CI/CD](ci.md) for details on the CI pipeline.
+Tests run automatically on every push and pull request via GitHub Actions. See [CI/CD]({{ '/development/ci/' | relative_url }}) for details on the CI pipeline.
 
 ## Debugging Test Failures
 
@@ -307,6 +307,6 @@ public void GetToken_WhenAuthenticated_ReturnsValidToken() { }
 
 ## Next Steps
 
-- [Contributing](contributing.md) - How to submit tests
-- [Setup](setup.md) - Development environment
-- [Release](release.md) - Release process
+- [Contributing]({{ '/development/contributing/' | relative_url }}) - How to submit tests
+- [Setup]({{ '/development/setup/' | relative_url }}) - Development environment
+- [Release]({{ '/development/release/' | relative_url }}) - Release process

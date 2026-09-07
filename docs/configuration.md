@@ -18,8 +18,8 @@ Access the plugin configuration page at **Dashboard** > **Plugins** > **JellyWat
 | Invite TTL | `3600` | Invite link lifetime in seconds (reserved for future use) |
 | Session Server URL | (empty) | Custom WebSocket server URL. If empty, uses `ws(s)://[host]:3000/ws`. Invalid or suspicious values (wrong scheme, malformed URL, bare internal hostname) show a non-blocking warning in the config page and browser console/toast — the value is still saved and used as entered. |
 | Hide native SyncPlay button | `false` | Hides Jellyfin's built-in SyncPlay button in the web client, since JellyWatchParty replaces that feature. |
-| Allow third-party clients to host | `false` | Opt-in. Lets a native/third-party client that can't run the injected script (Fladder, Swiftfin, Infuse, official mobile apps, …) be bridged in as a room **host**. While off, the "Host From Another Device" picker is hidden and the server rejects host-bridge requests. See [Host Bridge](technical/host-bridge). |
-| Allow supported clients as receivers | `false` | Opt-in. Lets a supported native client (such as the official Jellyfin Android TV app) be attached to a room as a **receiver** that follows the host via remote-control commands. While off, the "Add a Device to This Room" picker is hidden and the server rejects receiver requests. See [Host Bridge](technical/host-bridge). |
+| Allow third-party clients to host | `false` | Opt-in. Lets a native/third-party client that can't run the injected script (Fladder, Swiftfin, Infuse, official mobile apps, …) be bridged in as a room **host**. While off, the "Host From Another Device" picker is hidden and the server rejects host-bridge requests. See [Host Bridge]({{ '/technical/host-bridge/' | relative_url }}). |
+| Allow supported clients as receivers | `false` | Opt-in. Lets a supported native client (such as the official Jellyfin Android TV app) be attached to a room as a **receiver** that follows the host via remote-control commands. While off, the "Add a Device to This Room" picker is hidden and the server rejects receiver requests. See [Host Bridge]({{ '/technical/host-bridge/' | relative_url }}). |
 
 ### JWT Secret Guidelines
 
@@ -70,7 +70,7 @@ services:
 
 Specify allowed origins instead of using a wildcard (`*`) — using `*` logs a
 security warning and is not recommended for production. See
-[Security: CORS](security#cors-cross-origin-resource-sharing) for details.
+[Security: CORS]({{ '/security/' | relative_url }}#cors-cross-origin-resource-sharing) for details.
 
 ```bash
 # Single origin
@@ -106,7 +106,7 @@ logged to the browser console and the plugin's server log.
 Client and server sync-timing constants (drift correction thresholds,
 clock-sync smoothing, scheduling delays) are not configurable at runtime,
 but can be modified in source. See [Sync Algorithms: Threshold and Timing
-Summary](technical/sync#threshold-and-timing-summary) for the full,
+Summary]({{ '/technical/sync/' | relative_url }}#threshold-and-timing-summary) for the full,
 authoritative list of constants rather than repeating it here.
 
 ## Configuration Examples
@@ -174,6 +174,6 @@ curl -H "X-Emby-Token: YOUR_API_KEY" \
 
 ## Next Steps
 
-- [Security](security) - Security hardening
-- [Deployment](deployment) - Production deployment
-- [Troubleshooting & FAQ](troubleshooting) - Common issues
+- [Security]({{ '/security/' | relative_url }}) - Security hardening
+- [Deployment]({{ '/deployment/' | relative_url }}) - Production deployment
+- [Troubleshooting & FAQ]({{ '/troubleshooting/' | relative_url }}) - Common issues

@@ -154,9 +154,25 @@ jobs:
           docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
 
   build-plugin:
-    name: Build Jellyfin Plugin
+    name: Build Jellyfin Plugin (Jellyfin ${{ matrix.jellyfin }})
     runs-on: ubuntu-latest
     if: github.event_name == 'release'
+    strategy:
+      fail-fast: false
+      # One leg per Jellyfin generation this plugin publishes for. The
+      # package version each targets is pinned once, in
+      # src/plugins/jellyfin/Directory.Build.props - nothing here needs to
+      # change when Jellyfin 12.0 goes stable. The targetAbi each jellyfin
+      # number maps to lives in the manifest-update step below (keep them in
+      # sync). See docs/jellyfin-12-migration.md.
+      matrix:
+        include:
+          - jellyfin: '10'
+            dotnet-version: '9.0.x'
+            target-framework: net9.0
+          - jellyfin: '12'
+            dotnet-version: '10.0.x'
+            target-framework: net10.0
     steps:
       - uses: actions/checkout@v4
 
@@ -188,7 +204,7 @@ jobs:
           # POST /Plugins/{id}/{version}/Disable, which no longer matches any
           # loaded plugin — the enable/disable toggle 404s and the plugin
           # can't be turned off (and it always shows an update as available).
-          dotnet publish -c Release -o dist \
+          dotnet publish -c Release -f ${{ matrix.target-framework }} -o dist \
             -p:Version="$VERSION" -p:AssemblyVersion="$VERSION" -p:FileVersion="$VERSION"
 
       - name: Create plugin zip
@@ -196,13 +212,13 @@ jobs:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           cd src/plugins/jellyfin/JellyWatchParty/dist
-          zip -r "../JellyWatchParty-${RELEASE_TAG}.zip" .
+          zip -r "../JellyWatchParty-${RELEASE_TAG}-jellyfin${{ matrix.jellyfin }}.zip" .
 
       - name: Upload plugin artifact
         uses: actions/upload-artifact@v4
         with:
-          name: jellyfin-plugin
-          path: src/plugins/jellyfin/JellyWatchParty/JellyWatchParty-${{ github.event.release.tag_name }}.zip
+          name: jellyfin-plugin-${{ matrix.jellyfin }}
+          path: src/plugins/jellyfin/JellyWatchParty/JellyWatchParty-${{ github.event.release.tag_name }}-jellyfin${{ matrix.jellyfin }}.zip
 
   build-windows-server:
     name: Build Windows Session Server
@@ -267,11 +283,12 @@ jobs:
     needs: [merge, build-plugin, build-windows-server]
     if: always() && github.event_name == 'release' && needs.merge.result == 'success' && needs.build-plugin.result == 'success' && needs.build-windows-server.result == 'success'
     steps:
-      - name: Download plugin artifact
+      - name: Download plugin artifacts
         uses: actions/download-artifact@v4
         with:
-          name: jellyfin-plugin
+          pattern: jellyfin-plugin-*
           path: artifacts
+          merge-multiple: true
 
       - name: Download Windows server artifact
         uses: actions/download-artifact@v4
@@ -297,16 +314,24 @@ jobs:
           ref: main
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Download plugin artifact
+      - name: Download plugin artifacts
         uses: actions/download-artifact@v4
         with:
-          name: jellyfin-plugin
+          pattern: jellyfin-plugin-*
           path: artifacts
+          merge-multiple: true
 
       - name: Update manifest.json
         # Release bodies and tag names are free text — see the note on the
         # develop manifest step. The tag is validated below, but interpolating
         # it directly would break the script before that check ever runs.
+        #
+        # One version entry per Jellyfin generation is added, all sharing this
+        # release's plugin version but differing in targetAbi/sourceUrl/
+        # checksum. Jellyfin resolves the highest targetAbi a server
+        # satisfies, so both generations keep getting updates from the same
+        # manifest. The jellyfin/abi pairing here must match the build-plugin
+        # matrix above.
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           RELEASE_BODY: ${{ github.event.release.body }}
@@ -318,10 +343,32 @@ jobs:
             exit 1
           fi
 
-          ZIP_FILE=$(ls artifacts/*.zip | head -1)
-          CHECKSUM=$(md5sum "$ZIP_FILE" | awk '{print $1}')
           TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           CHANGELOG=$(printf '%s' "$RELEASE_BODY" | jq -Rs '.')
+
+          NEW_VERSIONS='[]'
+          for entry in '12:12.0.0.0' '10:10.11.11.0'; do
+            JELLYFIN="${entry%%:*}"
+            ABI="${entry##*:}"
+            ZIP_NAME="JellyWatchParty-v${VERSION}-jellyfin${JELLYFIN}.zip"
+            CHECKSUM=$(md5sum "artifacts/$ZIP_NAME" | awk '{print $1}')
+
+            NEW_VERSIONS=$(jq --arg version "$VERSION" \
+               --arg checksum "$CHECKSUM" \
+               --arg timestamp "$TIMESTAMP" \
+               --arg abi "$ABI" \
+               --arg url "https://github.com/TIGamingTV/JellyWatchParty/releases/download/v${VERSION}/${ZIP_NAME}" \
+               --argjson changelog "$CHANGELOG" \
+               --argjson acc "$NEW_VERSIONS" \
+               '$acc + [{
+                 "version": $version,
+                 "changelog": $changelog,
+                 "targetAbi": $abi,
+                 "sourceUrl": $url,
+                 "checksum": $checksum,
+                 "timestamp": $timestamp
+               }]' <<< 'null')
+          done
 
           # Update manifest.json using jq
           jq --arg version "$VERSION" \
@@ -360,13 +407,21 @@ jobs:
             -d '{"ref":"main"}'
 
   build-plugin-dev:
-    name: Build & Publish Develop Plugin
+    name: Build Develop Plugin (Jellyfin ${{ matrix.jellyfin }})
     runs-on: ubuntu-latest
     needs: changes
     if: github.event_name == 'push' && github.ref == 'refs/heads/develop' && needs.changes.outputs.plugin == 'true'
-    outputs:
-      version: ${{ steps.package.outputs.version }}
-      checksum: ${{ steps.package.outputs.checksum }}
+    strategy:
+      fail-fast: false
+      # Keep in sync with the build-plugin matrix above.
+      matrix:
+        include:
+          - jellyfin: '10'
+            dotnet-version: '9.0.x'
+            target-framework: net9.0
+          - jellyfin: '12'
+            dotnet-version: '10.0.x'
+            target-framework: net10.0
     steps:
       - uses: actions/checkout@v4
 
@@ -391,18 +446,36 @@ jobs:
           VERSION="0.0.${{ github.run_number }}"
           # Keep the assembly version identical to the develop manifest version
           # (see the release build for why a mismatch breaks the disable toggle).
-          dotnet publish -c Release -o dist \
+          dotnet publish -c Release -f ${{ matrix.target-framework }} -o dist \
             -p:Version="$VERSION" -p:AssemblyVersion="$VERSION" -p:FileVersion="$VERSION"
 
       - name: Package develop build
-        id: package
         working-directory: src/plugins/jellyfin/JellyWatchParty
-        run: |
-          VERSION="0.0.${{ github.run_number }}"
-          (cd dist && zip -r ../JellyWatchParty-dev.zip .)
-          CHECKSUM=$(md5sum JellyWatchParty-dev.zip | awk '{print $1}')
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "checksum=$CHECKSUM" >> "$GITHUB_OUTPUT"
+        run: (cd dist && zip -r "../JellyWatchParty-dev-jellyfin${{ matrix.jellyfin }}.zip" .)
+
+      - name: Upload plugin artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jellyfin-plugin-dev-${{ matrix.jellyfin }}
+          path: src/plugins/jellyfin/JellyWatchParty/JellyWatchParty-dev-jellyfin${{ matrix.jellyfin }}.zip
+
+  publish-plugin-dev:
+    name: Publish Develop Plugin & Manifest
+    runs-on: ubuntu-latest
+    needs: build-plugin-dev
+    if: needs.build-plugin-dev.result == 'success'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download plugin artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: jellyfin-plugin-dev-*
+          path: artifacts
+          merge-multiple: true
 
       - name: Publish rolling develop release
         uses: softprops/action-gh-release@v2
@@ -417,20 +490,9 @@ jobs:
             Latest commit: ${{ github.event.head_commit.message }}
           prerelease: true
           make_latest: false
-          files: src/plugins/jellyfin/JellyWatchParty/JellyWatchParty-dev.zip
+          files: artifacts/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  update-dev-manifest:
-    name: Update Develop Plugin Manifest
-    runs-on: ubuntu-latest
-    needs: build-plugin-dev
-    if: needs.build-plugin-dev.result == 'success'
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: main
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Update manifest-dev.json
         # Commit messages are free text. Interpolating ${{ }} into a run block
@@ -438,11 +500,14 @@ jobs:
         # quote, parenthesis or backtick in a commit message is a syntax error
         # at best and arbitrary command execution at worst. Pass it through the
         # environment, which the runner sets as data rather than script text.
+        #
+        # One version entry per Jellyfin generation, same as the release
+        # manifest - see the note there. Keep the jellyfin/abi pairing in sync
+        # with the build-plugin-dev matrix above.
         env:
           HEAD_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
-          VERSION: ${{ needs.build-plugin-dev.outputs.version }}
-          CHECKSUM: ${{ needs.build-plugin-dev.outputs.checksum }}
         run: |
+          VERSION="0.0.${{ github.run_number }}"
           TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           CHANGELOG=$(printf '%s' "$HEAD_COMMIT_MESSAGE" | jq -Rs '.')
 

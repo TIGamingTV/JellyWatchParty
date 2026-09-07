@@ -429,7 +429,7 @@ UUID once and stores it in `localStorage`
 (`getPersistentClientId()`/`withClientId()` in
 `src/clients/jellyfin-web/ws/connection.js`), then sends it as
 `?client_id=<uuid>` on every WebSocket connection attempt (see
-[Protocol](protocol)). If the server sees a connection with a `client_id`
+[Protocol]({{ '/technical/protocol/' | relative_url }})). If the server sees a connection with a `client_id`
 that still has a live (or grace-period) entry, it swaps in the new
 transport and keeps the existing room/host state (`ws/connection.rs`)
 instead of registering a new client. A client-supplied ID is only trusted
@@ -454,7 +454,7 @@ shows "Reconnecting..." in the UI while `autoReconnect=true`.
 
 Design limits: 20 clients per room, all state in-memory (rooms are
 ephemeral by design), single server instance (sufficient for typical use —
-see [Configuration: Multi-Instance Setup](../configuration#multi-instance-setup)
+see [Configuration: Multi-Instance Setup]({{ '/configuration/' | relative_url }}#multi-instance-setup)
 for why not to run more than one). At capacity, a join attempt gets a
 `"Room is full"` error instead of being added.
 

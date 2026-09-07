@@ -91,9 +91,9 @@ Serves the client JS *loader* (`plugin.js`) with caching support. The
 loader then fetches each individual module via
 `GET /JellyWatchParty/Client/{*path}` (`GetClientModule`, same embedded-
 resource/ETag caching model) — the client is not shipped as one
-pre-bundled file. See [Client](client.md) for the module list, and the
+pre-bundled file. See [Client]({{ '/technical/client/' | relative_url }}) for the module list, and the
 [REST API Reference](#rest-api-reference) below for the full endpoint
-list, including the [Host Bridge](host-bridge.md) endpoints this
+list, including the [Host Bridge]({{ '/technical/host-bridge/' | relative_url }}) endpoints this
 controller also exposes.
 
 ```csharp
@@ -327,10 +327,16 @@ assembly.GetManifestResourceStream("JellyWatchParty.Plugin.Web.plugin.js");
 
 ## Dependencies
 
+The project multi-targets `net9.0` and `net10.0` (Jellyfin 10.11.x and 12.x
+respectively — see
+[Jellyfin 12 Migration]({{ '/jellyfin-12-migration/' | relative_url }})), so
+`Jellyfin.Controller`/`Jellyfin.Model` are versioned per framework via
+`$(JellyfinPackageVersion)` in `Directory.Build.props`:
+
 ```xml
 <ItemGroup>
-  <PackageReference Include="Jellyfin.Controller" Version="10.11.11" ExcludeAssets="runtime" />
-  <PackageReference Include="Jellyfin.Model" Version="10.11.11" ExcludeAssets="runtime" />
+  <PackageReference Include="Jellyfin.Controller" Version="$(JellyfinPackageVersion)" ExcludeAssets="runtime" />
+  <PackageReference Include="Jellyfin.Model" Version="$(JellyfinPackageVersion)" ExcludeAssets="runtime" />
   <PackageReference Include="Newtonsoft.Json" Version="13.0.3" ExcludeAssets="runtime" />
   <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="6.35.0" />
   <PackageReference Include="Microsoft.IdentityModel.Tokens" Version="6.35.0" />
@@ -339,15 +345,23 @@ assembly.GetManifestResourceStream("JellyWatchParty.Plugin.Web.plugin.js");
 
 ## Building
 
+Building both target frameworks needs both the .NET 9 and .NET 10 SDKs
+installed side by side. If you only have one, build a single framework with
+`-f`:
+
 ```bash
-# Build with dotnet
+# Build with dotnet - produces both target frameworks (needs both SDKs)
 dotnet build
+
+# Only have .NET 9? Build just the Jellyfin 10.11 target:
+dotnet build -f net9.0
 
 # Or use just (from project root)
 just build plugin
 ```
 
-The built DLL and dependencies are placed in `bin/Debug/net9.0/`.
+The built DLL and dependencies are placed in `bin/Debug/net9.0/` (Jellyfin
+10.11.x) and `bin/Debug/net10.0/` (Jellyfin 12.x).
 
 ## REST API Reference
 
@@ -358,7 +372,7 @@ The built DLL and dependencies are placed in `bin/Debug/net9.0/`.
 | `GET` | `/JellyWatchParty/ClientScript` | None | Client JS loader (`plugin.js`), ETag-cached |
 | `GET` | `/JellyWatchParty/Client/{*path}` | None | Individual client module by path, e.g. `Client/playback/sync.js` |
 | `GET` | `/JellyWatchParty/Token` | Jellyfin auth | Issues a JWT (or no-auth response) for the current user |
-| `GET` | `/JellyWatchParty/Bridge/Sessions` | Jellyfin auth (any user) | Sessions eligible to bridge in as a room host — see [Host Bridge](host-bridge.md) |
+| `GET` | `/JellyWatchParty/Bridge/Sessions` | Jellyfin auth (any user) | Sessions eligible to bridge in as a room host — see [Host Bridge]({{ '/technical/host-bridge/' | relative_url }}) |
 | `GET` | `/JellyWatchParty/Bridge/Status` | Jellyfin auth (any user) | Active bridges |
 | `POST` | `/JellyWatchParty/Bridge/{sessionId}/Start` | Jellyfin auth (any user) | Start bridging a session in as host |
 | `POST` | `/JellyWatchParty/Bridge/{sessionId}/Follow?roomId=…` | Jellyfin auth (any user) | Attach a session to a room as a receiver (follower) |
@@ -412,10 +426,10 @@ curl -X POST \
   "http://localhost:8096/System/Configuration/Plugin/0f2fd0fd-09ff-4f49-9f1c-4a8f421a4b7d"
 ```
 
-See [Configuration](../configuration) for the field reference and examples.
+See [Configuration]({{ '/configuration/' | relative_url }}) for the field reference and examples.
 
 ### WebSocket API
 
 The session server itself uses WebSocket, not REST, for real-time
 communication — endpoint `ws(s)://<host>:3000/ws`. See
-[Protocol](protocol.md) for the complete message specification.
+[Protocol]({{ '/technical/protocol/' | relative_url }}) for the complete message specification.

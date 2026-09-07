@@ -167,7 +167,7 @@ Set plugin **Session Server URL** to `wss://jwp.example.com/ws`. If `cloudflared
       security_opt: [no-new-privileges:true]
   ```
 
-See [Security](security) for authentication, CORS, and the full threat model.
+See [Security]({{ '/security/' | relative_url }}) for authentication, CORS, and the full threat model.
 
 ## Health Checks
 
@@ -258,7 +258,7 @@ The session server doesn't currently expose Prometheus metrics itself — monito
 | CPU | Minimal | Minimal |
 | Bandwidth | ~1 KB/s | ~10 KB/s |
 
-**Current limitations:** single instance (stateful, in-memory) — see [Configuration: Multi-Instance Setup](configuration#multi-instance-setup) for why you shouldn't run more than one.
+**Current limitations:** single instance (stateful, in-memory) — see [Configuration: Multi-Instance Setup]({{ '/configuration/' | relative_url }}#multi-instance-setup) for why you shouldn't run more than one.
 
 **Connection limits:** WebSocket connections are bounded by OS file-descriptor limits (default 1024) — raise with `ulimit -n 65535`, or in Docker:
 
@@ -296,4 +296,4 @@ docker compose start jellyfin
 
 ## Troubleshooting a Deployment
 
-If the health check is failing: confirm the container is running (`docker ps`), check its logs (`docker logs session-server`), and test from inside the container (`docker exec session-server curl localhost:3000/health`). For everything else, see [Troubleshooting & FAQ](troubleshooting).
+If the health check is failing: confirm the container is running (`docker ps`), check its logs (`docker logs session-server`), and test from inside the container (`docker exec session-server curl localhost:3000/health`). For everything else, see [Troubleshooting & FAQ]({{ '/troubleshooting/' | relative_url }}).

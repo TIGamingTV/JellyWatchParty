@@ -40,4 +40,7 @@ services:
     environment:
       - HOME=/tmp
       - DOTNET_CLI_HOME=/tmp/.dotnet
-    command: dotnet publish -c Release -o /src/dist JellyWatchPartyPlugin.csproj
+    # See the matching comment in infra/docker/dev/docker-compose.yml: this
+    # SDK image only has .NET 9, so build just the net9.0 (Jellyfin 10.11.x)
+    # leg of the multi-targeted plugin project.
+    command: dotnet publish -c Release -f net9.0 -o /src/dist JellyWatchPartyPlugin.csproj

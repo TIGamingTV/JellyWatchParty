@@ -12,7 +12,7 @@ JellyWatchParty uses GitHub Actions for continuous integration and security scan
 
 `develop` is the integration branch — PRs land there first. `main` only receives
 merges from `develop` (or hotfix branches) and is what releases are cut from.
-See [Release](release) for the full flow.
+See [Release]({{ '/development/release/' | relative_url }}) for the full flow.
 
 ## Workflows
 
@@ -68,8 +68,8 @@ push only rebuilds the components that actually changed.
 |-------|-----------|--------|
 | Push to `main` | Server changed | Docker image tagged `beta` |
 | Push to `develop` | Server changed | Docker image tagged `dev` |
-| Push to `develop` | Plugin/client changed | Plugin rebuilt, rolling `develop-latest` pre-release updated, `manifest-dev.json` updated |
-| GitHub Release | Published | Docker image tagged `vX.Y.Z`, `vX.Y`, `latest`; plugin built, attached to the release, `manifest.json` updated |
+| Push to `develop` | Plugin/client changed | Plugin rebuilt for both Jellyfin generations, rolling `develop-latest` pre-release updated with both zips, `manifest-dev.json` updated with both `targetAbi` entries |
+| GitHub Release | Published | Docker image tagged `vX.Y.Z`, `vX.Y`, `latest`; plugin built for both Jellyfin generations, both zips attached to the release, `manifest.json` updated with both `targetAbi` entries |
 
 #### Jobs
 
@@ -77,19 +77,23 @@ push only rebuilds the components that actually changed.
 |-----|---------|--------------|
 | **Detect Changes** | Push only | Computes `server`/`plugin` path-filter outputs used to gate the jobs below |
 | **Build & Push Docker Image** | Server changed, or release | Builds multi-platform image (amd64, arm64) and pushes to GHCR |
-| **Build Jellyfin Plugin** | Release only | Builds plugin and creates zip archive |
-| **Upload Release Assets** | Release only | Attaches plugin zip to GitHub Release |
-| **Update Plugin Manifest** | Release only | Updates `manifest.json` for Jellyfin plugin repository |
-| **Build & Publish Develop Plugin** | Push to `develop`, plugin/client changed | Builds plugin, publishes it as an asset on the rolling `develop-latest` pre-release |
-| **Update Develop Plugin Manifest** | After the job above | Updates `manifest-dev.json` for the develop plugin channel |
+| **Build Jellyfin Plugin** | Release only | Matrix job, one leg per Jellyfin generation (net9.0/10.11, net10.0/12.x); builds the plugin and creates a zip archive per leg |
+| **Upload Release Assets** | Release only | Attaches both plugin zips to GitHub Release |
+| **Update Plugin Manifest** | Release only | Adds one `targetAbi` entry per zip to `manifest.json` |
+| **Build Develop Plugin** | Push to `develop`, plugin/client changed | Same matrix as the release build |
+| **Publish Develop Plugin & Manifest** | After the job above | Publishes both zips as assets on the rolling `develop-latest` pre-release and adds one `targetAbi` entry per zip to `manifest-dev.json` |
+
+See [Jellyfin 12 Migration]({{ '/jellyfin-12-migration/' | relative_url }})
+for why builds target two Jellyfin generations and what changes once
+Jellyfin 12.0 is stable.
 
 #### Plugin Repository
 
 On release, the workflow automatically updates the [Jellyfin plugin repository](https://tigamingtv.github.io/JellyWatchParty/jellyfin-plugin-repo/manifest.json):
 
-1. Downloads the built plugin zip
-2. Calculates MD5 checksum
-3. Updates `docs/jellyfin-plugin-repo/manifest.json` with new version
+1. Downloads both built plugin zips
+2. Calculates an MD5 checksum per zip
+3. Updates `docs/jellyfin-plugin-repo/manifest.json` with one version entry per zip, sharing the release's plugin version but each with its own `targetAbi`
 4. Commits and pushes to `main`
 5. Triggers GitHub Pages deployment
 
@@ -97,7 +101,7 @@ Users can then install/update the plugin directly from Jellyfin's plugin interfa
 
 On every push to `develop` that touches the plugin or client JS, the same
 thing happens against a separate develop channel — see
-[Release: Develop Plugin Channel](release#develop-plugin-channel) for how
+[Release: Develop Plugin Channel]({{ '/development/release/' | relative_url }}#develop-plugin-channel) for how
 testers install it.
 
 #### Docker Image
@@ -135,11 +139,13 @@ FROM alpine:3.21
 
 ### .NET
 
-The plugin uses NuGet packages from nuget.org:
+The plugin multi-targets `net9.0` and `net10.0` (one Jellyfin generation
+each — see `src/plugins/jellyfin/Directory.Build.props`), pulling NuGet
+packages from nuget.org with a version pinned per framework:
 
 ```xml
-<PackageReference Include="Jellyfin.Controller" Version="10.11.5" />
-<PackageReference Include="Jellyfin.Model" Version="10.11.5" />
+<PackageReference Include="Jellyfin.Controller" Version="$(JellyfinPackageVersion)" ExcludeAssets="runtime" />
+<PackageReference Include="Jellyfin.Model" Version="$(JellyfinPackageVersion)" ExcludeAssets="runtime" />
 ```
 
 The `.csproj` embeds `Web\**\*.js` as resources, so CI copies the client JS
@@ -212,6 +218,6 @@ Current alert policy:
 
 ## Next Steps
 
-- [Setup](setup) - Development environment
-- [Contributing](contributing) - Contribution guidelines
-- [Testing](testing) - Test documentation
+- [Setup]({{ '/development/setup/' | relative_url }}) - Development environment
+- [Contributing]({{ '/development/contributing/' | relative_url }}) - Contribution guidelines
+- [Testing]({{ '/development/testing/' | relative_url }}) - Test documentation

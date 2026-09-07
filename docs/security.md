@@ -8,7 +8,7 @@ nav_order: 9
 JellyWatchParty includes several security features: JWT authentication,
 CORS protection, rate limiting, and input validation. This page covers how
 they work, their limits, and hardening recommendations. For firewall/network
-topology, see [Deployment](deployment).
+topology, see [Deployment]({{ '/deployment/' | relative_url }}).
 
 ## Authentication
 
@@ -24,7 +24,7 @@ openssl rand -base64 32
 ```
 
 A secret under 32 characters is treated as unusable and disables
-authentication (see [Configuration: JWT Secret Guidelines](configuration#jwt-secret-guidelines))
+authentication (see [Configuration: JWT Secret Guidelines]({{ '/configuration/' | relative_url }}#jwt-secret-guidelines))
 rather than being used as a weak key.
 
 Set the result as **JWT Secret** in **Dashboard > Plugins > JellyWatchParty**,
@@ -87,7 +87,7 @@ location /ws {
 
 Encrypted connections protect JWT tokens from interception and prevent
 man-in-the-middle attacks — required for production. Configure a reverse
-proxy with SSL (see [Deployment](deployment)) and set the plugin's Session
+proxy with SSL (see [Deployment]({{ '/deployment/' | relative_url }})) and set the plugin's Session
 Server URL to `wss://jellyfin.example.com/ws`.
 
 The session server validates certificates by default; for self-signed
@@ -192,6 +192,6 @@ potential impact.
 
 ## Next Steps
 
-- [Deployment](deployment) - Production deployment
-- [Configuration](configuration) - Server and plugin settings
-- [Troubleshooting & FAQ](troubleshooting) - Common problems
+- [Deployment]({{ '/deployment/' | relative_url }}) - Production deployment
+- [Configuration]({{ '/configuration/' | relative_url }}) - Server and plugin settings
+- [Troubleshooting & FAQ]({{ '/troubleshooting/' | relative_url }}) - Common problems

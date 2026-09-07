@@ -146,7 +146,7 @@ that injects the client script into `index.html` — no configuration needed.
 This method provides automatic update notifications when new versions are
 released. Testers who want the develop/beta channel instead can use
 `manifest-dev.json` in the same way — see [Release: Develop Plugin
-Channel](development/release#develop-plugin-channel).
+Channel]({{ '/development/release/' | relative_url }}#develop-plugin-channel).
 
 ### Option B: Manual Download
 
@@ -173,7 +173,7 @@ Channel](development/release#develop-plugin-channel).
 2. Set a JWT Secret (min 32 characters) for authentication
 3. Click **Save**
 
-See [Configuration](configuration) for the full settings reference.
+See [Configuration]({{ '/configuration/' | relative_url }}) for the full settings reference.
 
 ## Verification
 
@@ -242,7 +242,7 @@ sudo firewall-cmd --reload
 
 ## Next Steps
 
-- [Configuration](configuration) - Configure JWT, CORS, and sync tuning
-- [Security](security) - Set up authentication and hardening
-- [Deployment](deployment) - Production deployment behind a reverse proxy
-- [Troubleshooting & FAQ](troubleshooting) - If something isn't working
+- [Configuration]({{ '/configuration/' | relative_url }}) - Configure JWT, CORS, and sync tuning
+- [Security]({{ '/security/' | relative_url }}) - Set up authentication and hardening
+- [Deployment]({{ '/deployment/' | relative_url }}) - Production deployment behind a reverse proxy
+- [Troubleshooting & FAQ]({{ '/troubleshooting/' | relative_url }}) - If something isn't working

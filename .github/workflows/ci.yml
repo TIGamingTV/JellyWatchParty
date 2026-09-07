@@ -80,6 +80,9 @@ jobs:
       - name: Build
         run: dotnet build JellyWatchParty.Tests/JellyWatchParty.Tests.csproj --no-restore
 
+      # No -f: the test project multi-targets net9.0 and net10.0 (Jellyfin
+      # 10.11.x and 12.x respectively - see Directory.Build.props), and
+      # `dotnet test` runs the suite once per framework by default.
       - name: Run tests
         run: dotnet test JellyWatchParty.Tests/JellyWatchParty.Tests.csproj --no-build --verbosity normal
 
