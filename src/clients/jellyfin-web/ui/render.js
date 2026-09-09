@@ -5,21 +5,40 @@
   const utils = JWP.utils;
   const { PANEL_ID, BTN_ID, DEFAULT_WS_URL, SYNC_HIDE_STYLE_ID } = JWP.constants;
   const GLOBAL_BTN_ID = 'jwp-global-btn';
+  // aria-controls value of Jellyfin 12's MUI SyncPlay button, exported as
+  // `ID` from jellyfin-web's apps/modern/components/AppToolbar/menus/
+  // SyncPlayMenu.tsx — the only stable selector for that button, since MUI
+  // assigns it no meaningful class name of its own.
+  const SYNC_PLAY_MENU_ID = 'app-sync-play-menu';
 
   // Jellyfin's built-in SyncPlay button is `.headerSyncButton` (also carries
   // `.syncButton`) — rendered in the app header and, during playback, in the
-  // player OSD header (see jellyfin-web libraryMenu.js / videoosd.scss). When
-  // the admin enables "Hide native SyncPlay button", JellyWatchParty's own
-  // watch-party controls replace it, so we hide it via an injected stylesheet.
-  // CSS (rather than removing the node) survives Jellyfin's SPA re-renders,
-  // which repeatedly rebuild the header DOM.
+  // player OSD header (see jellyfin-web libraryMenu.js / videoosd.scss). On
+  // Jellyfin 12's default MUI toolbar it's a different component entirely
+  // (apps/modern/components/AppToolbar/SyncPlayButton.tsx), identified by
+  // `aria-controls="app-sync-play-menu"` — MUI generates no stable class name
+  // of its own. When the admin enables "Hide native SyncPlay button",
+  // JellyWatchParty's own watch-party controls replace it, so we hide it via
+  // an injected stylesheet. CSS (rather than removing the node) survives
+  // Jellyfin's SPA re-renders, which repeatedly rebuild the header DOM.
+  //
+  // The MUI button is hidden with `visibility: hidden` rather than
+  // `display: none`: unlike display:none, it keeps the button's layout box
+  // (and therefore its real position) intact, which tryInjectMuiToolbar()
+  // below relies on to place JellyWatchParty's own button exactly in its
+  // place — a true 1:1 replacement — instead of merely avoiding it. It also
+  // means any *other* plugin that floats its own button next to the avatar
+  // using the same "anchor off the leftmost visible sibling" trick (see
+  // collectForeignFloatingRects() below) still reserves the same layout gap
+  // and slots in beside our replacement button instead of on top of it.
   const applyNativeSyncButtonVisibility = () => {
     const existing = document.getElementById(SYNC_HIDE_STYLE_ID);
     if (state.hideNativeSyncButton) {
       if (existing) return;
       const style = document.createElement('style');
       style.id = SYNC_HIDE_STYLE_ID;
-      style.textContent = '.headerSyncButton, .syncButton { display: none !important; }';
+      style.textContent = '.headerSyncButton, .syncButton { display: none !important; } '
+        + `[aria-controls="${SYNC_PLAY_MENU_ID}"] { visibility: hidden !important; }`;
       document.head.appendChild(style);
     } else if (existing) {
       existing.remove();
@@ -232,6 +251,58 @@
     !!document.querySelector('[aria-controls="app-user-menu"]') &&
     !document.body.classList.contains('dashboardDocument');
 
+  // If the admin has enabled "Hide native SyncPlay button" and Jellyfin 12's
+  // MUI SyncPlay button is actually present, take over its exact slot
+  // instead of floating elsewhere — a real 1:1 replacement, not just an
+  // additional button nearby. applyNativeSyncButtonVisibility() hides it
+  // with visibility:hidden rather than display:none specifically so its
+  // layout box (and therefore this rect) survives being hidden.
+  const findSyncPlayReplacementRect = () => {
+    if (!state.hideNativeSyncButton) return null;
+    const syncPlayBtn = document.querySelector(`[aria-controls="${SYNC_PLAY_MENU_ID}"]`);
+    if (!syncPlayBtn) return null;
+    const rect = syncPlayBtn.getBoundingClientRect();
+    return (rect.width || rect.height) ? rect : null;
+  };
+
+  // Detects position:fixed via computed style (catching CSS-class-driven
+  // positioning, not just inline styles) in real browsers; falls back to
+  // checking el.style.position directly since the plain-object fake DOM used
+  // by this repo's node:test suite has no CSS engine / getComputedStyle.
+  const isFixedPositioned = (el) => {
+    if (typeof window.getComputedStyle === 'function') {
+      return window.getComputedStyle(el).position === 'fixed';
+    }
+    return !!(el.style && el.style.position === 'fixed');
+  };
+
+  // Other Jellyfin plugins commonly solve "add a button to Jellyfin 12's
+  // React-owned MUI toolbar" the exact same way this one does: append a
+  // position:fixed button to document.body and anchor it off the avatar's
+  // leftmost visible sibling action, minus a fixed offset (confirmed against
+  // a sibling plugin of ours, JellyPrivateLibraries, which uses this
+  // near-identical technique). Two plugins independently computing that same
+  // anchor land on the exact same coordinates with no way for either to know
+  // about the other by name. Detect any such foreign fixed-position button
+  // roughly level with the avatar generically — by computed position, not by
+  // hardcoding another plugin's id/class — so this keeps working for any
+  // current or future plugin doing the same thing, not just one we know
+  // about today.
+  const collectForeignFloatingRects = (avatarRect, ownBtn) => {
+    const rects = [];
+    const siblings = document.body.children;
+    for (let i = 0; i < siblings.length; i++) {
+      const el = siblings[i];
+      if (el === ownBtn || !isFixedPositioned(el)) continue;
+      const rect = el.getBoundingClientRect();
+      if (!rect.width && !rect.height) continue;
+      if (rect.width > 120) continue; // not a small icon button — likely unrelated fixed UI
+      const sameRow = Math.abs((rect.top + rect.height / 2) - (avatarRect.top + avatarRect.height / 2)) <= avatarRect.height;
+      if (sameRow) rects.push(rect);
+    }
+    return rects;
+  };
+
   // React owns the MUI toolbar's DOM and wipes any node inserted into it
   // directly the next time it re-renders, so the button lives on
   // document.body with position:fixed instead and is kept aligned with the
@@ -240,11 +311,19 @@
   // RemotePlay/Search the current page renders, packed against the avatar —
   // anchor to the first visible one of those instead of a fixed offset from
   // the avatar, so the button doesn't render on top of it on pages where one
-  // of them is present.
+  // of them is present. Also avoid landing on top of any other plugin's own
+  // floating button anchored the same way (see collectForeignFloatingRects).
   const positionMuiGlobalButton = (btn) => {
     const avatar = document.querySelector('[aria-controls="app-user-menu"]');
     if (!avatar) return;
     const avatarRect = avatar.getBoundingClientRect();
+
+    const replaceRect = findSyncPlayReplacementRect();
+    if (replaceRect) {
+      btn.style.top = `${Math.round(replaceRect.top + (replaceRect.height - 40) / 2)}px`;
+      btn.style.left = `${Math.round(replaceRect.left)}px`;
+      return;
+    }
 
     let leftAnchorRect = avatarRect;
     const actionsGroup = avatar.parentElement && avatar.parentElement.previousElementSibling;
@@ -256,6 +335,11 @@
           break;
         }
       }
+    }
+
+    const foreignRects = collectForeignFloatingRects(avatarRect, btn);
+    for (let i = 0; i < foreignRects.length; i++) {
+      if (foreignRects[i].left < leftAnchorRect.left) leftAnchorRect = foreignRects[i];
     }
 
     btn.style.top = `${Math.round(avatarRect.top + (avatarRect.height - 40) / 2)}px`;

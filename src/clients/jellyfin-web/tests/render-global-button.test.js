@@ -70,13 +70,14 @@ function makeFakeDom() {
   }
 
   const body = makeElement();
-  const routes = { headerRight: null, avatar: null };
+  const routes = { headerRight: null, avatar: null, syncPlayBtn: null };
 
   globalThis.document = {
     body,
     querySelector(sel) {
       if (sel === '.headerRight' || sel === '.skinHeader .headerRight') return routes.headerRight;
       if (sel === '[aria-controls="app-user-menu"]') return routes.avatar;
+      if (sel === '[aria-controls="app-sync-play-menu"]') return routes.syncPlayBtn;
       return null;
     },
     getElementById: (id) => byId.get(id) || null,
@@ -195,6 +196,73 @@ describe('injectGlobalButton — Jellyfin 12 default "modern" layout', () => {
     JWP.ui.injectGlobalButton();
     const btn = dom.byId.get(GLOBAL_BTN_ID);
     assert.equal(btn.style.left, `${820 - 40}px`, 'expected to anchor off the visible action button, not the avatar');
+  });
+
+  it('anchors to the left of another plugin\'s floating button instead of overlapping it', () => {
+    // Regression coverage for user-reported overlap with JellyPrivateLibraries,
+    // which floats its own document.body-appended button using the exact
+    // same "leftmost visible sibling minus an offset" anchoring trick — with
+    // no visible sibling action button on this page, both would otherwise
+    // compute the identical position (immediately left of the avatar).
+    dom.routes.headerRight = makeHiddenHeaderRight(dom.makeElement);
+    dom.routes.avatar = makeAvatar(dom.makeElement);
+
+    const foreignBtn = dom.makeElement();
+    foreignBtn.style.position = 'fixed';
+    foreignBtn.rect = { top: 8, left: 860, width: 40, height: 40 };
+    dom.body.children.push(foreignBtn);
+    foreignBtn.parentElement = dom.body;
+
+    JWP.ui.injectGlobalButton();
+
+    const btn = dom.byId.get(GLOBAL_BTN_ID);
+    assert.equal(btn.style.left, `${860 - 40}px`, 'expected to anchor off the foreign floating button, not the avatar');
+  });
+
+  it('ignores foreign fixed elements that are not roughly level with the avatar', () => {
+    // e.g. some unrelated fixed banner/toast elsewhere on the page — should
+    // not be mistaken for a competing toolbar button.
+    dom.routes.headerRight = makeHiddenHeaderRight(dom.makeElement);
+    dom.routes.avatar = makeAvatar(dom.makeElement);
+
+    const unrelatedFixed = dom.makeElement();
+    unrelatedFixed.style.position = 'fixed';
+    unrelatedFixed.rect = { top: 500, left: 20, width: 40, height: 40 };
+    dom.body.children.push(unrelatedFixed);
+    unrelatedFixed.parentElement = dom.body;
+
+    JWP.ui.injectGlobalButton();
+
+    const btn = dom.byId.get(GLOBAL_BTN_ID);
+    assert.equal(btn.style.left, `${900 - 40}px`, 'expected to anchor off the avatar, ignoring the unrelated fixed element');
+  });
+
+  it('replaces the native MUI SyncPlay button in place when hideNativeSyncButton is enabled', () => {
+    JWP.state.hideNativeSyncButton = true;
+    dom.routes.headerRight = makeHiddenHeaderRight(dom.makeElement);
+    dom.routes.avatar = makeAvatar(dom.makeElement, { actionRect: { top: 10, left: 820, width: 36, height: 36 } });
+    dom.routes.syncPlayBtn = dom.makeElement();
+    dom.routes.syncPlayBtn.rect = { top: 10, left: 760, width: 48, height: 48 };
+
+    JWP.ui.injectGlobalButton();
+
+    const btn = dom.byId.get(GLOBAL_BTN_ID);
+    assert.equal(btn.style.left, '760px', 'expected to sit exactly at the SyncPlay button\'s own position, not beside it');
+    assert.equal(btn.style.top, `${Math.round(10 + (48 - 40) / 2)}px`);
+    JWP.state.hideNativeSyncButton = false;
+  });
+
+  it('falls back to the normal anchor when hideNativeSyncButton is enabled but SyncPlay is absent', () => {
+    JWP.state.hideNativeSyncButton = true;
+    dom.routes.headerRight = makeHiddenHeaderRight(dom.makeElement);
+    dom.routes.avatar = makeAvatar(dom.makeElement, { actionRect: { top: 10, left: 820, width: 36, height: 36 } });
+    // dom.routes.syncPlayBtn intentionally left null — SyncPlay isn't loaded/available.
+
+    JWP.ui.injectGlobalButton();
+
+    const btn = dom.byId.get(GLOBAL_BTN_ID);
+    assert.equal(btn.style.left, `${820 - 40}px`);
+    JWP.state.hideNativeSyncButton = false;
   });
 
   it('does not create the floating button on the admin dashboard (dashboardDocument)', () => {

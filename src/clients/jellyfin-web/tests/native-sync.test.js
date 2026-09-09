@@ -48,6 +48,18 @@ describe('applyNativeSyncButtonVisibility', () => {
     assert.match(style.textContent, /display:\s*none/);
   });
 
+  it('also hides Jellyfin 12\'s MUI SyncPlay button, via visibility rather than display', () => {
+    // visibility:hidden (not display:none) is deliberate: it preserves the
+    // button's layout box so ui/render.js's positionMuiGlobalButton() can
+    // still read its real position and take over that exact slot. See
+    // render.js's findSyncPlayReplacementRect / render-global-button.test.js.
+    JWP.state.hideNativeSyncButton = true;
+    apply();
+    const style = byId.get(SYNC_HIDE_STYLE_ID);
+    assert.match(style.textContent, /\[aria-controls="app-sync-play-menu"\]/);
+    assert.match(style.textContent, /visibility:\s*hidden/);
+  });
+
   it('does not inject anything when the flag is off', () => {
     apply();
     assert.equal(byId.get(SYNC_HIDE_STYLE_ID), undefined);
