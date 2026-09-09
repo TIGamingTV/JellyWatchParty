@@ -8,15 +8,15 @@ nav_order: 2
 
 ## Overview
 
-The JellyWatchParty session server is an asynchronous Rust application using Warp for WebSocket handling and Tokio as the async runtime. It manages rooms, clients, and playback synchronization in memory.
+The JellyWatchParty session server is an asynchronous Rust application using Axum for WebSocket handling and Tokio as the async runtime. It manages rooms, clients, and playback synchronization in memory.
 
 ## Module Structure
 
 ```
 src/
-├── main.rs           # Entry point, Warp configuration
+├── main.rs           # Entry point, listener + graceful shutdown
 ├── types.rs          # Data structures
-├── routes.rs         # Warp route filters
+├── routes.rs         # Axum router, origin guard, CORS
 ├── tasks.rs          # Background tasks (zombie cleanup, shutdown)
 ├── messaging.rs      # Message sending functions
 ├── auth.rs           # JWT authentication (optional)
@@ -46,7 +46,8 @@ src/
 ## Module: `main.rs`
 
 ### Description
-Application entry point. Configures the Warp server and routes.
+Application entry point. Builds the Axum router and serves it with graceful
+shutdown.
 
 ### Main Function
 
@@ -57,19 +58,21 @@ async fn main() {
     let clients: Clients = Arc::new(RwLock::new(HashMap::new()));
     let rooms: Rooms = Arc::new(RwLock::new(HashMap::new()));
 
-    // WebSocket route: GET /ws
-    let ws_route = warp::path("ws")
-        .and(warp::ws())
-        .and(clients_filter)
-        .and(rooms_filter)
-        .map(|ws, clients, rooms| {
-            ws.on_upgrade(|socket| client_connection(socket, clients, rooms))
-        });
+    // GET /ws (origin-guarded upgrade) + GET /health
+    let app = routes::build_router(clients, rooms, jwt_config, allowed_origins);
 
-    // Listen on 0.0.0.0:3000
-    warp::serve(ws_route).run(([0, 0, 0, 0], 3000)).await;
+    // Listen on 0.0.0.0:3000 (HOST/PORT override the defaults)
+    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    axum::serve(listener, app)
+        .with_graceful_shutdown(async { shutdown_rx.await.ok(); })
+        .await
+        .unwrap();
 }
 ```
+
+> The server speaks HTTP/1.1 only. That is deliberate: every client performs
+> an HTTP/1.1 `Upgrade` for WebSockets, so the `axum`/`hyper` `http2` feature
+> is left off and `h2` never enters the dependency tree.
 
 ### Global State
 
@@ -417,7 +420,8 @@ pub fn validate_token(token: &str, secret: &str) -> Result<Claims, Error> {
 
 1. **RwLock**: Read-heavy workload; multiple readers, exclusive writer
 2. **No deadlock**: Only one lock acquired at a time per handler
-3. **Message cloning**: `warp_msg.clone()` for efficient broadcasting
+3. **Message cloning**: one `OutboundMessage` is serialized once and cloned per
+   recipient for efficient broadcasting
 4. **Bounded channels**: Backpressure via bounded `mpsc::Sender` per client
 
 ## Reconnect and Room Lifecycle {#reconnect-and-room-lifecycle}

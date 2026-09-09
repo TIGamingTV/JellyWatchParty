@@ -2,8 +2,9 @@ use super::constants::CLIENT_CHANNEL_BUFFER;
 use super::dispatch::client_msg;
 use crate::auth::JwtConfig;
 use crate::messaging::{send_room_list, send_to_client};
-use crate::types::{Clients, Rooms, WsMessage};
+use crate::types::{ClientReceiver, ClientSender, Clients, OutboundMessage, Rooms, WsMessage};
 use crate::utils::now_ms;
+use axum::extract::ws::{Message, WebSocket};
 use futures::StreamExt;
 use log::info;
 use std::sync::Arc;
@@ -11,7 +12,7 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 
 fn register_client(
-    client_sender: mpsc::Sender<Result<warp::ws::Message, warp::Error>>,
+    client_sender: ClientSender,
     jwt_config: &Arc<JwtConfig>,
 ) -> crate::types::Client {
     let now = now_ms();
@@ -62,18 +63,26 @@ fn is_plausible_client_id(id: &str) -> bool {
 }
 
 pub async fn client_connection(
-    ws: warp::ws::WebSocket,
+    ws: WebSocket,
     clients: Clients,
     rooms: Rooms,
     jwt_config: Arc<JwtConfig>,
     requested_client_id: Option<String>,
 ) {
     let (client_ws_sender, mut client_ws_rcv) = ws.split();
-    let (client_sender, client_rcv) = mpsc::channel(CLIENT_CHANNEL_BUFFER);
-    let client_rcv = ReceiverStream::new(client_rcv);
+    let (client_sender, client_rcv): (ClientSender, ClientReceiver) =
+        mpsc::channel(CLIENT_CHANNEL_BUFFER);
+
+    // The queue carries framework-agnostic `OutboundMessage`s; this is the one
+    // place that turns them into transport frames. Each one goes out as a
+    // single unfragmented text frame — the plugin's bridges reassemble
+    // continuation frames by decoding each chunk independently, so splitting a
+    // message here would risk cutting a multi-byte UTF-8 sequence in half.
+    let outbound = ReceiverStream::new(client_rcv)
+        .map(|msg: OutboundMessage| Ok(Message::Text(msg.into_text().into())));
 
     tokio::task::spawn(async move {
-        let _ = client_rcv.forward(client_ws_sender).await;
+        let _ = outbound.forward(client_ws_sender).await;
     });
 
     let client_id = requested_client_id

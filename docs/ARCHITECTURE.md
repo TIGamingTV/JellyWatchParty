@@ -14,7 +14,7 @@
            │                                                       ▼
            │                                          ┌──────────────────────┐
            │  (for browsers: NO network calls           │  Session Server (Rust) │
-           │   between plugin backend and               │  warp-based WS server  │
+           │   between plugin backend and               │  axum-based WS server  │
            │   session server — only the browser        │  rooms/host/broadcast  │
            │   talks to it. One admin-triggered          └──────────────────────┘
            │   exception: HostBridgeManager can                     ▲
@@ -27,16 +27,16 @@
 
 ## 1. Rust session server — `src/server/`
 
-Built with `warp`. Key files:
+Built with `axum` (on `hyper 1.x`). Key files:
 
 - `src/main.rs` — entry point; reads `HOST`/`PORT`/`ALLOWED_ORIGINS` env vars,
   spawns the zombie-cleanup background task, builds routes, starts the server.
   Default port `3000` (overridable via `PORT` env var — the user's deployment
   maps the host port to `3238`, purely a Docker port-mapping detail with no
   code-level assumption baked in).
-- `src/routes.rs` — warp filter definitions: `/ws` (WebSocket upgrade, with
-  origin-checking and — as of Round 10 — a `client_id` query param) and
-  `/health`.
+- `src/routes.rs` — the axum `Router`: `/ws` (WebSocket upgrade, behind an
+  origin-checking middleware, with a `client_id` query param) and `/health`
+  (with a `tower-http` CORS layer).
 - `src/ws/connection.rs` — per-connection lifecycle: registers or reattaches
   a client, sends `client_hello` + `room_list`, reads incoming messages in a
   loop, and on disconnect schedules teardown (see `room/reconnect.rs`).

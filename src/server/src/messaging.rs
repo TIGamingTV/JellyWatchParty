@@ -1,4 +1,4 @@
-use crate::types::{Client, Clients, Room, Rooms, WsMessage};
+use crate::types::{Client, Clients, OutboundMessage, Room, Rooms, WsMessage};
 use crate::utils::now_ms;
 use std::collections::HashMap;
 
@@ -71,9 +71,9 @@ pub async fn broadcast_room_list(clients: &Clients, rooms: &Rooms) {
         }
     };
     let locked_clients = clients.read().await;
-    let warp_msg = warp::ws::Message::text(json);
+    let outbound = OutboundMessage::text(json);
     for client in locked_clients.values() {
-        if let Err(e) = client.sender.try_send(Ok(warp_msg.clone())) {
+        if let Err(e) = client.sender.try_send(outbound.clone()) {
             log::warn!("Failed to send room list (buffer full or closed): {}", e);
         }
     }
@@ -83,7 +83,7 @@ pub fn send_to_client(client_id: &str, clients: &HashMap<String, Client>, msg: &
     if let Some(client) = clients.get(client_id) {
         match serde_json::to_string(msg) {
             Ok(json) => {
-                if let Err(e) = client.sender.try_send(Ok(warp::ws::Message::text(json))) {
+                if let Err(e) = client.sender.try_send(OutboundMessage::text(json)) {
                     log::warn!(
                         "Failed to send to client {} (buffer full or closed): {}",
                         client_id,
@@ -119,13 +119,13 @@ pub fn broadcast_to_room(
             return;
         }
     };
-    let warp_msg = warp::ws::Message::text(json);
+    let outbound = OutboundMessage::text(json);
     for client_id in &room.clients {
         if Some(client_id.as_str()) == exclude {
             continue;
         }
         if let Some(client) = clients.get(client_id) {
-            if let Err(e) = client.sender.try_send(Ok(warp_msg.clone())) {
+            if let Err(e) = client.sender.try_send(outbound.clone()) {
                 log::warn!(
                     "Failed to broadcast to client {} (buffer full or closed): {}",
                     client_id,
