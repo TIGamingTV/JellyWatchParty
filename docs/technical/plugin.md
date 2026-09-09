@@ -327,10 +327,9 @@ assembly.GetManifestResourceStream("JellyWatchParty.Plugin.Web.plugin.js");
 
 ## Dependencies
 
-The project multi-targets `net9.0` and `net10.0` (Jellyfin 10.11.x and 12.x
-respectively — see
-[Jellyfin 12 Migration]({{ '/jellyfin-12-migration/' | relative_url }})), so
-`Jellyfin.Controller`/`Jellyfin.Model` are versioned per framework via
+The project targets `net10.0` (Jellyfin 12.x only — Jellyfin 10.11.x support
+has been dropped, see `Directory.Build.props`), so
+`Jellyfin.Controller`/`Jellyfin.Model` are versioned via
 `$(JellyfinPackageVersion)` in `Directory.Build.props`:
 
 ```xml
@@ -345,23 +344,16 @@ respectively — see
 
 ## Building
 
-Building both target frameworks needs both the .NET 9 and .NET 10 SDKs
-installed side by side. If you only have one, build a single framework with
-`-f`:
+Requires the .NET 10 SDK:
 
 ```bash
-# Build with dotnet - produces both target frameworks (needs both SDKs)
 dotnet build
-
-# Only have .NET 9? Build just the Jellyfin 10.11 target:
-dotnet build -f net9.0
 
 # Or use just (from project root)
 just build plugin
 ```
 
-The built DLL and dependencies are placed in `bin/Debug/net9.0/` (Jellyfin
-10.11.x) and `bin/Debug/net10.0/` (Jellyfin 12.x).
+The built DLL and dependencies are placed in `bin/Debug/net10.0/`.
 
 ## REST API Reference
 

@@ -31,7 +31,7 @@ services:
       start_period: 5s
 
   jellyfin-dev:
-    image: jellyfin/jellyfin:10.11.11
+    image: jellyfin/jellyfin:12.0
     container_name: jellyfin-dev
     environment:
       - PUID=${UID:-1000}
@@ -51,7 +51,7 @@ services:
     entrypoint: /jellyfin-entrypoint.sh
 
   plugin-builder:
-    image: mcr.microsoft.com/dotnet/sdk:9.0
+    image: mcr.microsoft.com/dotnet/sdk:10.0
     working_dir: /src
     network_mode: host
     profiles:
@@ -61,11 +61,9 @@ services:
     environment:
       - HOME=/tmp
       - DOTNET_CLI_HOME=/tmp/.dotnet
-    # The plugin project multi-targets net9.0 (Jellyfin 10.11.x) and net10.0
-    # (Jellyfin 12.x) - see docs/jellyfin-12-migration.md. This dev stack
-    # runs the jellyfin/jellyfin:10.11.11 image above, and the SDK image
-    # here only has the .NET 9 SDK, so build just the net9.0 leg.
-    command: dotnet publish -c Release -f net9.0 -o /src/dist JellyWatchPartyPlugin.csproj
+    # The plugin project targets net10.0 (Jellyfin 12.x only - Jellyfin
+    # 10.11.x support has been dropped).
+    command: dotnet publish -c Release -f net10.0 -o /src/dist JellyWatchPartyPlugin.csproj
 
 volumes:
   jellyfin-cache:

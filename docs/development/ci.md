@@ -68,8 +68,8 @@ push only rebuilds the components that actually changed.
 |-------|-----------|--------|
 | Push to `main` | Server changed | Docker image tagged `beta` |
 | Push to `develop` | Server changed | Docker image tagged `dev` |
-| Push to `develop` | Plugin/client changed | Plugin rebuilt for both Jellyfin generations, rolling `develop-latest` pre-release updated with both zips, `manifest-dev.json` updated with both `targetAbi` entries |
-| GitHub Release | Published | Docker image tagged `vX.Y.Z`, `vX.Y`, `latest`; plugin built for both Jellyfin generations, both zips attached to the release, `manifest.json` updated with both `targetAbi` entries |
+| Push to `develop` | Plugin/client changed | Plugin rebuilt (Jellyfin 12.x), rolling `develop-latest` pre-release updated with the zip, `manifest-dev.json` updated with the `targetAbi` entry |
+| GitHub Release | Published | Docker image tagged `vX.Y.Z`, `vX.Y`, `latest`; plugin built for Jellyfin 12.x, zip attached to the release, `manifest.json` updated with the `targetAbi` entry |
 
 #### Jobs
 
@@ -77,23 +77,23 @@ push only rebuilds the components that actually changed.
 |-----|---------|--------------|
 | **Detect Changes** | Push only | Computes `server`/`plugin` path-filter outputs used to gate the jobs below |
 | **Build & Push Docker Image** | Server changed, or release | Builds multi-platform image (amd64, arm64) and pushes to GHCR |
-| **Build Jellyfin Plugin** | Release only | Matrix job, one leg per Jellyfin generation (net9.0/10.11, net10.0/12.x); builds the plugin and creates a zip archive per leg |
-| **Upload Release Assets** | Release only | Attaches both plugin zips to GitHub Release |
-| **Update Plugin Manifest** | Release only | Adds one `targetAbi` entry per zip to `manifest.json` |
-| **Build Develop Plugin** | Push to `develop`, plugin/client changed | Same matrix as the release build |
-| **Publish Develop Plugin & Manifest** | After the job above | Publishes both zips as assets on the rolling `develop-latest` pre-release and adds one `targetAbi` entry per zip to `manifest-dev.json` |
+| **Build Jellyfin Plugin** | Release only | Builds the plugin for `net10.0`/Jellyfin 12.x and creates a zip archive |
+| **Upload Release Assets** | Release only | Attaches the plugin zip to GitHub Release |
+| **Update Plugin Manifest** | Release only | Adds the `targetAbi 12.0.0.0` entry to `manifest.json` |
+| **Build Develop Plugin** | Push to `develop`, plugin/client changed | Same build as the release job |
+| **Publish Develop Plugin & Manifest** | After the job above | Publishes the zip as an asset on the rolling `develop-latest` pre-release and updates the `targetAbi` entry in `manifest-dev.json` |
 
-See [Jellyfin 12 Migration]({{ '/jellyfin-12-migration/' | relative_url }})
-for why builds target two Jellyfin generations and what changes once
-Jellyfin 12.0 is stable.
+Jellyfin 10.11.x support has been dropped; only Jellyfin 12.x is built and
+published. Users still on 10.11.x should install an older release
+(`targetAbi 10.11.11.0`).
 
 #### Plugin Repository
 
 On release, the workflow automatically updates the [Jellyfin plugin repository](https://tigamingtv.github.io/JellyWatchParty/jellyfin-plugin-repo/manifest.json):
 
-1. Downloads both built plugin zips
-2. Calculates an MD5 checksum per zip
-3. Updates `docs/jellyfin-plugin-repo/manifest.json` with one version entry per zip, sharing the release's plugin version but each with its own `targetAbi`
+1. Downloads the built plugin zip
+2. Calculates its MD5 checksum
+3. Updates `docs/jellyfin-plugin-repo/manifest.json` with a new version entry (`targetAbi 12.0.0.0`)
 4. Commits and pushes to `main`
 5. Triggers GitHub Pages deployment
 
@@ -139,9 +139,9 @@ FROM alpine:3.21
 
 ### .NET
 
-The plugin multi-targets `net9.0` and `net10.0` (one Jellyfin generation
-each — see `src/plugins/jellyfin/Directory.Build.props`), pulling NuGet
-packages from nuget.org with a version pinned per framework:
+The plugin targets `net10.0` (Jellyfin 12.x — see
+`src/plugins/jellyfin/Directory.Build.props`), pulling NuGet packages from
+nuget.org with a version pinned in `JellyfinPackageVersion`:
 
 ```xml
 <PackageReference Include="Jellyfin.Controller" Version="$(JellyfinPackageVersion)" ExcludeAssets="runtime" />

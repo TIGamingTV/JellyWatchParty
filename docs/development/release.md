@@ -106,7 +106,7 @@ just build
 cd src/server
 cargo build --release
 
-# C# plugin - builds both net9.0 (Jellyfin 10.11) and net10.0 (Jellyfin 12)
+# C# plugin - builds net10.0 (Jellyfin 12.x)
 cd src/plugins/jellyfin/JellyWatchParty
 dotnet build -c Release
 ```
@@ -117,8 +117,7 @@ dotnet build -c Release
 |-----------|-----------------|
 | Session Server | `src/server/target/release/session-server` |
 | Session Server (Windows) | `jwp-session-server-windows-vX.Y.Z.zip` (CI-built, attached to GitHub Release) |
-| Plugin DLL (Jellyfin 10.11) | `src/plugins/jellyfin/JellyWatchParty/bin/Release/net9.0/JellyWatchParty.dll` |
-| Plugin DLL (Jellyfin 12) | `src/plugins/jellyfin/JellyWatchParty/bin/Release/net10.0/JellyWatchParty.dll` |
+| Plugin DLL (Jellyfin 12.x) | `src/plugins/jellyfin/JellyWatchParty/bin/Release/net10.0/JellyWatchParty.dll` |
 
 ## Release Steps
 
@@ -179,11 +178,9 @@ Or via GitHub UI:
 
 The workflow will automatically:
 - Build and push Docker images to GHCR
-- Build and attach a Jellyfin plugin zip per supported Jellyfin generation
-  (10.11 and, once released, 12.x — see
-  [Jellyfin 12 Migration]({{ '/jellyfin-12-migration/' | relative_url }}))
+- Build and attach a Jellyfin plugin zip (targeting Jellyfin 12.x)
 - Build and attach a standalone Windows session server binary
-- Update `manifest.json` with one `targetAbi` entry per plugin zip
+- Update `manifest.json` with the new `targetAbi 12.0.0.0` entry
 
 ### 8. Merge Back into `develop`
 
@@ -276,7 +273,7 @@ Releases are fully automated via GitHub Actions (`.github/workflows/publish.yml`
 When you create a GitHub Release:
 
 1. **Docker Image**: Built for amd64 and arm64, pushed to GHCR with version + `latest` tags
-2. **Jellyfin Plugin**: Built, zipped, and attached to the release
+2. **Jellyfin Plugin**: Built for Jellyfin 12.x, zipped, and attached to the release
 3. **Windows Session Server**: Built natively on `windows-latest`, zipped with a
    `session-server.exe` and a short usage README, and attached to the release —
    no Docker or Rust install required to run it
@@ -292,9 +289,9 @@ When server code changes (`src/server/**`) are pushed to `main`:
 ### What Happens on Push to `develop`
 
 1. **Server changed**: Docker image built and pushed with the `dev` tag
-2. **Plugin/client changed**: plugin rebuilt, attached to the rolling
-   `develop-latest` pre-release, and `manifest-dev.json` updated — see
-   [Develop Builds](#develop-builds)
+2. **Plugin/client changed**: plugin rebuilt for Jellyfin 12.x, attached to
+   the rolling `develop-latest` pre-release, and `manifest-dev.json` updated
+   — see [Develop Builds](#develop-builds)
 
 A `changes` job in `publish.yml` (via `dorny/paths-filter`) detects which of
 the two actually changed, so an unrelated change doesn't trigger a rebuild
@@ -318,9 +315,8 @@ See [Develop Plugin Channel](#develop-plugin-channel) above.
 #### Via Direct Download
 
 1. Go to [Releases](https://github.com/TIGamingTV/JellyWatchParty/releases)
-2. Download the zip matching your Jellyfin generation:
-   `JellyWatchParty-vX.Y.Z-jellyfin10.zip` for 10.11.x, or
-   `JellyWatchParty-vX.Y.Z-jellyfin12.zip` for 12.x (once released)
+2. Download `JellyWatchParty-vX.Y.Z.zip` (targets Jellyfin 12.x; for
+   10.11.x, download an older release instead)
 3. Extract to Jellyfin plugins folder
 4. Restart Jellyfin
 

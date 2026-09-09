@@ -11,7 +11,8 @@ serves the UI and talks to the session server). Both are required.
 
 ## Prerequisites
 
-- **Jellyfin Server** 10.11.x
+- **Jellyfin Server** 12.x (10.11.x is no longer supported — install an older
+  JellyWatchParty release if you're still on it)
 - **Port 3000** available for the session server (or any port you choose)
 - Admin access to Jellyfin
 
