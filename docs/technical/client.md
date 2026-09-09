@@ -161,7 +161,13 @@ still reachable even with no video open). `injectGlobalButton()` tries
 back to `tryInjectMuiToolbar()` for Jellyfin 12's default React/MUI layout,
 where `.headerRight` still exists but is hidden by Jellyfin itself — the
 fallback anchors a `position:fixed` button to the toolbar's user-menu avatar
-instead, and hides it on Jellyfin's own dashboard/admin pages.
+instead, and hides it on Jellyfin's own dashboard/admin pages. That
+fallback's `positionMuiGlobalButton()` also avoids overlapping any other
+plugin's own floating button anchored the same way (detected generically by
+computed `position: fixed`, not by hardcoding another plugin's id/class),
+and, when `state.hideNativeSyncButton` is enabled, positions itself exactly
+over Jellyfin 12's native MUI SyncPlay button instead of beside the toolbar
+— a real replacement, not just an extra button nearby.
 
 ### `ui/cards.js` + `ui/home.js`
 Render the "Watch Parties" section on the Jellyfin home page.

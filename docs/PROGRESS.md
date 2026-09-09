@@ -2114,3 +2114,26 @@ and that's a separate decision for whoever actually cuts the next tag (could
 reasonably be higher than `2.0.1.0`, e.g. a minor or major bump, given the
 platform-support removal) — this fix only corrects "behind the last release",
 which was the unambiguous, no-judgment-call part.
+
+---
+
+## Round 30 — MUI toolbar floating-button collisions & SyncPlay replacement (on top of Round 29, PR #62)
+
+After Round 29's v12 header-button fix shipped as PR #62, live testing revealed two problems with the new MUI floating button (`tryInjectMuiToolbar` / `positionMuiGlobalButton`): (1) it visually overlapped with a button from the user's other plugin (JellyPrivateLibraries, which independently implements the exact same "position:fixed button anchored to avatar's sibling" technique), and (2) it should replace the native SyncPlay button rather than just float nearby. Both issues investigated against actual source — jellyfin-web's `release-12.z` for SyncPlay selector verification, JellyPrivateLibraries' own `Web/private-libraries.js` for the collision overlap technique (same author, same trick, no coordination between the two).
+
+**Changes, all in `src/clients/jellyfin-web/ui/render.js`:**
+- `SYNC_PLAY_MENU_ID = 'app-sync-play-menu'` constant added (stable MUI selector from `AppToolbar/SyncPlayMenu.tsx`).
+- `applyNativeSyncButtonVisibility()`: stylesheet now also includes `[aria-controls="app-sync-play-menu"] { visibility: hidden !important; }` (alongside existing legacy header rules). Uses `visibility:hidden` not `display:none` to preserve layout bounds — both for accurate position-math in replacement logic, and to keep JellyPrivateLibraries' button from shifting into the SyncPlay slot and overlapping the JWP button.
+- `findSyncPlayReplacementRect()`: when `state.hideNativeSyncButton` is enabled and the MUI SyncPlay button's rect is non-zero, returns it for 1:1 replacement positioning.
+- `isFixedPositioned(el)`: detects CSS-class-driven `position:fixed` via `getComputedStyle` (real browsers), with fallback to `el.style.position` check (test harness).
+- `collectForeignFloatingRects(avatarRect, ownBtn)`: scans `document.body` children for other fixed-position elements within avatar's vertical-center ±1 height, rejecting wide elements (>120px, to exclude unrelated toasts/banners), returning their rects as collision candidates.
+- `positionMuiGlobalButton()` rewritten: checks `findSyncPlayReplacementRect()` first — if found, replaces the button exactly at that position (true 1:1 replacement). Otherwise falls back to existing "anchor left of visible sibling action" logic, now also comparing against `collectForeignFloatingRects()` to pick the candidate with smallest left edge (avoids overlapping JellyPrivateLibraries or other floating plugins), before applying existing `-40px` offset.
+
+**Tests** — `src/clients/jellyfin-web/tests/render-global-button.test.js` extended and `src/clients/jellyfin-web/tests/native-sync.test.js` added:
+- Four new render tests: detecting/sidestepping foreign floating buttons; ignoring unrelated fixed elements; replacing native SyncPlay when enabled; falling back to anchor when hideNativeSyncButton is on but SyncPlay absent.
+- One new native-sync test: `visibility:hidden` (not `display:none`) for MUI SyncPlay button when flag enabled.
+- Full suite: 69/69 passing (64 previous + 5 new). All touched JS files pass `node --check`.
+
+**Docs** updated: `docs/ARCHITECTURE.md`, `docs/technical/client.md` (ui/render.js descriptions), `docs/troubleshooting.md` (two new bullets covering collision avoidance and replace-SyncPlay opt-in behavior).
+
+**Status**: changes on same branch as Round 29 (fix/jellyfin-12-modern-header-button, PR #62, already open). Not yet committed/pushed to update the PR — next step. Verified against jellyfin-web source and JellyPrivateLibraries source, unit tests all green; no live Jellyfin 12 + JellyPrivateLibraries browser re-test performed.

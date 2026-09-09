@@ -30,6 +30,8 @@ for server and plugin settings.
 3. **Check browser console** (F12) — a `404` means the script wasn't found (plugin not installed); a `CORS` error means the WebSocket was blocked (check CORS config)
 4. **Verify plugin is installed** — Dashboard > Plugins should show "JellyWatchParty"; check Jellyfin logs for plugin load errors
 5. **On Jellyfin 12, update to the latest JellyWatchParty release** — versions before the Jellyfin 12 UI fix only checked whether `.headerRight` existed, not whether it was visible; Jellyfin 12's default "modern" layout keeps it in the DOM but hidden, so the button silently failed to appear with none of the symptoms above present. Fixed versions detect this and fall back to a floating button anchored next to the user-menu avatar.
+6. **On Jellyfin 12, the floating button overlaps another plugin's button** — that fallback anchors next to the user-menu avatar the same way some other plugins do (e.g. JellyPrivateLibraries); JellyWatchParty automatically detects and steps around any other plugin's own floating button there. If it's still overlapping, both plugins may be older than the versions with this fix — update both.
+7. **The floating button should be replacing SyncPlay but isn't** — this only happens when the admin has enabled "Hide native SyncPlay button" in JellyWatchParty's plugin config; with that off, the button floats next to the toolbar instead of over SyncPlay's icon (this is expected — see [Configuration]({{ '/configuration/' | relative_url }})).
 
 ### Cannot Connect to Session Server
 

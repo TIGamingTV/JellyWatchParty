@@ -189,7 +189,16 @@ Key files:
   button on `document.body`, anchored to the toolbar's user-menu avatar via
   `getBoundingClientRect`). Both use the same Material Icon (`groups`) as
   Jellyfin's native SyncPlay button (Round 7 — icon collision, fix
-  recommended but not confirmed applied).
+  recommended but not confirmed applied). On the MUI toolbar,
+  `positionMuiGlobalButton()` also generically detects and steps around any
+  *other* plugin's own `position:fixed` floating button anchored the same
+  way (real-world case: JellyPrivateLibraries, same author, uses a
+  near-identical anchoring formula and otherwise lands on the exact same
+  coordinates), and — when the admin's "Hide native SyncPlay button" setting
+  is on — takes over the native MUI SyncPlay button's exact slot instead
+  (`findSyncPlayReplacementRect()`; that button is hidden with
+  `visibility: hidden`, not `display: none`, specifically so its layout box,
+  and therefore this button's ability to read its real position, survives).
 - `ui/indicators.js` — renders the sync status dot/label (Round 11 — being
   reworked to not lie about unknown status).
 - `ui/bridge.js` (Round 17) — renders the "Host From Another Device"
