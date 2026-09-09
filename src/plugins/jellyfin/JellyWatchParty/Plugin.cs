@@ -83,7 +83,9 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     /// True when the server is a whole major version ahead of what this build
     /// targets. Jellyfin treats a plugin's targetAbi as a floor rather than a
     /// match, so a build for an older Jellyfin installs happily on a newer
-    /// server and then misbehaves in ways that are hard to attribute.
+    /// server (or, now that Jellyfin 10.11.x support has been dropped, an
+    /// old plugin build installs happily on a newer server) and then
+    /// misbehaves in ways that are hard to attribute.
     /// </summary>
     internal static bool IsServerNewerMajor(Version? running, Version? targeted)
         => running is not null && targeted is not null && running.Major > targeted.Major;
@@ -104,8 +106,9 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
             {
                 _logger.LogWarning("[JellyWatchParty] This build targets Jellyfin {Targeted} but the server is "
                     + "{Running}. That combination is not supported - install the JellyWatchParty release built "
-                    + "for Jellyfin {RunningMajor}. Expect the Watch Party UI to be missing or unable to "
-                    + "authenticate until you do.", targeted, running, running!.Major);
+                    + "for Jellyfin {RunningMajor}, or an older release if the server predates this build's "
+                    + "target. Expect the Watch Party UI to be missing or unable to authenticate until you do.",
+                    targeted, running, running!.Major);
             }
             else
             {

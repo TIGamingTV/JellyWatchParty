@@ -9,12 +9,9 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  # Must cover every TargetFrameworks entry in
-  # src/plugins/jellyfin/Directory.Build.props (net9.0 for Jellyfin 10.11.x,
-  # net10.0 for Jellyfin 12.x), one SDK version per line. See
-  # docs/jellyfin-12-migration.md before changing.
+  # Must match the TargetFrameworks entry in
+  # src/plugins/jellyfin/Directory.Build.props (net10.0 for Jellyfin 12.x).
   DOTNET_VERSIONS: |
-    9.0.x
     10.0.x
 
 jobs:
@@ -84,9 +81,6 @@ jobs:
       - name: Build
         run: dotnet build JellyWatchParty.Tests/JellyWatchParty.Tests.csproj --no-restore
 
-      # No -f: the test project multi-targets net9.0 and net10.0 (Jellyfin
-      # 10.11.x and 12.x respectively - see Directory.Build.props), and
-      # `dotnet test` runs the suite once per framework by default.
       - name: Run tests
         run: dotnet test JellyWatchParty.Tests/JellyWatchParty.Tests.csproj --no-build --verbosity normal
 

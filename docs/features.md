@@ -123,10 +123,9 @@ the corresponding bridge request.
 
 | Version | Status |
 |---------|--------|
-| 12.x | Not released yet; a dual-target build is prepared and CI-tested, see [Jellyfin 12 Migration]({{ '/jellyfin-12-migration/' | relative_url }}) |
-| 10.11.x | Supported (current target) |
-| 10.9.x - 10.10.x | Not tested |
-| 10.8.x and earlier | Not supported |
+| 12.x | Supported (current target) |
+| 10.11.x | Not supported; install an older release (`targetAbi 10.11.11.0`) instead |
+| 10.10.x and earlier | Not supported |
 
 ### Browsers
 

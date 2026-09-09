@@ -30,7 +30,7 @@ services:
       start_period: 5s
 
   plugin-builder:
-    image: mcr.microsoft.com/dotnet/sdk:9.0
+    image: mcr.microsoft.com/dotnet/sdk:10.0
     working_dir: /src
     network_mode: host
     profiles:
@@ -40,7 +40,6 @@ services:
     environment:
       - HOME=/tmp
       - DOTNET_CLI_HOME=/tmp/.dotnet
-    # See the matching comment in infra/docker/dev/docker-compose.yml: this
-    # SDK image only has .NET 9, so build just the net9.0 (Jellyfin 10.11.x)
-    # leg of the multi-targeted plugin project.
-    command: dotnet publish -c Release -f net9.0 -o /src/dist JellyWatchPartyPlugin.csproj
+    # The plugin project targets net10.0 (Jellyfin 12.x only - Jellyfin
+    # 10.11.x support has been dropped).
+    command: dotnet publish -c Release -f net10.0 -o /src/dist JellyWatchPartyPlugin.csproj

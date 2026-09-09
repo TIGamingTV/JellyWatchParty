@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://github.com/TIGamingTV/JellyWatchParty/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TIGamingTV/JellyWatchParty/ci.yml?branch=main&style=flat-square&label=CI" alt="CI"></a>
-  <img src="https://img.shields.io/badge/Jellyfin-10.11%2B-00a4dc?style=flat-square&logo=jellyfin" alt="Jellyfin 10.11+">
+  <img src="https://img.shields.io/badge/Jellyfin-12.x-00a4dc?style=flat-square&logo=jellyfin" alt="Jellyfin 12.x">
   <img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="MIT License">
 </p>
 
@@ -18,11 +18,10 @@ JellyWatchParty enables synchronized media playback for [Jellyfin](https://jelly
 
 Forked from https://github.com/mhbxyz/OpenWatchParty
 
-> **Jellyfin 12 is not released yet, so it isn't supported yet either.**
-> Releases currently target Jellyfin 10.11 only. A dual-target build for
-> Jellyfin 12 is prepared and tested in CI (see the
-> [Jellyfin 12 Migration notes](https://tigamingtv.github.io/JellyWatchParty/jellyfin-12-migration/))
-> and will ship as soon as Jellyfin 12.0 goes stable.
+> **Releases target Jellyfin 12.x only.** Jellyfin 10.11.x support has been
+> dropped; if you're still on 10.11.x, install an older
+> [release](https://github.com/TIGamingTV/JellyWatchParty/releases) (any
+> version with a `targetAbi` of `10.11.11.0`) instead.
 
 ## Quick Start with the File transformation Plugin
 
