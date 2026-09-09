@@ -166,7 +166,7 @@ reattachment possible.
 | Component | Technology |
 |-----------|------------|
 | Plugin | C# (.NET 9.0), ASP.NET Core |
-| Session Server | Rust, Warp, Tokio |
+| Session Server | Rust, Axum, Tokio |
 | Web Client | JavaScript (IIFE pattern) |
 | Communication | WebSocket, JSON |
 | Authentication | JWT (optional) |

@@ -7,6 +7,7 @@ use crate::auth::JwtConfig;
 use crate::messaging::{send_room_list, send_to_client};
 use crate::types::{ClientMessageType, Clients, IncomingMessage, Rooms, WsMessage};
 use crate::utils::now_ms;
+use axum::extract::ws::Message;
 use log::{debug, warn};
 use std::sync::Arc;
 
@@ -53,9 +54,27 @@ pub(super) async fn is_authenticated(client_id: &str, clients: &Clients) -> bool
         .unwrap_or(false)
 }
 
+/// Payload byte length of any frame type, matching what `warp`'s
+/// `Message::as_bytes()` used to report.
+fn payload_len(msg: &Message) -> usize {
+    match msg {
+        Message::Text(text) => text.len(),
+        Message::Binary(data) => data.len(),
+        Message::Ping(data) | Message::Pong(data) => data.len(),
+        Message::Close(frame) => frame.as_ref().map_or(0, |f| f.reason.len()),
+    }
+}
+
+/// Handles one inbound frame.
+///
+/// Every frame — including Ping/Pong/Binary/Close, which carry no application
+/// payload — is run through `check_rate_limit` first, because that is also
+/// what refreshes `last_seen` for the zombie reaper. Returning early on
+/// non-text frames before that point would let an otherwise healthy
+/// control-frame-only client get reaped after 60s.
 pub(super) async fn client_msg(
     client_id: &str,
-    msg: warp::ws::Message,
+    msg: Message,
     clients: &Clients,
     rooms: &Rooms,
     jwt_config: &Arc<JwtConfig>,
@@ -66,17 +85,20 @@ pub(super) async fn client_msg(
         return;
     }
 
-    if msg.as_bytes().len() > MAX_MESSAGE_SIZE {
-        warn!(
-            "Message too large from client {}: {} bytes",
-            client_id,
-            msg.as_bytes().len()
-        );
+    let len = payload_len(&msg);
+    if len > MAX_MESSAGE_SIZE {
+        warn!("Message too large from client {}: {} bytes", client_id, len);
         send_error(client_id, clients, "Message too large").await;
         return;
     }
 
-    let msg_str = if let Ok(s) = msg.to_str() { s } else { return };
+    // Non-text frames are dropped silently, as before: the socket stays open
+    // and clients rely on that (an unexpected close triggers their reconnect
+    // loops).
+    let Message::Text(ref text) = msg else {
+        return;
+    };
+    let msg_str = text.as_str();
 
     let parsed: IncomingMessage = match serde_json::from_str(msg_str) {
         Ok(v) => v,

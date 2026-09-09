@@ -6,10 +6,38 @@ use tokio::sync::{mpsc, RwLock};
 pub type Clients = Arc<RwLock<HashMap<String, Client>>>;
 pub type Rooms = Arc<RwLock<HashMap<String, Room>>>;
 
+/// A frame queued for delivery to one client's websocket.
+///
+/// Every message this server emits is a single JSON text frame, so this is a
+/// newtype over the serialized payload rather than a mirror of the transport's
+/// full frame enum. Keeping the web framework's message type out of the
+/// room/messaging layers means a future transport swap touches only
+/// `ws::connection` (which drains the channel into the socket) instead of
+/// every send site.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OutboundMessage(String);
+
+impl OutboundMessage {
+    /// Wraps an already-serialized JSON payload.
+    pub fn text(json: impl Into<String>) -> Self {
+        Self(json.into())
+    }
+
+    pub fn into_text(self) -> String {
+        self.0
+    }
+}
+
+/// Bounded sender half of a client's outbound queue.
+pub type ClientSender = mpsc::Sender<OutboundMessage>;
+
+/// Receiver half of a client's outbound queue.
+pub type ClientReceiver = mpsc::Receiver<OutboundMessage>;
+
 #[derive(Debug, Clone)]
 pub struct Client {
     // Bounded sender to prevent OOM from slow/malicious clients (P-RS03 fix)
-    pub sender: mpsc::Sender<std::result::Result<warp::ws::Message, warp::Error>>,
+    pub sender: ClientSender,
     pub room_id: Option<String>,
     pub user_id: String,
     pub user_name: String,
