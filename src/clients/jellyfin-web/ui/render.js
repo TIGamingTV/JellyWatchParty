@@ -20,17 +20,14 @@
   // of its own. When the admin enables "Hide native SyncPlay button",
   // JellyWatchParty's own watch-party controls replace it, so we hide it via
   // an injected stylesheet. CSS (rather than removing the node) survives
-  // Jellyfin's SPA re-renders, which repeatedly rebuild the header DOM.
+  // Jellyfin's SPA re-renders, which repeatedly rebuild the header DOM, and
+  // avoids fighting React over nodes it owns.
   //
-  // The MUI button is hidden with `visibility: hidden` rather than
-  // `display: none`: unlike display:none, it keeps the button's layout box
-  // (and therefore its real position) intact, which tryInjectMuiToolbar()
-  // below relies on to place JellyWatchParty's own button exactly in its
-  // place — a true 1:1 replacement — instead of merely avoiding it. It also
-  // means any *other* plugin that floats its own button next to the avatar
-  // using the same "anchor off the leftmost visible sibling" trick (see
-  // collectForeignFloatingRects() below) still reserves the same layout gap
-  // and slots in beside our replacement button instead of on top of it.
+  // `display: none` is correct for both: our own button is now a real in-flow
+  // child of the same flex container (see tryInjectMuiToolbar below), so it
+  // simply takes the freed slot. Earlier versions needed `visibility: hidden`
+  // here purely to keep the hidden button's layout box measurable for
+  // absolute-positioning math; that math is gone.
   const applyNativeSyncButtonVisibility = () => {
     const existing = document.getElementById(SYNC_HIDE_STYLE_ID);
     if (state.hideNativeSyncButton) {
@@ -38,7 +35,7 @@
       const style = document.createElement('style');
       style.id = SYNC_HIDE_STYLE_ID;
       style.textContent = '.headerSyncButton, .syncButton { display: none !important; } '
-        + `[aria-controls="${SYNC_PLAY_MENU_ID}"] { visibility: hidden !important; }`;
+        + `[aria-controls="${SYNC_PLAY_MENU_ID}"] { display: none !important; }`;
       document.head.appendChild(style);
     } else if (existing) {
       existing.remove();
@@ -223,7 +220,10 @@
 
     const btn = document.createElement('button');
     btn.id = GLOBAL_BTN_ID;
-    btn.className = 'paper-icon-button-light jwp-global-btn';
+    // The trailing marker class records which strategy created this button so
+    // injectGlobalButton() can tell the two apart later without re-deriving it
+    // from the DOM around it.
+    btn.className = 'paper-icon-button-light jwp-global-btn jwp-global-btn-legacy';
     btn.type = 'button';
     btn.title = 'JellyWatchParty';
     btn.setAttribute('aria-label', 'JellyWatchParty');
@@ -235,146 +235,138 @@
   };
 
   // Jellyfin 12's default layout renders a React/MUI toolbar instead
-  // (components/toolbar/AppToolbar.tsx), which has no .headerRight
-  // equivalent at all. Its user-menu avatar button is the only stable anchor
-  // available, identified by aria-controls="app-user-menu"
-  // (components/toolbar/UserMenuButton.tsx). That toolbar (and therefore the
-  // avatar) is absent on the video OSD and on public paths like login/
-  // select-server (both pass isUserMenuAvailable={false}), which is what we
-  // want since those already have no header button today either. The
-  // dashboard/admin app — including this plugin's own config page — reuses
-  // the exact same toolbar and avatar though, so "avatar present" alone can't
-  // tell a library page from an admin page; apps/dashboard/AppLayout.tsx
-  // additionally tags `document.body` with the `dashboardDocument` class for
-  // its own CSS scoping, reused here for the same purpose.
-  const isMuiToolbarButtonAllowed = () =>
-    !!document.querySelector('[aria-controls="app-user-menu"]') &&
-    !document.body.classList.contains('dashboardDocument');
+  // (components/toolbar/AppToolbar.tsx), which has no .headerRight equivalent.
+  // Its structure, verified against release-12.z, is:
+  //
+  //   <Toolbar class="MuiToolbar-root ...">
+  //     {children}                                        <- ServerButton/UserViewNav
+  //     <Box sx={{flexGrow:1, justifyContent:'flex-end'}}> <- the "actions" box:
+  //       <SyncPlayButton/><RemotePlayButton/><SearchButton/>
+  //     </Box>
+  //     <Box sx={{flexGrow:0}}><UserMenuButton/></Box>     <- the avatar
+  //   </Toolbar>
+  //
+  // That actions box is the correct home for a plugin button: it is the same
+  // flex container Jellyfin uses for its own toolbar actions, so an in-flow
+  // child lands in the right place with no coordinate math whatsoever.
+  //
+  // Contrary to a long-standing assumption in this plugin, React does *not*
+  // remove foreign nodes from a container it manages. React reconciles
+  // against its own fiber tree, deleting only nodes it created
+  // (removeChild(specificNode)) and inserting relative to its own host
+  // siblings; it never enumerates or clears the real child list. The one
+  // exception is hydration, and jellyfin-web mounts with createRoot
+  // (utils/reactUtils.tsx), never hydrateRoot. Verified empirically against
+  // the real jellyfin-web 12.0 production build in Chromium: an appended
+  // button survives 200 route navigations, MUI menu open/close churn and
+  // viewport/breakpoint changes untouched.
+  //
+  // Only a genuine unmount of the toolbar removes it — which happens exactly
+  // where the button should be gone anyway (the /video OSD, where
+  // apps/modern/components/AppToolbar returns null). MutationObserver-driven
+  // re-injection restores it on the way back.
+  const MUI_TOOLBAR_SELECTOR = '.MuiToolbar-root';
+  const AVATAR_SELECTOR = '[aria-controls="app-user-menu"]';
 
-  // If the admin has enabled "Hide native SyncPlay button" and Jellyfin 12's
-  // MUI SyncPlay button is actually present, take over its exact slot
-  // instead of floating elsewhere — a real 1:1 replacement, not just an
-  // additional button nearby. applyNativeSyncButtonVisibility() hides it
-  // with visibility:hidden rather than display:none specifically so its
-  // layout box (and therefore this rect) survives being hidden.
-  const findSyncPlayReplacementRect = () => {
-    if (!state.hideNativeSyncButton) return null;
-    const syncPlayBtn = document.querySelector(`[aria-controls="${SYNC_PLAY_MENU_ID}"]`);
-    if (!syncPlayBtn) return null;
-    const rect = syncPlayBtn.getBoundingClientRect();
-    return (rect.width || rect.height) ? rect : null;
+  // Resolve the actions box via the avatar, since the avatar is the only
+  // element in the toolbar with a stable, semantic selector of its own
+  // (aria-controls="app-user-menu", from components/toolbar/UserMenuButton.tsx).
+  // MUI assigns no meaningful class names to the two Boxes, so their identity
+  // comes from position: the actions box is the toolbar child immediately
+  // preceding the avatar's box.
+  //
+  // This naturally yields null exactly where no button should exist:
+  //   - the video OSD and public paths (login/select-server) render
+  //     isUserMenuAvailable={false}, so there is no avatar at all;
+  //   - the legacy layout has no MUI toolbar.
+  // The admin dashboard does reuse the same toolbar and avatar, so it needs
+  // an explicit exclusion: apps/dashboard/AppLayout.tsx tags document.body
+  // with `dashboardDocument` for its own CSS scoping, reused here.
+  const findMuiActionsBox = () => {
+    if (document.body.classList.contains('dashboardDocument')) return null;
+    const avatar = document.querySelector(AVATAR_SELECTOR);
+    if (!avatar || typeof avatar.closest !== 'function') return null;
+    const toolbar = avatar.closest(MUI_TOOLBAR_SELECTOR);
+    if (!toolbar) return null;
+    const avatarBox = avatar.closest(`${MUI_TOOLBAR_SELECTOR} > *`);
+    if (!avatarBox) return null;
+    const box = avatarBox.previousElementSibling;
+    return (box && toolbar.contains(box)) ? box : null;
   };
 
-  // Detects position:fixed via computed style (catching CSS-class-driven
-  // positioning, not just inline styles) in real browsers; falls back to
-  // checking el.style.position directly since the plain-object fake DOM used
-  // by this repo's node:test suite has no CSS engine / getComputedStyle.
-  const isFixedPositioned = (el) => {
-    if (typeof window.getComputedStyle === 'function') {
-      return window.getComputedStyle(el).position === 'fixed';
+  // MUI 6 keeps its real styling in emotion-generated hash classes
+  // (e.g. `css-z77o6z-MuiButtonBase-root-MuiIconButton-root`); the stable
+  // `Mui*` class names are only selectors for overrides and carry no styles
+  // themselves. So rather than hardcoding a hash that changes with every MUI
+  // release, or hand-rolling a lookalike, copy the class list verbatim off a
+  // real neighbouring IconButton. Measured against the live 12.0 build this
+  // yields a *zero* computed-style difference from a native toolbar button.
+  const findDonorButton = (box) => {
+    if (typeof box.querySelectorAll !== 'function') return null;
+    const candidates = box.querySelectorAll('button, a');
+    for (let i = 0; i < candidates.length; i++) {
+      const el = candidates[i];
+      if (el.id === GLOBAL_BTN_ID) continue;
+      if (el.classList && el.classList.contains('MuiIconButton-root')) return el;
     }
-    return !!(el.style && el.style.position === 'fixed');
+    return null;
   };
 
-  // Other Jellyfin plugins commonly solve "add a button to Jellyfin 12's
-  // React-owned MUI toolbar" the exact same way this one does: append a
-  // position:fixed button to document.body and anchor it off the avatar's
-  // leftmost visible sibling action, minus a fixed offset (confirmed against
-  // a sibling plugin of ours, JellyPrivateLibraries, which uses this
-  // near-identical technique). Two plugins independently computing that same
-  // anchor land on the exact same coordinates with no way for either to know
-  // about the other by name. Detect any such foreign fixed-position button
-  // roughly level with the avatar generically — by computed position, not by
-  // hardcoding another plugin's id/class — so this keeps working for any
-  // current or future plugin doing the same thing, not just one we know
-  // about today.
-  const collectForeignFloatingRects = (avatarRect, ownBtn) => {
-    const rects = [];
-    const siblings = document.body.children;
-    for (let i = 0; i < siblings.length; i++) {
-      const el = siblings[i];
-      if (el === ownBtn || !isFixedPositioned(el)) continue;
-      const rect = el.getBoundingClientRect();
-      if (!rect.width && !rect.height) continue;
-      if (rect.width > 120) continue; // not a small icon button — likely unrelated fixed UI
-      const sameRow = Math.abs((rect.top + rect.height / 2) - (avatarRect.top + avatarRect.height / 2)) <= avatarRect.height;
-      if (sameRow) rects.push(rect);
-    }
-    return rects;
-  };
-
-  // React owns the MUI toolbar's DOM and wipes any node inserted into it
-  // directly the next time it re-renders, so the button lives on
-  // document.body with position:fixed instead and is kept aligned with the
-  // avatar on every poll/resize. The avatar sits in its own flex box,
-  // immediately preceded by a sibling box holding whichever of SyncPlay/
-  // RemotePlay/Search the current page renders, packed against the avatar —
-  // anchor to the first visible one of those instead of a fixed offset from
-  // the avatar, so the button doesn't render on top of it on pages where one
-  // of them is present. Also avoid landing on top of any other plugin's own
-  // floating button anchored the same way (see collectForeignFloatingRects).
-  const positionMuiGlobalButton = (btn) => {
-    const avatar = document.querySelector('[aria-controls="app-user-menu"]');
-    if (!avatar) return;
-    const avatarRect = avatar.getBoundingClientRect();
-
-    const replaceRect = findSyncPlayReplacementRect();
-    if (replaceRect) {
-      btn.style.top = `${Math.round(replaceRect.top + (replaceRect.height - 40) / 2)}px`;
-      btn.style.left = `${Math.round(replaceRect.left)}px`;
-      return;
-    }
-
-    let leftAnchorRect = avatarRect;
-    const actionsGroup = avatar.parentElement && avatar.parentElement.previousElementSibling;
-    if (actionsGroup) {
-      for (let i = 0; i < actionsGroup.children.length; i++) {
-        const rect = actionsGroup.children[i].getBoundingClientRect();
-        if (rect.width || rect.height) {
-          leftAnchorRect = rect;
-          break;
-        }
-      }
-    }
-
-    const foreignRects = collectForeignFloatingRects(avatarRect, btn);
-    for (let i = 0; i < foreignRects.length; i++) {
-      if (foreignRects[i].left < leftAnchorRect.left) leftAnchorRect = foreignRects[i];
-    }
-
-    btn.style.top = `${Math.round(avatarRect.top + (avatarRect.height - 40) / 2)}px`;
-    btn.style.left = `${Math.round(leftAnchorRect.left - 40)}px`;
-  };
-
-  const tryInjectMuiToolbar = () => {
-    if (!isMuiToolbarButtonAllowed()) return false;
-
+  const buildMuiButton = (donor) => {
     const btn = document.createElement('button');
     btn.id = GLOBAL_BTN_ID;
     btn.type = 'button';
     btn.title = 'JellyWatchParty';
     btn.setAttribute('aria-label', 'JellyWatchParty');
-    btn.className = 'jwp-global-btn jwp-global-btn-floating';
+    // Fall back to the bare Mui* names plus our own reset when no donor is
+    // available (e.g. SyncPlay/RemotePlay/Search all hidden on this page).
+    btn.className = donor && donor.className
+      ? `${donor.className} jwp-global-btn`
+      : 'MuiButtonBase-root MuiIconButton-root MuiIconButton-colorInherit MuiIconButton-sizeLarge jwp-global-btn jwp-global-btn-standalone';
     btn.innerHTML = '<span class="material-icons groups" aria-hidden="true"></span>';
     btn.onclick = togglePanel;
+    return btn;
+  };
 
-    document.body.appendChild(btn);
-    positionMuiGlobalButton(btn);
+  const tryInjectMuiToolbar = () => {
+    const box = findMuiActionsBox();
+    if (!box) return false;
+    box.appendChild(buildMuiButton(findDonorButton(box)));
     return true;
   };
 
   const injectGlobalButton = () => {
     const existing = document.getElementById(GLOBAL_BTN_ID);
     if (existing) {
-      // Only the v12 floating button (parented directly to document.body)
-      // needs active upkeep here — the legacy .headerRight button's
-      // visibility is entirely CSS-driven once inserted (see above).
-      if (existing.parentElement === document.body) {
-        if (!isMuiToolbarButtonAllowed()) {
-          existing.remove();
-        } else {
-          positionMuiGlobalButton(existing);
-        }
+      // The legacy .headerRight button needs no upkeep once inserted — its
+      // visibility is entirely CSS-driven by Jellyfin's own header wrapper,
+      // including while the legacy video OSD hides the whole header.
+      //
+      // The one exception is a live layout switch: Settings → Display → Layout
+      // calls layoutManager.setLayout() without reloading the page
+      // (apps/modern/features/preferences/hooks/useDisplaySettings.ts), so a
+      // legacy button can end up stranded in a now-hidden header while the MUI
+      // toolbar takes over. Only treat it as stranded when a MUI actions box
+      // has actually appeared, so the legacy OSD case isn't churned.
+      if (existing.classList && existing.classList.contains('jwp-global-btn-legacy')) {
+        if (isRendered(existing) || !findMuiActionsBox()) return;
+        existing.remove();
+        tryInjectMuiToolbar();
+        return;
+      }
+
+      const box = findMuiActionsBox();
+      if (!box) {
+        // Navigated somewhere the button must not appear: the video OSD or a
+        // public path (no avatar at all), or the admin dashboard.
+        existing.remove();
+        return;
+      }
+      // React re-adds its own children relative to its own fiber siblings, so
+      // after it tears down and rebuilds the action buttons ours can end up
+      // ahead of them. Keep it pinned to the trailing slot next to the avatar.
+      if (existing.parentElement !== box || box.lastElementChild !== existing) {
+        box.appendChild(existing);
       }
       return;
     }
@@ -384,16 +376,38 @@
     }
   };
 
-  // Reposition immediately on resize rather than waiting for the next
-  // UI_CHECK_MS poll (see app/lifecycle.js). Guarded because window is a
-  // plain object (no addEventListener) in the node:test harness; a no-op
-  // there is fine since these tests drive injectGlobalButton() directly.
-  if (typeof window.addEventListener === 'function') {
-    window.addEventListener('resize', () => {
-      const existing = document.getElementById(GLOBAL_BTN_ID);
-      if (existing && existing.parentElement === document.body) positionMuiGlobalButton(existing);
-    });
-  }
+  // Jellyfin 12's toolbar is only rebuilt on real route transitions, so
+  // observing the DOM reacts immediately and does far less work than polling.
+  // Callbacks are coalesced through requestAnimationFrame because a single
+  // React commit produces many mutation records, and because injectGlobalButton
+  // mutates the DOM itself and would otherwise re-enter its own observer.
+  let observer = null;
+  let scheduled = false;
 
-  Object.assign(ui, { render, injectOsdButton, injectGlobalButton, applyNativeSyncButtonVisibility });
+  const observeToolbar = () => {
+    if (observer || typeof window.MutationObserver !== 'function') return;
+    const raf = typeof window.requestAnimationFrame === 'function'
+      ? window.requestAnimationFrame.bind(window)
+      : (cb) => setTimeout(cb, 16);
+    observer = new window.MutationObserver(() => {
+      if (scheduled) return;
+      scheduled = true;
+      raf(() => { scheduled = false; injectGlobalButton(); });
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+  };
+
+  const disconnectToolbarObserver = () => {
+    if (observer) { observer.disconnect(); observer = null; }
+    scheduled = false;
+  };
+
+  Object.assign(ui, {
+    render,
+    injectOsdButton,
+    injectGlobalButton,
+    applyNativeSyncButtonVisibility,
+    observeToolbar,
+    disconnectToolbarObserver
+  });
 })();
