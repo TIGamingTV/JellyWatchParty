@@ -185,20 +185,37 @@ Key files:
   button uses two strategies: `tryInjectLegacyHeader()` (`.headerRight.prepend`,
   Jellyfin 10.11 and Jellyfin 12 only if the user opts back into the legacy
   layout) and `tryInjectMuiToolbar()` (Jellyfin 12's default React/MUI
-  layout, where `.headerRight` exists but is hidden — a `position:fixed`
-  button on `document.body`, anchored to the toolbar's user-menu avatar via
-  `getBoundingClientRect`). Both use the same Material Icon (`groups`) as
-  Jellyfin's native SyncPlay button (Round 7 — icon collision, fix
-  recommended but not confirmed applied). On the MUI toolbar,
-  `positionMuiGlobalButton()` also generically detects and steps around any
-  *other* plugin's own `position:fixed` floating button anchored the same
-  way (real-world case: JellyPrivateLibraries, same author, uses a
-  near-identical anchoring formula and otherwise lands on the exact same
-  coordinates), and — when the admin's "Hide native SyncPlay button" setting
-  is on — takes over the native MUI SyncPlay button's exact slot instead
-  (`findSyncPlayReplacementRect()`; that button is hidden with
-  `visibility: hidden`, not `display: none`, specifically so its layout box,
-  and therefore this button's ability to read its real position, survives).
+  layout, where `.headerRight` exists but is hidden). Both use the same
+  Material Icon (`groups`) as Jellyfin's native SyncPlay button (Round 7 —
+  icon collision, fix recommended but not confirmed applied).
+
+  On Jellyfin 12 the button is appended as a real in-flow child of the MUI
+  toolbar's own actions `Box` — the flex container holding SyncPlay/
+  RemotePlay/Search — located by `findMuiActionsBox()` as the toolbar child
+  immediately preceding the user-menu avatar's `Box`. This replaced an earlier
+  `position:fixed` floating button that existed only because the plugin
+  assumed React would wipe foreign nodes out of the toolbar. It does not:
+  React reconciles against its own fiber tree, deletes only nodes it created,
+  and never enumerates the real child list; hydration is the sole exception
+  and jellyfin-web uses `createRoot`, not `hydrateRoot`. Confirmed empirically
+  against the real Jellyfin 12.0 production build in Chromium.
+
+  Being in flow removes all the machinery the floating button needed:
+  `getBoundingClientRect` positioning, resize handling, and the generic
+  detection of *other* plugins' floating buttons (real-world case:
+  JellyPrivateLibraries, which used a near-identical anchoring formula and
+  otherwise landed on identical coordinates) — two in-flow buttons cannot
+  collide by construction. `findDonorButton()` clones a neighbouring MUI
+  `IconButton`'s class list so the button is pixel-identical to Jellyfin's own
+  (MUI 6 keeps real styling in emotion hash classes; the stable `Mui*` names
+  carry none). When the admin's "Hide native SyncPlay button" setting is on,
+  that button is now hidden with `display: none` — the old `visibility: hidden`
+  existed purely to keep its layout box measurable for the positioning math,
+  and left a dead gap in the toolbar; our button simply takes the freed slot.
+
+  Re-injection is driven by a `MutationObserver` on `document.body`
+  (`observeToolbar()`, coalesced via `requestAnimationFrame`), with the
+  `UI_CHECK_MS` poll kept only as a safety net.
 - `ui/indicators.js` — renders the sync status dot/label (Round 11 — being
   reworked to not lie about unknown status).
 - `ui/bridge.js` (Round 17) — renders the "Host From Another Device"

@@ -69,41 +69,52 @@
     #jwp-chat-send { padding: 8px 12px; border-radius: 6px; border: none; background: #1565c0; color: #fff; cursor: pointer; font-size: 12px; }
     #jwp-chat-send:hover { background: #1976d2; }
     .jwp-chat-badge { display: none; background: #d32f2f; color: #fff; font-size: 10px; padding: 2px 5px; border-radius: 10px; margin-left: 4px; }
-    .jwp-global-btn {
+    .jwp-global-btn-legacy {
       margin-right: 10px;
       color: #fff;
       opacity: 0.92;
     }
-    .jwp-global-btn:hover {
+    .jwp-global-btn-legacy:hover {
       opacity: 1;
       color: #69f0ae;
     }
-    /* Jellyfin 12's MUI toolbar is React-owned, so the global button can't be
-       inserted into it directly (see ui/render.js tryInjectMuiToolbar) — it's
-       appended to document.body and positioned to match instead. MUI's own
-       IconButton classes carry no styling of their own (real styling comes
-       from emotion-injected hash classes), so this resets the browser's
-       default <button> chrome rather than relying on borrowed class names. */
-    .jwp-global-btn-floating {
-      position: fixed;
-      width: 40px;
-      height: 40px;
+    /* On Jellyfin 12 the button is a real in-flow child of the MUI toolbar's
+       own actions Box and clones its neighbour's emotion classes, so it needs
+       no layout or colour rules of its own. The icon does need explicit
+       geometry though: MUI sizes its own children as 24x24 SVGs, whereas this
+       is a Material icon *font* glyph, which would otherwise contribute zero
+       width until the font finishes loading and leave the button narrower
+       than its neighbours. */
+    .jwp-global-btn .material-icons {
+      display: inline-block;
+      width: 24px;
+      height: 24px;
+      font-size: 24px;
+      line-height: 24px;
+      text-align: center;
+    }
+    /* Fallback for the rare case where no sibling MUI IconButton exists to
+       clone classes from: the bare Mui* names carry no styling of their own
+       (real styling lives in emotion hash classes), so reset the browser's
+       default <button> chrome by hand. */
+    .jwp-global-btn-standalone {
+      width: 48px;
+      height: 48px;
       padding: 0;
-      margin-right: 0;
       display: inline-flex;
       align-items: center;
       justify-content: center;
       background: transparent;
       border: 0;
       border-radius: 50%;
+      color: inherit;
       cursor: pointer;
-      z-index: 1200;
       -webkit-tap-highlight-color: transparent;
     }
-    .jwp-global-btn-floating:hover {
+    .jwp-global-btn-standalone:hover {
       background-color: rgba(127, 127, 127, 0.2);
     }
-    .jwp-global-btn-floating:focus-visible {
+    .jwp-global-btn:focus-visible {
       outline: 2px solid currentColor;
       outline-offset: 2px;
     }

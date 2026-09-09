@@ -78,8 +78,10 @@
         }
       }
 
-      // Jellyfin is an SPA; header DOM is frequently replaced during navigation.
-      // Keep a global launcher button present even when no video OSD exists.
+      // Safety net only. Jellyfin is an SPA and replaces header DOM during
+      // navigation; ui.observeToolbar() reacts to that immediately, so this
+      // poll exists purely to cover the initial mount and any environment
+      // without MutationObserver.
       ui.injectGlobalButton();
     }, UI_CHECK_MS);
     state.intervals.home = setInterval(() => {
@@ -104,6 +106,9 @@
     clearAllIntervals();
     ui.injectStyles();
     createPanel();
+    // Re-place the toolbar button the moment Jellyfin's router rebuilds the
+    // header, rather than up to UI_CHECK_MS later.
+    if (ui.observeToolbar) ui.observeToolbar();
     if (JWP.actions && JWP.actions.connect) {
       console.log('[JellyWatchParty] Initiating WebSocket connection...');
       JWP.actions.connect();
