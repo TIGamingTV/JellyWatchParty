@@ -1,0 +1,14 @@
+# Configuration for `cargo audit` (see .github/workflows/security.yml).
+#
+# RUSTSEC-2026-0258 (h2 unbounded empty DATA frames DoS) has no fix
+# available for the h2 0.3.x line we depend on transitively via
+# warp 0.3 -> hyper 0.14 -> h2 0.3.27. The advisory's only remediation
+# is upgrading to h2 >=0.4.16, which requires hyper 1.x and is not
+# compatible with warp 0.3 (warp has not released a hyper-1-based
+# version). Migrating off warp is tracked separately; until then this
+# advisory is acknowledged and explicitly ignored so CI reflects real
+# regressions instead of being permanently red.
+[advisories]
+ignore = [
+    "RUSTSEC-2026-0258", # h2: unbounded empty DATA frames (no fix for h2 0.3.x / warp 0.3 / hyper 0.14)
+]
