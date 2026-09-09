@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "2.0.2.0",
+        "changelog": "## What's Changed\r\n* fix: v12 floating button overlaps other plugins; replace SyncPlay when configured by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/63\r\n\r\n\r\n**Full Changelog**: https://github.com/TIGamingTV/JellyWatchParty/compare/v2.0.1.0...v2.0.2.0",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/TIGamingTV/JellyWatchParty/releases/download/v2.0.2.0/JellyWatchParty-v2.0.2.0.zip",
+        "checksum": "1aa9f5cca54bcf5f4545fb0bc0c1d7e4",
+        "timestamp": "2026-09-09T12:27:48Z"
+      },
+      {
         "version": "2.0.1.0",
         "changelog": "## What's Changed\r\n* Drop Jellyfin 10.11.x support, target Jellyfin 12.x only by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/61\r\n* fix: Jellyfin 12's default layout hides the header button by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/62\r\n\r\n\r\n**Full Changelog**: https://github.com/TIGamingTV/JellyWatchParty/compare/v2.0.0.0...v2.0.1.0",
         "targetAbi": "12.0.0.0",
