@@ -1977,3 +1977,140 @@ guard and follower translation-helper tests); new xUnit
 build/tests run in CI (the sandbox here has no .NET/Docker and the proxy blocks
 the SDK/NuGet). End-to-end host + receiver confirmed on the reporter's live
 Android TV.
+
+---
+
+## Round 29 — Jellyfin 12's default layout hides the header button — verified against jellyfin-web source, not assumed
+
+A user reported that JellyWatchParty's plugin button was not appearing on
+**Jellyfin v12** (which shipped a rewritten React/Material-UI web client). The
+user pointed to a sibling project, TIGamingTV/JellyPrivateLibraries, which had
+hit and fixed a class of similar visibility bugs across GitHub PRs #18–#25,
+but explicitly cautioned: do not assume it's the same root cause without
+independent verification of the jellyfin-web source.
+
+**Investigation** — rather than assume, independently verified against actual
+jellyfin-web source:
+- Shallow-cloned both `release-12.z` and `release-10.11.z` branches and read
+  `AppHeader.tsx`, `RootAppRouter.tsx`, `scripts/libraryMenu.js`,
+  `components/layoutManager.js`, `components/apphost.js`,
+  `components/toolbar/AppToolbar.tsx`, `components/toolbar/UserMenuButton.tsx`,
+  `apps/modern/components/AppToolbar/index.tsx`, `apps/modern/routes/video/index.tsx`,
+  and `apps/dashboard/AppLayout.tsx`.
+- Found: `.headerRight` is still unconditionally built by jellyfin-web's
+  `scripts/libraryMenu.js`, but Jellyfin 12's `RootAppRouter.tsx` wraps it in a
+  `display:none` ancestor (`<AppHeader isHidden={layoutManager.modern || isNewLayoutPath} />`)
+  whenever the "modern" MUI layout is active — which `apphost.js`'s
+  `getDefaultLayout()` makes the *default* for any normal browser on v12 (unlike
+  10.11, where the legacy layout is the default). A plain `.headerRight !== null`
+  existence check can't detect this invisibility, so it "succeeds" by inserting
+  into a hidden node.
+- Located the identical bug pattern in `src/clients/jellyfin-web/ui/render.js`:
+  `document.querySelector('.headerRight') || document.querySelector('.skinHeader .headerRight')`
+  followed by only an existence check, no visibility check, and no MUI-toolbar
+  fallback strategy yet.
+- Confirmed JellyWatchParty's *other* injection point (`injectOsdButton()`,
+  `.videoOsdBottom .buttons`) is **not** affected: Jellyfin 12's modern video
+  route reuses the legacy `playback/video/index.html` view/controller for the
+  OSD bottom controls — only the top header bar is replaced with MUI. Fix is
+  scoped to the global header button only.
+
+**Fix** (`src/clients/jellyfin-web/ui/render.js`):
+- Added `isRendered(el)` — mirrors jQuery's `:visible` technique
+  (`offsetWidth || offsetHeight || getClientRects().length`).
+- Split the old single-strategy `injectGlobalButton()` into `tryInjectLegacyHeader()`
+  (unchanged `.headerRight.prepend` behavior, now gated on visibility too) and
+  new `tryInjectMuiToolbar()` for v12's default layout.
+- `tryInjectMuiToolbar()`: runs only when `[aria-controls="app-user-menu"]`
+  (the avatar) exists and `document.body` doesn't carry Jellyfin's own
+  `dashboardDocument` class (stays off admin dashboard, naturally absent on
+  video OSD / public login paths). Since React owns the MUI toolbar's DOM and
+  would wipe directly-inserted nodes, the button is instead appended to
+  `document.body` with `position:fixed`, positioned via `getBoundingClientRect()`
+  against the avatar's first visible sibling action button (SyncPlay/RemotePlay/Search,
+  whichever the current page renders) rather than a fixed offset — avoiding
+  rendering on top of it. Per-tick repositioning removes it if navigation reaches
+  a disallowed page (dashboard), letting it get recreated once back on an allowed
+  page. The legacy `.headerRight` button needs no such per-tick management since
+  its visibility is entirely CSS-driven by Jellyfin's own header wrapper once
+  inserted.
+- Added defensively-guarded `window.addEventListener('resize', ...)` (checked
+  `typeof window.addEventListener === 'function'` first, since this project's
+  `node:test` harness stubs `window` as a plain object with no `addEventListener`
+  — necessary to avoid breaking the existing test suite, discovered by actually
+  running the tests rather than assuming).
+- `src/clients/jellyfin-web/ui/styles.js`: added `.jwp-global-btn-floating` CSS
+  rule (position:fixed sizing/reset/hover/focus-visible) since MUI's own class
+  names carry no inherent styling — reusing the existing `.jwp-global-btn` class
+  only for the icon color/hover-green treatment.
+
+**Tests**: added `src/clients/jellyfin-web/tests/render-global-button.test.js`
+(9 new assertions, own lightweight fake-DOM helpers matching this suite's
+existing no-jsdom convention) covering: legacy insertion into a visible
+`.headerRight`; idempotency; falling through to MUI strategy when `.headerRight`
+exists but is hidden (the actual v12 default); doing nothing when neither
+strategy applies (OSD/public paths); position math both with and without a
+visible sibling action button; not creating/actively removing the floating
+button on `dashboardDocument` pages; and recreating it after leaving the
+dashboard. Full client suite: 64/64 passing (`node --test src/clients/jellyfin-web/tests/*.test.js`),
+all touched files pass `node --check`.
+
+**Docs**: updated `docs/ARCHITECTURE.md` and `docs/technical/client.md` (module-map
+entries for `ui/render.js` described only the old single-strategy behavior) and
+added a 5th bullet to the "Watch Party Button Not Visible" section of
+`docs/troubleshooting.md` covering this failure mode.
+
+**Verification caveat**: not run against a live Jellyfin 12 server in this
+environment (no Docker/dotnet toolchain available here) — verified by reading
+jellyfin-web's actual `release-12.z`/`release-10.11.z` source directly (shallow
+clones in /tmp, not committed) rather than assumption, by tracing the exact
+DOM/CSS mechanism end-to-end, and by the new unit tests. Recommend a
+real-browser smoke test against a live Jellyfin 12 instance before release (both
+the header/library pages and the admin dashboard, to confirm the button appears
+in the right place and is absent from the dashboard).
+
+**Addendum — `JellyWatchPartyPlugin.csproj`'s version was stale by two major
+versions.** Asked to double-check the plugin version against upstream before
+opening the PR for this fix. `<Version>`/`<AssemblyVersion>`/`<FileVersion>`
+on `main` read `1.0.0`/`1.0.0.0`/`1.0.0.0`, but the latest published GitHub
+Release is `v2.0.0.0` (2026-09-07) and `docs/jellyfin-plugin-repo/manifest.json`'s
+newest entry is already `2.0.0.0` — confirmed by fetching tags/releases (`gh
+release list`, `git ls-remote --tags`) rather than trusting the working tree.
+Traced it to `2c8cbda` ("drop Jellyfin 10.11.x support, target Jellyfin 12.x
+only"): that commit rewrote the `Directory.Build.props` comment block above the
+`<PropertyGroup>` but left the version fields at whatever they already were:
+`1.0.0.0` predates that commit too, so this isn't a regression introduced by
+it, just never caught. Also discovered while investigating: the local
+`drop-jellyfin-10-11-support` branch (this session's prior HEAD) had branched
+before `docs/jellyfin-plugin-repo/manifest.json`/`manifest-dev.json` were
+updated for the `v2.0.0.0` release, so its own working copies of those two
+files were stale by several entries — resolved by branching this fix off
+`origin/main` directly (which already contains both the manifest updates *and*
+the 10.11-drop, merged as PR #61) instead of continuing on the stale branch.
+
+Confirmed this mismatch is **not currently an active release bug**: `.github/workflows/publish.yml`
+stamps `-p:Version/-AssemblyVersion/-FileVersion` from the git release tag at
+build time (`VERSION="${RELEASE_TAG#v}"`), overriding whatever the csproj says
+— a deliberate fix from `66d7928` ("Stamp the real version into the plugin
+assembly at build time") for a previously-real bug: a mismatched assembly
+version made Jellyfin rewrite the installed `meta.json` down to the stale
+version, and the dashboard's `POST /Plugins/{id}/{version}/Disable` call would
+then 404 against a version nothing matched, permanently stuck-on plugins. So
+officially tagged releases are unaffected. It's still real drift, though:
+`docs/development/release.md`'s own "Version Locations" checklist says to keep
+`<Version>` current as part of every release, any *unstamped* build (`just
+build`, local `dotnet build`, `JWP.ui`/`Plugin.PluginVersion` read by anything
+outside a release build) would self-report `1.0.0` while shipping inside a
+build that's really several major versions past that, and it's exactly the
+category of mismatch `66d7928` had to fix once already.
+
+Bumped `<Version>2.0.1</Version>` / `<AssemblyVersion>2.0.1.0</AssemblyVersion>`
+/ `<FileVersion>2.0.1.0</FileVersion>` — one patch past the last published tag,
+since this branch's only functional change is the header-button bug fix above.
+The already-merged-but-unreleased "drop Jellyfin 10.11.x support" change on
+`main` doesn't get a version opinion here: the release workflow's tag-stamping
+means this csproj default doesn't decide the real release number regardless,
+and that's a separate decision for whoever actually cuts the next tag (could
+reasonably be higher than `2.0.1.0`, e.g. a minor or major bump, given the
+platform-support removal) — this fix only corrects "behind the last release",
+which was the unambiguous, no-judgment-call part.

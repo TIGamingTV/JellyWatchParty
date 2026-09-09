@@ -156,7 +156,12 @@ view (name, participants, sync indicator, chat, RTT, leave/close
 button). Also `injectOsdButton()` (button in the video OSD controls)
 and `injectGlobalButton()` (a persistent header button, since Jellyfin's
 SPA frequently replaces/removes the OSD — added so the launcher is
-still reachable even with no video open).
+still reachable even with no video open). `injectGlobalButton()` tries
+`tryInjectLegacyHeader()` first (Jellyfin 10.11's `.headerRight`) and falls
+back to `tryInjectMuiToolbar()` for Jellyfin 12's default React/MUI layout,
+where `.headerRight` still exists but is hidden by Jellyfin itself — the
+fallback anchors a `position:fixed` button to the toolbar's user-menu avatar
+instead, and hides it on Jellyfin's own dashboard/admin pages.
 
 ### `ui/cards.js` + `ui/home.js`
 Render the "Watch Parties" section on the Jellyfin home page.

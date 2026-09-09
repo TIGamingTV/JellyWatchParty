@@ -78,6 +78,35 @@
       opacity: 1;
       color: #69f0ae;
     }
+    /* Jellyfin 12's MUI toolbar is React-owned, so the global button can't be
+       inserted into it directly (see ui/render.js tryInjectMuiToolbar) — it's
+       appended to document.body and positioned to match instead. MUI's own
+       IconButton classes carry no styling of their own (real styling comes
+       from emotion-injected hash classes), so this resets the browser's
+       default <button> chrome rather than relying on borrowed class names. */
+    .jwp-global-btn-floating {
+      position: fixed;
+      width: 40px;
+      height: 40px;
+      padding: 0;
+      margin-right: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: 0;
+      border-radius: 50%;
+      cursor: pointer;
+      z-index: 1200;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .jwp-global-btn-floating:hover {
+      background-color: rgba(127, 127, 127, 0.2);
+    }
+    .jwp-global-btn-floating:focus-visible {
+      outline: 2px solid currentColor;
+      outline-offset: 2px;
+    }
     /* Toast styles */
     .jwp-toast-container {
       position: fixed; top: 70px; right: 20px; z-index: 30000;

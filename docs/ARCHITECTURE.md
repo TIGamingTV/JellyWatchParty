@@ -181,8 +181,13 @@ Key files:
   Round 11's fix, the UI still claimed "In sync" by default.
 - `utils/video.js` — `getVideo()`, locates the active `<video>` DOM element.
   This is the piece most likely to fail on non-standard players.
-- `ui/render.js` — injects the header button (`headerRight.prepend/append`)
-  and OSD button; currently uses the same Material Icon (`groups`) as
+- `ui/render.js` — injects the header button and OSD button. The header
+  button uses two strategies: `tryInjectLegacyHeader()` (`.headerRight.prepend`,
+  Jellyfin 10.11 and Jellyfin 12 only if the user opts back into the legacy
+  layout) and `tryInjectMuiToolbar()` (Jellyfin 12's default React/MUI
+  layout, where `.headerRight` exists but is hidden — a `position:fixed`
+  button on `document.body`, anchored to the toolbar's user-menu avatar via
+  `getBoundingClientRect`). Both use the same Material Icon (`groups`) as
   Jellyfin's native SyncPlay button (Round 7 — icon collision, fix
   recommended but not confirmed applied).
 - `ui/indicators.js` — renders the sync status dot/label (Round 11 — being

@@ -29,6 +29,7 @@ for server and plugin settings.
 2. **Hard refresh the browser** (Ctrl+F5 / Cmd+Shift+R), or clear the cache completely
 3. **Check browser console** (F12) — a `404` means the script wasn't found (plugin not installed); a `CORS` error means the WebSocket was blocked (check CORS config)
 4. **Verify plugin is installed** — Dashboard > Plugins should show "JellyWatchParty"; check Jellyfin logs for plugin load errors
+5. **On Jellyfin 12, update to the latest JellyWatchParty release** — versions before the Jellyfin 12 UI fix only checked whether `.headerRight` existed, not whether it was visible; Jellyfin 12's default "modern" layout keeps it in the DOM but hidden, so the button silently failed to appear with none of the symptoms above present. Fixed versions detect this and fall back to a floating button anchored next to the user-menu avatar.
 
 ### Cannot Connect to Session Server
 

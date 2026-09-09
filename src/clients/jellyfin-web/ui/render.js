@@ -180,10 +180,27 @@
     }
   };
 
-  const injectGlobalButton = () => {
-    if (document.getElementById(GLOBAL_BTN_ID)) return;
+  // Jellyfin 12's default "modern" (React/MUI) layout wraps the entire legacy
+  // header DOM in a display:none ancestor — RootAppRouter.tsx renders
+  // `<AppHeader isHidden={layoutManager.modern || isNewLayoutPath} />`, and
+  // apphost.js's getDefaultLayout() returns the modern layout unconditionally
+  // for any normal browser — even though scripts/libraryMenu.js still builds
+  // .headerRight into that hidden subtree completely unconditionally. So
+  // .headerRight still exists in the DOM on v12, it's just invisible; a plain
+  // existence check can't tell the two situations apart. Mirrors jQuery's
+  // :visible technique (verified against jellyfin-web's release-12.z source,
+  // not assumed).
+  const isRendered = (el) => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+
+  // Jellyfin 10.11, and Jellyfin 12 only if the user manually opts back into
+  // the legacy layout in Settings: insert into .headerRight as a native icon
+  // button, like the rest of Jellyfin's own header buttons. Once inserted, no
+  // further per-tick management is needed — .headerRight's own visibility is
+  // entirely CSS-driven by Jellyfin's header wrapper, so the button shows and
+  // hides itself in step with it automatically.
+  const tryInjectLegacyHeader = () => {
     const headerRight = document.querySelector('.headerRight') || document.querySelector('.skinHeader .headerRight');
-    if (!headerRight) return;
+    if (!headerRight || !isRendered(headerRight)) return false;
 
     const btn = document.createElement('button');
     btn.id = GLOBAL_BTN_ID;
@@ -195,7 +212,104 @@
     btn.onclick = togglePanel;
 
     headerRight.prepend(btn);
+    return true;
   };
+
+  // Jellyfin 12's default layout renders a React/MUI toolbar instead
+  // (components/toolbar/AppToolbar.tsx), which has no .headerRight
+  // equivalent at all. Its user-menu avatar button is the only stable anchor
+  // available, identified by aria-controls="app-user-menu"
+  // (components/toolbar/UserMenuButton.tsx). That toolbar (and therefore the
+  // avatar) is absent on the video OSD and on public paths like login/
+  // select-server (both pass isUserMenuAvailable={false}), which is what we
+  // want since those already have no header button today either. The
+  // dashboard/admin app — including this plugin's own config page — reuses
+  // the exact same toolbar and avatar though, so "avatar present" alone can't
+  // tell a library page from an admin page; apps/dashboard/AppLayout.tsx
+  // additionally tags `document.body` with the `dashboardDocument` class for
+  // its own CSS scoping, reused here for the same purpose.
+  const isMuiToolbarButtonAllowed = () =>
+    !!document.querySelector('[aria-controls="app-user-menu"]') &&
+    !document.body.classList.contains('dashboardDocument');
+
+  // React owns the MUI toolbar's DOM and wipes any node inserted into it
+  // directly the next time it re-renders, so the button lives on
+  // document.body with position:fixed instead and is kept aligned with the
+  // avatar on every poll/resize. The avatar sits in its own flex box,
+  // immediately preceded by a sibling box holding whichever of SyncPlay/
+  // RemotePlay/Search the current page renders, packed against the avatar —
+  // anchor to the first visible one of those instead of a fixed offset from
+  // the avatar, so the button doesn't render on top of it on pages where one
+  // of them is present.
+  const positionMuiGlobalButton = (btn) => {
+    const avatar = document.querySelector('[aria-controls="app-user-menu"]');
+    if (!avatar) return;
+    const avatarRect = avatar.getBoundingClientRect();
+
+    let leftAnchorRect = avatarRect;
+    const actionsGroup = avatar.parentElement && avatar.parentElement.previousElementSibling;
+    if (actionsGroup) {
+      for (let i = 0; i < actionsGroup.children.length; i++) {
+        const rect = actionsGroup.children[i].getBoundingClientRect();
+        if (rect.width || rect.height) {
+          leftAnchorRect = rect;
+          break;
+        }
+      }
+    }
+
+    btn.style.top = `${Math.round(avatarRect.top + (avatarRect.height - 40) / 2)}px`;
+    btn.style.left = `${Math.round(leftAnchorRect.left - 40)}px`;
+  };
+
+  const tryInjectMuiToolbar = () => {
+    if (!isMuiToolbarButtonAllowed()) return false;
+
+    const btn = document.createElement('button');
+    btn.id = GLOBAL_BTN_ID;
+    btn.type = 'button';
+    btn.title = 'JellyWatchParty';
+    btn.setAttribute('aria-label', 'JellyWatchParty');
+    btn.className = 'jwp-global-btn jwp-global-btn-floating';
+    btn.innerHTML = '<span class="material-icons groups" aria-hidden="true"></span>';
+    btn.onclick = togglePanel;
+
+    document.body.appendChild(btn);
+    positionMuiGlobalButton(btn);
+    return true;
+  };
+
+  const injectGlobalButton = () => {
+    const existing = document.getElementById(GLOBAL_BTN_ID);
+    if (existing) {
+      // Only the v12 floating button (parented directly to document.body)
+      // needs active upkeep here — the legacy .headerRight button's
+      // visibility is entirely CSS-driven once inserted (see above).
+      if (existing.parentElement === document.body) {
+        if (!isMuiToolbarButtonAllowed()) {
+          existing.remove();
+        } else {
+          positionMuiGlobalButton(existing);
+        }
+      }
+      return;
+    }
+    // Try the v10.11-style DOM first; fall back to the v12 MUI toolbar.
+    if (!tryInjectLegacyHeader()) {
+      tryInjectMuiToolbar();
+    }
+  };
+
+  // Reposition immediately on resize rather than waiting for the next
+  // UI_CHECK_MS poll (see app/lifecycle.js). Guarded because window is a
+  // plain object (no addEventListener) in the node:test harness; a no-op
+  // there is fine since these tests drive injectGlobalButton() directly.
+  if (typeof window.addEventListener === 'function') {
+    window.addEventListener('resize', () => {
+      const existing = document.getElementById(GLOBAL_BTN_ID);
+      if (existing && existing.parentElement === document.body) positionMuiGlobalButton(existing);
+    });
+  }
 
   Object.assign(ui, { render, injectOsdButton, injectGlobalButton, applyNativeSyncButtonVisibility });
 })();
