@@ -4,9 +4,11 @@ use super::super::constants::{
 };
 use super::super::pending_play::{all_ready, schedule_pending_play};
 use super::super::validation::{is_valid_play_state, is_valid_position};
-use crate::types::{ClientMessageType, Clients, IncomingMessage, PendingPlay, Room, Rooms};
+use crate::types::{
+    ClientMessageType, ClientSender, Clients, IncomingMessage, OutboundMessage, PendingPlay, Room,
+    Rooms,
+};
 use crate::utils::now_ms;
-use tokio::sync::mpsc;
 
 fn handle_play_not_ready(room: &mut Room, position: f64, current_ts: u64) -> Option<(String, u64)> {
     room.state.position = position;
@@ -135,7 +137,7 @@ pub(in crate::ws) async fn handle_playback(
     };
 
     let mut pending_schedule: Option<(String, u64)> = None;
-    let broadcast_data: Option<(Vec<mpsc::Sender<_>>, String)> = 'broadcast: {
+    let broadcast_data: Option<(Vec<ClientSender>, String)> = 'broadcast: {
         let mut locked_rooms = rooms.write().await;
         let locked_clients = clients.read().await;
 
@@ -209,9 +211,9 @@ pub(in crate::ws) async fn handle_playback(
     };
 
     if let Some((senders, json)) = broadcast_data {
-        let warp_msg = warp::ws::Message::text(json);
+        let outbound = OutboundMessage::text(json);
         for sender in senders {
-            if let Err(e) = sender.try_send(Ok(warp_msg.clone())) {
+            if let Err(e) = sender.try_send(outbound.clone()) {
                 log::warn!("Failed to send player event (buffer full or closed): {}", e);
             }
         }

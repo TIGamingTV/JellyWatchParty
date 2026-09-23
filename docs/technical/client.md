@@ -159,15 +159,46 @@ SPA frequently replaces/removes the OSD — added so the launcher is
 still reachable even with no video open). `injectGlobalButton()` tries
 `tryInjectLegacyHeader()` first (Jellyfin 10.11's `.headerRight`) and falls
 back to `tryInjectMuiToolbar()` for Jellyfin 12's default React/MUI layout,
-where `.headerRight` still exists but is hidden by Jellyfin itself — the
-fallback anchors a `position:fixed` button to the toolbar's user-menu avatar
-instead, and hides it on Jellyfin's own dashboard/admin pages. That
-fallback's `positionMuiGlobalButton()` also avoids overlapping any other
-plugin's own floating button anchored the same way (detected generically by
-computed `position: fixed`, not by hardcoding another plugin's id/class),
-and, when `state.hideNativeSyncButton` is enabled, positions itself exactly
-over Jellyfin 12's native MUI SyncPlay button instead of beside the toolbar
-— a real replacement, not just an extra button nearby.
+where `.headerRight` still exists but is hidden by Jellyfin itself.
+
+On Jellyfin 12 the button is a **real in-flow child** of the MUI toolbar's own
+actions `Box` — the same flex container that holds SyncPlay, RemotePlay and
+Search (`components/toolbar/AppToolbar.tsx`). `findMuiActionsBox()` locates it
+as the toolbar child immediately preceding the user-menu avatar's `Box`, the
+avatar being the only element in the toolbar with a stable semantic selector
+(`aria-controls="app-user-menu"`). Because it is in flow, there is no
+positioning math, no resize handling and no possibility of colliding with
+another plugin's button.
+
+This works because React does *not* remove foreign children from containers it
+manages: it reconciles against its own fiber tree, deletes only nodes it
+created, and never enumerates the real child list. (Hydration is the one
+exception, and jellyfin-web mounts with `createRoot`, never `hydrateRoot`.)
+Verified against the real Jellyfin 12.0 production build in Chromium — the
+button survives 200 route navigations, MUI menu churn and breakpoint changes
+untouched.
+
+`findDonorButton()` clones the class list off a neighbouring MUI `IconButton`
+so the button is styled natively: MUI 6 keeps its real styling in
+emotion-generated hash classes, and the stable `Mui*` names carry none, so
+copying a live neighbour is the only way to match without hardcoding a hash
+that changes with every MUI release. Measured against the live build this
+gives a *zero* computed-style difference from a native toolbar button.
+`.jwp-global-btn-standalone` is the fallback when no donor exists.
+
+The button is absent exactly where it should be: `findMuiActionsBox()` returns
+`null` on the video OSD and public paths (both render
+`isUserMenuAvailable={false}`, so there is no avatar), and the admin dashboard
+is excluded explicitly via the `dashboardDocument` class that
+`apps/dashboard/AppLayout.tsx` puts on `document.body`.
+
+`observeToolbar()` / `disconnectToolbarObserver()` drive re-injection from a
+`MutationObserver` on `document.body`, coalesced through
+`requestAnimationFrame` (one React commit emits many records, and
+`injectGlobalButton()` mutates the DOM itself, so it would otherwise re-enter
+its own observer). The `UI_CHECK_MS` poll in `app/lifecycle.js` remains only as
+a safety net for the initial mount and for environments without
+`MutationObserver`.
 
 ### `ui/cards.js` + `ui/home.js`
 Render the "Watch Parties" section on the Jellyfin home page.

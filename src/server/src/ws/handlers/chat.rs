@@ -1,8 +1,9 @@
 use super::super::constants::{MAX_CHAT_HISTORY, MAX_CHAT_MESSAGE_LENGTH};
 use super::super::dispatch::send_error;
-use crate::types::{ChatHistoryEntry, Clients, IncomingMessage, Rooms, WsMessage};
+use crate::types::{
+    ChatHistoryEntry, ClientSender, Clients, IncomingMessage, OutboundMessage, Rooms, WsMessage,
+};
 use crate::utils::now_ms;
-use tokio::sync::mpsc;
 
 fn validate_chat(text: &str) -> Result<(), &'static str> {
     if text.is_empty() {
@@ -14,10 +15,7 @@ fn validate_chat(text: &str) -> Result<(), &'static str> {
     Ok(())
 }
 
-type BroadcastData = (
-    Vec<mpsc::Sender<Result<warp::ws::Message, warp::Error>>>,
-    String,
-);
+type BroadcastData = (Vec<ClientSender>, String);
 
 fn collect_chat_senders(
     room_id: &str,
@@ -113,9 +111,9 @@ pub(in crate::ws) async fn handle_chat_message(
     };
 
     if let Some((senders, json)) = broadcast_data {
-        let warp_msg = warp::ws::Message::text(json);
+        let outbound = OutboundMessage::text(json);
         for sender in senders {
-            if let Err(e) = sender.try_send(Ok(warp_msg.clone())) {
+            if let Err(e) = sender.try_send(outbound.clone()) {
                 log::warn!("Failed to send chat_message (buffer full or closed): {}", e);
             }
         }

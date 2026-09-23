@@ -1,5 +1,5 @@
 use crate::messaging::{broadcast_room_list, broadcast_to_room};
-use crate::types::{Client, Clients, Room, Rooms, WsMessage};
+use crate::types::{Client, Clients, OutboundMessage, Room, Rooms, WsMessage};
 use crate::utils::now_ms;
 use log::info;
 use std::collections::HashMap;
@@ -88,9 +88,7 @@ fn close_and_notify(
     if let Ok(msg_json) = serde_json::to_string(&msg) {
         for cid in clients_to_notify {
             if let Some(c) = clients.get(cid) {
-                let _ = c
-                    .sender
-                    .try_send(Ok(warp::ws::Message::text(msg_json.clone())));
+                let _ = c.sender.try_send(OutboundMessage::text(msg_json.clone()));
             }
         }
     }
