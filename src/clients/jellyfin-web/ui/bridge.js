@@ -15,14 +15,8 @@
   //     available while this browser is in a room, and the session must
   //     already be playing the room's item.
 
-  const apiFetch = (path, options) => {
-    const apiClient = window.ApiClient;
-    if (!apiClient) return Promise.reject(new Error('ApiClient not available'));
-    const token = typeof apiClient.accessToken === 'function' ? apiClient.accessToken() : null;
-    const serverAddress = typeof apiClient.serverAddress === 'function' ? apiClient.serverAddress() : '';
-    const headers = Object.assign({}, options && options.headers, token ? { 'X-Emby-Token': token } : {});
-    return fetch(`${serverAddress}${path}`, Object.assign({}, options, { headers }));
-  };
+  // Shared authenticated fetch (utils/media.js), resolved lazily.
+  const apiFetch = (path, options) => utils.apiFetch(path, options);
 
   const renderList = (containerId, items, emptyText, buildRow) => {
     const el = document.getElementById(containerId);

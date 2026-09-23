@@ -55,5 +55,16 @@
     pm.__jwpTracksPatched = true;
   };
 
-  Object.assign(playback, { patchTrackSwitching });
+  // Fallback for web builds without a global playbackManager (Jellyfin 12.1+),
+  // where the track-switch methods can't be wrapped. An audio/subtitle switch
+  // that needs a transcode reloads the stream, which fires `loadstart` on the
+  // <video> element; suppress broadcasting for that reload the same way.
+  const onStreamReload = () => {
+    if (utils.getPlaybackManager()) return; // patched methods already cover it
+    if (!state.isHost || !state.inRoom) return;
+    utils.startSyncing(TRACK_SWITCH_SUPPRESS_MS);
+    armSettleShortcut();
+  };
+
+  Object.assign(playback, { patchTrackSwitching, onStreamReload });
 })();

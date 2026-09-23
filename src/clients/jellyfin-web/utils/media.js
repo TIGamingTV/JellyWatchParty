@@ -58,9 +58,105 @@
     return null;
   };
 
-  const getCurrentItemId = () => {
-    return getItemIdFromGlobals() || getItemIdFromDom() || getItemIdFromUrl() || null;
+  const ITEM_ID_RE = /^[a-f0-9]{32}$/i;
+
+  // Normalizes a Jellyfin GUID (dashed or not) to the 32-char hex form used
+  // everywhere else in the client and validated by the session server.
+  const normalizeItemId = (id) => {
+    if (typeof id !== 'string') return null;
+    const compact = id.replace(/-/g, '');
+    return ITEM_ID_RE.test(compact) ? compact.toLowerCase() : null;
   };
 
-  Object.assign(utils, { getCurrentItem, getCurrentItemId });
+  // Authenticated fetch against the Jellyfin server via the page's ApiClient.
+  const apiFetch = (path, options) => {
+    const apiClient = window.ApiClient;
+    if (!apiClient) return Promise.reject(new Error('ApiClient not available'));
+    const token = typeof apiClient.accessToken === 'function' ? apiClient.accessToken() : null;
+    const serverAddress = typeof apiClient.serverAddress === 'function' ? apiClient.serverAddress() : '';
+    const headers = Object.assign({}, options && options.headers, token ? { 'X-Emby-Token': token } : {});
+    return fetch(`${serverAddress}${path}`, Object.assign({}, options, { headers }));
+  };
+
+  const getDeviceId = () => {
+    const apiClient = window.ApiClient;
+    if (!apiClient) return '';
+    if (typeof apiClient.deviceId === 'function') return apiClient.deviceId() || '';
+    return apiClient._deviceId || '';
+  };
+
+  const getUserId = () => {
+    const apiClient = window.ApiClient;
+    if (!apiClient) return '';
+    return (typeof apiClient.getCurrentUserId === 'function' && apiClient.getCurrentUserId())
+      || apiClient._currentUserId || '';
+  };
+
+  // The server's view of this browser's own session. Independent of
+  // jellyfin-web internals, so it keeps working when playbackManager is not
+  // exposed globally (Jellyfin 12.1+). Resolves to null when unavailable.
+  const getOwnSession = async () => {
+    const deviceId = getDeviceId();
+    if (!deviceId) return null;
+    const res = await apiFetch(`/Sessions?deviceId=${encodeURIComponent(deviceId)}`);
+    if (!res || !res.ok) return null;
+    const sessions = await res.json();
+    if (!Array.isArray(sessions)) return null;
+    const userId = normalizeItemId(getUserId());
+    const own = sessions.filter((s) => s && s.DeviceId === deviceId);
+    const match = own.find((s) => userId && normalizeItemId(s.UserId) === userId) || own[0];
+    if (!match) return null;
+    return {
+      id: match.Id,
+      nowPlayingItemId: normalizeItemId(match.NowPlayingItem && match.NowPlayingItem.Id)
+    };
+  };
+
+  const getCurrentItemId = () => {
+    return getItemIdFromGlobals() || getItemIdFromDom() || getItemIdFromUrl()
+      || (JWP.state && JWP.state.serverNowPlayingId) || null;
+  };
+
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  // Updates the cached server-side now-playing id. Returns the id or null.
+  const refreshServerNowPlaying = async () => {
+    try {
+      const session = await getOwnSession();
+      const id = session && session.nowPlayingItemId;
+      if (id && JWP.state) JWP.state.serverNowPlayingId = id;
+      return id || null;
+    } catch (e) {
+      return null;
+    }
+  };
+
+  const clearServerNowPlaying = () => {
+    if (JWP.state) JWP.state.serverNowPlayingId = '';
+  };
+
+  // Async variant of getCurrentItemId: when local detection fails, asks the
+  // server which item this session is playing. The server only learns that
+  // after the player's first progress report, so retry briefly.
+  const resolveCurrentItemId = async ({ retries = 4, delayMs = 500 } = {}) => {
+    const local = getItemIdFromGlobals() || getItemIdFromDom() || getItemIdFromUrl();
+    if (local) return local;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      const id = await refreshServerNowPlaying();
+      if (id) return id;
+      if (attempt < retries) await sleep(delayMs);
+    }
+    return (JWP.state && JWP.state.serverNowPlayingId) || null;
+  };
+
+  Object.assign(utils, {
+    getCurrentItem,
+    getCurrentItemId,
+    resolveCurrentItemId,
+    refreshServerNowPlaying,
+    clearServerNowPlaying,
+    getOwnSession,
+    apiFetch,
+    normalizeItemId
+  });
 })();

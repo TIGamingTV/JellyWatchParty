@@ -60,27 +60,116 @@
     return result.success;
   };
 
-  const ensurePlayback = (itemId, attempt = 0) => {
+  // How long a sent PlayNow command blocks re-sending for the same item. The
+  // player normally opens well within this window; the id check in
+  // ensurePlayback stops further attempts once it has.
+  const PLAY_COMMAND_GUARD_MS = 15000;
+  const TICKS_PER_SECOND = 10000000;
+
+  const toStartTicks = (startPos) => {
+    const seconds = Number(startPos);
+    if (!Number.isFinite(seconds) || seconds <= 0) return 0;
+    return Math.floor(seconds * TICKS_PER_SECOND);
+  };
+
+  // Jellyfin 12.1+ does not expose playbackManager globally. Instead, ask the
+  // server to send a PlayNow command to this browser's own session;
+  // jellyfin-web handles that remote-control command itself and opens the
+  // player. Resolves to true once the server accepted the command.
+  const playViaSessionCommand = async (itemId, startPos = 0) => {
+    const state = JWP.state;
+    const now = utils.nowMs();
+    if (state.playCommandItemId === itemId && now < state.playCommandUntil) return true;
+    if (!utils.getOwnSession || !utils.apiFetch) return false;
+    let session = null;
+    try {
+      session = await utils.getOwnSession();
+    } catch (e) {
+      session = null;
+    }
+    if (!session || !session.id) {
+      console.warn('[JellyWatchParty] Playback fallback failed: own session not found');
+      return false;
+    }
+    if (session.nowPlayingItemId === itemId) {
+      // Already playing it (e.g. started by hand before joining); don't
+      // restart the player.
+      state.serverNowPlayingId = itemId;
+      return true;
+    }
+    const params = new URLSearchParams({
+      playCommand: 'PlayNow',
+      itemIds: itemId,
+      startPositionTicks: String(toStartTicks(startPos))
+    });
+    const path = `/Sessions/${encodeURIComponent(session.id)}/Playing?${params.toString()}`;
+    try {
+      const res = await utils.apiFetch(path, { method: 'POST' });
+      if (!res || !res.ok) {
+        console.warn('[JellyWatchParty] PlayNow session command rejected:', res && res.status);
+        return false;
+      }
+    } catch (err) {
+      console.warn('[JellyWatchParty] PlayNow session command failed:', err && err.message);
+      return false;
+    }
+    state.playCommandItemId = itemId;
+    state.playCommandUntil = utils.nowMs() + PLAY_COMMAND_GUARD_MS;
+    console.log('[JellyWatchParty] Playback requested via PlayNow session command');
+    return true;
+  };
+
+  // Last resort: open the item's details page and press its Play button.
+  const playViaDetailsPage = (itemId) => {
+    if (JWP.ui && JWP.ui.openDetailsAndPlay) {
+      JWP.ui.openDetailsAndPlay(itemId);
+      return true;
+    }
+    return false;
+  };
+
+  const retry = (fn, attempt) => {
+    if (attempt < 5) setTimeout(() => fn(attempt + 1), 500);
+  };
+
+  const ensurePlayback = (itemId, startPos = 0, attempt = 0) => {
     const state = JWP.state;
     if (!itemId || !window.ApiClient) return;
     if (utils.getCurrentItemId() === itemId) return;
     if (state.joiningItemId === itemId) return;
+    const again = (next) => ensurePlayback(itemId, startPos, next);
+
+    if (!utils.getPlaybackManager()) {
+      state.joiningItemId = itemId;
+      playViaSessionCommand(itemId, startPos).then((ok) => {
+        if (ok) return;
+        if (attempt < 2) {
+          retry(again, attempt);
+        } else if (playViaDetailsPage(itemId)) {
+          console.log('[JellyWatchParty] Falling back to details page playback');
+        } else if (JWP.ui && JWP.ui.showToast) {
+          JWP.ui.showToast('Failed to start playback. Try refreshing the page.');
+        }
+      }).finally(() => {
+        state.joiningItemId = '';
+      });
+      return;
+    }
+
     const userId = ApiClient.getCurrentUserId?.() || ApiClient._currentUserId;
     if (!userId) {
-      if (attempt < 5) setTimeout(() => ensurePlayback(itemId, attempt + 1), 500);
+      retry(again, attempt);
       return;
     }
     state.joiningItemId = itemId;
     ApiClient.getItem(userId, itemId).then((item) => {
-      if (!playItem(item) && attempt < 5) {
-        setTimeout(() => ensurePlayback(itemId, attempt + 1), 500);
-      }
+      if (!playItem(item)) retry(again, attempt);
     }).catch(() => {
-      if (attempt < 5) setTimeout(() => ensurePlayback(itemId, attempt + 1), 500);
+      retry(again, attempt);
     }).finally(() => {
       state.joiningItemId = '';
     });
   };
 
-  Object.assign(playback, { playItem, ensurePlayback });
+  Object.assign(playback, { playItem, ensurePlayback, playViaSessionCommand });
 })();
