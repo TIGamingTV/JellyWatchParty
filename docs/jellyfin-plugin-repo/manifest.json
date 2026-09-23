@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "2.0.5.0",
+        "changelog": "## What's Changed\r\n* Update develop plugin manifest (build 127) by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/69\r\n* Merge remote-tracking branch 'origin/develop' into fix/jf-12.1-playback-manager by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/70\r\n\r\n\r\n**Full Changelog**: https://github.com/TIGamingTV/JellyWatchParty/compare/v2.0.4.0...v2.0.5.0",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/TIGamingTV/JellyWatchParty/releases/download/v2.0.5.0/JellyWatchParty-v2.0.5.0.zip",
+        "checksum": "80c633b81aee6e81911eac1fc9aaae1d",
+        "timestamp": "2026-09-23T22:03:10Z"
+      },
+      {
         "version": "2.0.4.0",
         "changelog": "## What's Changed\r\n* refactor: migrate session-server from warp to axum, resolving RUSTSEC-2026-0258 at the source by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/66\r\n\r\n\r\n**Full Changelog**: https://github.com/TIGamingTV/JellyWatchParty/compare/v2.0.3.0...v2.0.4.0",
         "targetAbi": "12.0.0.0",
