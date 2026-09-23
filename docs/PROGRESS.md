@@ -2137,3 +2137,40 @@ After Round 29's v12 header-button fix shipped as PR #62, live testing revealed 
 **Docs** updated: `docs/ARCHITECTURE.md`, `docs/technical/client.md` (ui/render.js descriptions), `docs/troubleshooting.md` (two new bullets covering collision avoidance and replace-SyncPlay opt-in behavior).
 
 **Status**: changes on same branch as Round 29 (fix/jellyfin-12-modern-header-button, PR #62, already open). Not yet committed/pushed to update the PR — next step. Verified against jellyfin-web source and JellyPrivateLibraries source, unit tests all green; no live Jellyfin 12 + JellyPrivateLibraries browser re-test performed.
+
+---
+
+## Round 31 — MUI toolbar in-flow injection: disproved the React assumption behind Rounds 29–30 via live browser testing
+
+Round 29–30's "floating button" workaround existed because a comment in `render.js` (lines 306–308, introduced in Round 29) claimed: *"React owns the MUI toolbar's DOM and wipes any node inserted into it directly the next time it re-renders."* After investigation, this assumption proved **factually wrong**. It was disproven not by reasoning about React internals, but by empirical testing against the actual jellyfin-web 12.0 production bundle in a live headless Chromium browser.
+
+**The React misconception**. React reconciles against its own fiber tree, never by enumerating and clearing `parentNode.childNodes`. It removes only nodes it created (via `removeChild(specificNode)`) and re-inserts via `insertBefore`/`appendChild` *relative to its own host siblings*. The sole exception is hydration (where React expects the SSR HTML to already exist), and jellyfin-web uses `createRoot` (`src/utils/reactUtils.tsx:23`), not `hydrateRoot` — so hydration mode is irrelevant. A foreign node appended into a React-managed container survives re-renders exactly as the spec requires: React leaves it alone.
+
+**Verification method — not assumed, empirically disproven**. Cloned `jellyfin/jellyfin-web` `release-12.z` @ commit `0e83c6a` and reproduced the production bundle (React 18.3.1, MUI 6.5.0, react-router-dom 6). In headless Chromium:
+1. Confirmed the v12 toolbar carries both stable MUI class names (`.MuiToolbar-root`, `.MuiToolbar-gutters`, etc., assigned at runtime via `composeClasses`, absent as string literals in the shipped bundle) and emotion-generated hash classes. The stable names exist and are stable — a fact previously unclear.
+2. Confirmed `.headerRight` exists in the DOM but is not rendered (old insertion still occurs, now invisible on modern layout).
+3. Built an isolated harness of the real v12 toolbar React components with identical versions and stress-tested foreign-node injection: 200 rapid route navigations, 6–8x menu open/close cycles, and 400px ↔ 1440px viewport changes. Result: the injected button persisted, remained in-flow, and matched computed styles exactly versus a native MUI `IconButton`.
+4. Finally ran the actual shipped `src/clients/jellyfin-web/ui/render.js` against that same toolbar. Same result.
+
+**Conclusion**: the button can be injected directly into the MUI actions Box and will survive re-renders. The floating-button strategy was unnecessary.
+
+**Consequence**: removed all positioning machinery (`getBoundingClientRect` math, `position:fixed`, the resize listener, and the `collectForeignFloatingRects` collision-avoidance logic from Round 30). The button is now an ordinary in-flow sibling inside the MUI toolbar's actions Box. Two in-flow buttons cannot collide by construction. The `UI_CHECK_MS` poll is retained, but demoted to a safety net for the initial mount and for environments without `MutationObserver`; re-injection is now event-driven.
+
+**Changes, all in `src/clients/jellyfin-web/ui/render.js`:**
+- Removed: `isMuiToolbarButtonAllowed()`, `findSyncPlayReplacementRect()`, `isFixedPositioned()`, `collectForeignFloatingRects()`, `positionMuiGlobalButton()`, and the `window.addEventListener('resize', ...)` handler.
+- Added `findMuiActionsBox()` — resolves the MUI toolbar actions Box (`.MuiToolbar-root` direct child immediately preceding the avatar's Box) via `avatar.closest('.MuiToolbar-root > *').previousElementSibling`. The avatar (`aria-controls="app-user-menu"`) is the only stable semantic selector. Returns `null` (no injection) for video OSD, public paths (both lack avatar), and explicitly gated by `document.body.classList.contains('dashboardDocument')`.
+- Added `findDonorButton()` / `buildMuiButton()` — clones class list verbatim from a neighbouring MUI `IconButton`. MUI 6 runtime-generates emotion hashes; the stable `Mui*` class names carry no styles. Cloning a live neighbour is the only version-agnostic way to match styling without hardcoding a hash that changes every MUI release. Skips any element carrying our own id to prevent class-list compounding; falls back to `.jwp-global-btn-standalone` when no donor exists.
+- `tryInjectMuiToolbar()` simplified to: find actions box, build button with donor classes, `box.appendChild(button)`.
+- `injectGlobalButton()` re-pinning logic: React may re-insert its own buttons in front of ours after leaving a public path (React re-inserts relative to its own fiber siblings). The function now moves our button to the trailing slot when needed; removes itself when the actions box is gone.
+- Added `observeToolbar()` / `disconnectToolbarObserver()` — single `MutationObserver` on `document.body` with coalescing via `requestAnimationFrame` (one React commit emits many records, and `injectGlobalButton()` mutates the DOM). Guarded no-op where `MutationObserver` is unavailable (fallback to existing `UI_CHECK_MS` poll).
+- `tryInjectLegacyHeader()` now tags its button `jwp-global-btn-legacy` so the two strategies are distinguishable without re-deriving from surrounding DOM.
+- Live-layout-switch handling: `layoutManager.setLayout()` can toggle legacy ↔ modern at runtime without reload. A legacy button can be stranded when modern is activated. `injectGlobalButton()` now migrates it to the MUI toolbar — but only when an actions box actually exists (no migration if the MUI toolbar is absent).
+- `applyNativeSyncButtonVisibility()`: MUI SyncPlay now hidden with `display: none` instead of `visibility: hidden`. The latter existed only to keep measurable layout bounds for positioning math and left a dead gap in the toolbar. Our in-flow button simply takes the freed slot.
+
+**Test changes** — `src/clients/jellyfin-web/tests/render-global-button.test.js` rewritten 302 → ~520 lines, 24 cases. Fake DOM now models v12 toolbar shape (`closest`, `contains`, `querySelectorAll`, `lastElementChild`, `previousElementSibling`, `classList`). Coverage: in-flow placement with no positioning styles, trailing-slot ordering, donor class cloning, standalone fallback, never self-cloning, idempotency, re-pinning after React re-orders, toolbar rebuild/re-injection, dashboard gating, legacy OSD non-churn, live layout-switch migration, and `observeToolbar` contract (single observer, rAF coalescing, disconnect/re-arm).
+
+`src/clients/jellyfin-web/tests/native-sync.test.js`: assertion for `visibility: hidden` replaced with `assert.doesNotMatch` covering exactly two `display: none` rules.
+
+**Docs**: `docs/technical/client.md` and `docs/ARCHITECTURE.md` updated to describe the in-flow strategy and correct the React-wipes-foreign-nodes claim (noting it was disproven empirically against the real 12.0 build, not reasoned away).
+
+**Results**: 80/80 client tests pass (was 78). `node --check` clean across all client JS. Injection work dropped from an unconditional 2s poll to 3 total injections across the entire browser stress suite. No positioning, no collisions by construction, no layout shifts.

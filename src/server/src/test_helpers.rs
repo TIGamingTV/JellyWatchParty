@@ -1,4 +1,4 @@
-use crate::types::{Client, Clients, PlaybackState, Room, Rooms, WsMessage};
+use crate::types::{Client, ClientReceiver, Clients, PlaybackState, Room, Rooms, WsMessage};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
@@ -15,10 +15,7 @@ pub fn create_client_with_rx(
     user_id: &str,
     user_name: &str,
     authenticated: bool,
-) -> (
-    Client,
-    mpsc::Receiver<Result<warp::ws::Message, warp::Error>>,
-) {
+) -> (Client, ClientReceiver) {
     let (tx, rx) = mpsc::channel(100);
     let now = crate::utils::now_ms();
     let client = Client {
@@ -54,15 +51,10 @@ pub fn create_room(room_id: &str, host_id: &str) -> Room {
     }
 }
 
-pub fn recv_msg(
-    rx: &mut mpsc::Receiver<Result<warp::ws::Message, warp::Error>>,
-) -> Option<WsMessage> {
+pub fn recv_msg(rx: &mut ClientReceiver) -> Option<WsMessage> {
     match rx.try_recv() {
-        Ok(Ok(msg)) => {
-            let text = msg.to_str().ok()?;
-            serde_json::from_str(text).ok()
-        }
-        _ => None,
+        Ok(msg) => serde_json::from_str(&msg.into_text()).ok(),
+        Err(_) => None,
     }
 }
 
@@ -70,7 +62,7 @@ pub fn setup_room_with_host(
     clients: &mut HashMap<String, Client>,
     rooms: &mut HashMap<String, Room>,
     host_id: &str,
-) -> mpsc::Receiver<Result<warp::ws::Message, warp::Error>> {
+) -> ClientReceiver {
     let (client, rx) = create_client_with_rx(host_id, "Host", true);
     let mut room = create_room("room-1", host_id);
     let mut client = client;

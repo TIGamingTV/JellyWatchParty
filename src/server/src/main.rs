@@ -18,7 +18,6 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use warp::Filter;
 
 #[tokio::main]
 async fn main() {
@@ -42,9 +41,7 @@ async fn main() {
 
     tasks::spawn_zombie_cleanup(clients.clone(), rooms.clone());
 
-    let routes =
-        routes::build_ws_route(clients, rooms, jwt_config.clone(), allowed_origins.clone())
-            .or(routes::build_health_route(jwt_config, allowed_origins));
+    let app = routes::build_router(clients, rooms, jwt_config, allowed_origins);
 
     let host = std::env::var("HOST").unwrap_or_else(|_| "0.0.0.0".into());
     let port: u16 = std::env::var("PORT")
@@ -57,11 +54,19 @@ async fn main() {
 
     let shutdown_rx = tasks::setup_shutdown_signal();
 
-    info!("JellyWatchParty server listening on {}", addr);
-    let (_, server) = warp::serve(routes).bind_with_graceful_shutdown(addr, async {
-        shutdown_rx.await.ok();
-    });
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .unwrap_or_else(|e| panic!("Failed to bind {}: {}", addr, e));
 
-    server.await;
+    info!("JellyWatchParty server listening on {}", addr);
+    if let Err(e) = axum::serve(listener, app)
+        .with_graceful_shutdown(async {
+            shutdown_rx.await.ok();
+        })
+        .await
+    {
+        log::error!("Server error: {}", e);
+    }
+
     info!("Server shutdown complete");
 }

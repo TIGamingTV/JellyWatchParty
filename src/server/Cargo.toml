@@ -11,9 +11,19 @@ opt-level = 3          # Full optimization for runtime performance
 strip = true           # Strip symbols for smaller binary
 
 [dependencies]
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "signal"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "signal", "net"] }
 tokio-stream = "0.1"
-warp = "0.3"
+# axum (hyper 1.x) rather than warp (hyper 0.14). warp 0.3 pins hyper 0.14,
+# which pins h2 0.3.x — permanently vulnerable to RUSTSEC-2026-0258, whose
+# only remediation is h2 >= 0.4.16 on the hyper 1.x line.
+#
+# Note the deliberate absence of the "http2" feature: nothing that talks to
+# this server speaks HTTP/2 (browsers use an HTTP/1.1 Upgrade for WebSockets,
+# .NET's ClientWebSocket defaults to HTTP/1.1, and the documented reverse
+# proxy configs pin `proxy_http_version 1.1`). Leaving it off keeps `h2` out
+# of the dependency tree entirely instead of merely on a patched version.
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "query", "tokio", "tower-log", "tracing", "ws"] }
+tower-http = { version = "0.6", features = ["cors"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 futures = { version = "0.3", default-features = false }
@@ -22,3 +32,13 @@ env_logger = "0.10"
 log = "0.4"
 jsonwebtoken = "9"
 sha2 = "0.10"
+
+[dev-dependencies]
+# Drives the router directly (`ServiceExt::oneshot`) in the routes tests so the
+# origin guard / health endpoint / websocket handshake have real coverage
+# without standing up a socket.
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+# Already in the tree via `axum/ws`; used here as a real websocket *client* so
+# the handshake tests exercise an actual upgrade rather than a mocked request.
+tokio-tungstenite = "0.29"
