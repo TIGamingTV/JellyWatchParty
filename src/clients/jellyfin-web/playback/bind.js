@@ -75,8 +75,27 @@
       seeked: () => {
         utils.log('VIDEO', { event: 'seeked', pos: video.currentTime });
         onHostEvent('seek', video);
+      },
+      // A new stream is loading (next item, or a track switch that reloads
+      // the transcode).
+      loadstart: () => {
+        if (playback.onStreamReload) playback.onStreamReload();
+        scheduleNowPlayingRefresh();
       }
     };
+  };
+
+  // The server learns the playing item from the player's first progress
+  // report, so give it a moment before asking (see utils.getOwnSession).
+  const NOW_PLAYING_REFRESH_DELAY_MS = 1500;
+  let nowPlayingRefreshTimer = null;
+  const scheduleNowPlayingRefresh = () => {
+    if (!utils.refreshServerNowPlaying) return;
+    if (nowPlayingRefreshTimer) clearTimeout(nowPlayingRefreshTimer);
+    nowPlayingRefreshTimer = setTimeout(() => {
+      nowPlayingRefreshTimer = null;
+      utils.refreshServerNowPlaying();
+    }, NOW_PLAYING_REFRESH_DELAY_MS);
   };
 
   const bindVideo = () => {
@@ -97,6 +116,8 @@
     video.addEventListener('play', listeners.play);
     video.addEventListener('pause', listeners.pause);
     video.addEventListener('seeked', listeners.seeked);
+    video.addEventListener('loadstart', listeners.loadstart);
+    scheduleNowPlayingRefresh();
     if (state.intervals.stateUpdate) {
       clearInterval(state.intervals.stateUpdate);
     }
@@ -115,6 +136,11 @@
       video.removeEventListener('play', listeners.play);
       video.removeEventListener('pause', listeners.pause);
       video.removeEventListener('seeked', listeners.seeked);
+      video.removeEventListener('loadstart', listeners.loadstart);
+    }
+    if (nowPlayingRefreshTimer) {
+      clearTimeout(nowPlayingRefreshTimer);
+      nowPlayingRefreshTimer = null;
     }
     if (state.intervals.stateUpdate) {
       clearInterval(state.intervals.stateUpdate);

@@ -16,9 +16,18 @@
     state.ws.send(JSON.stringify(message));
   };
 
-  const createRoom = (password = '') => {
+  const createRoom = async (password = '') => {
+    // Resolve the item id before reading the position: on Jellyfin 12.1+ the
+    // id may have to come from the server (no global playbackManager).
+    let mediaId = null;
+    try {
+      mediaId = utils.resolveCurrentItemId
+        ? await utils.resolveCurrentItemId()
+        : utils.getCurrentItemId();
+    } catch (e) {
+      mediaId = utils.getCurrentItemId();
+    }
     const v = utils.getVideo();
-    const mediaId = utils.getCurrentItemId();
     const userName = state.userName
       || window.ApiClient?._currentUser?.Name
       || 'Anonymous';
