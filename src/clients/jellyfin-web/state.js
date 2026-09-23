@@ -109,6 +109,14 @@
     homeRoomCache: new LRUCache(50),
     lastParticipantCount: 0,
     joiningItemId: '',
+    // Item id of this client's own session as reported by the Jellyfin server
+    // (GET /Sessions). Fallback for web builds without a global playbackManager
+    // (Jellyfin 12.1+), where the player route and OSD carry no item id.
+    serverNowPlayingId: '',
+    // Item id a PlayNow session command was last sent for, and until when a
+    // repeat send is suppressed (prevents duplicate Play commands on retries).
+    playCommandItemId: '',
+    playCommandUntil: 0,
     pendingJoinRoomId: '',  // Room to join after navigating to video player
     roomName: '',
     participantCount: 0,

@@ -70,7 +70,10 @@
     syncToRoom(msg, video);
     if (!state.isHost && msg.payload?.media_id) {
       if (JWP.playback && JWP.playback.ensurePlayback) {
-        JWP.playback.ensurePlayback(msg.payload.media_id);
+        const roomPos = msg.payload.state && typeof msg.payload.state.position === 'number'
+          ? utils.adjustedPosition(msg.payload.state.position, msg.server_ts)
+          : 0;
+        JWP.playback.ensurePlayback(msg.payload.media_id, roomPos);
         if (JWP.playback.watchReady) JWP.playback.watchReady();
       }
     }

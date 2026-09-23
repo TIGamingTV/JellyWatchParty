@@ -106,6 +106,31 @@
     });
   };
 
+  // Navigates to the item's details page and presses its Play button once the
+  // page has rendered. Works without any jellyfin-web internals, so it is also
+  // the last-resort playback path for guests (see playback/play.js).
+  const openDetailsAndPlay = (mediaId) => {
+    if (!mediaId) return;
+    const serverId = window.ApiClient?.serverId?.() || window.ApiClient?._serverInfo?.Id || '';
+    console.log('[JellyWatchParty] Navigating to details page');
+    window.location.hash = `#/details?id=${mediaId}&serverId=${serverId}`;
+    let attempts = 0;
+    const maxAttempts = 50;
+    const checkInterval = setInterval(() => {
+      attempts++;
+      const itemName = document.querySelector('.itemName bdi');
+      const playBtn = document.querySelector('.mainDetailButtons .btnPlay, .mainDetailButtons button[data-action="resume"], .mainDetailButtons button[data-action="play"]');
+      if (playBtn && itemName && itemName.textContent.trim()) {
+        console.log('[JellyWatchParty] Play button found and page ready, clicking it');
+        clearInterval(checkInterval);
+        playBtn.click();
+      } else if (attempts >= maxAttempts) {
+        console.log('[JellyWatchParty] Play button not found or page not ready after 5s, giving up');
+        clearInterval(checkInterval);
+      }
+    }, 100);
+  };
+
   const attachCardHandlers = (card, room) => {
     const joinBtn = card.querySelector('.jwp-join-btn');
     if (joinBtn) {
@@ -118,25 +143,7 @@
         }
         state.pendingJoinRoomId = room.id;
         console.log('[JellyWatchParty] Set pendingJoinRoomId:', room.id);
-        const serverId = window.ApiClient?.serverId?.() || window.ApiClient?._serverInfo?.Id || '';
-        console.log('[JellyWatchParty] Navigating to details page');
-        const detailsUrl = `#/details?id=${room.media_id}&serverId=${serverId}`;
-        window.location.hash = detailsUrl;
-        let attempts = 0;
-        const maxAttempts = 50;
-        const checkInterval = setInterval(() => {
-          attempts++;
-          const itemName = document.querySelector('.itemName bdi');
-          const playBtn = document.querySelector('.mainDetailButtons .btnPlay, .mainDetailButtons button[data-action="resume"], .mainDetailButtons button[data-action="play"]');
-          if (playBtn && itemName && itemName.textContent.trim()) {
-            console.log('[JellyWatchParty] Play button found and page ready, clicking it');
-            clearInterval(checkInterval);
-            playBtn.click();
-          } else if (attempts >= maxAttempts) {
-            console.log('[JellyWatchParty] Play button not found or page not ready after 5s, giving up');
-            clearInterval(checkInterval);
-          }
-        }, 100);
+        openDetailsAndPlay(room.media_id);
       });
     }
     card.addEventListener('click', (e) => {
@@ -160,5 +167,5 @@
     return card;
   };
 
-  Object.assign(ui, { updateRoomListUI, createRoomCard, promptJoinWithPassword });
+  Object.assign(ui, { updateRoomListUI, createRoomCard, promptJoinWithPassword, openDetailsAndPlay });
 })();

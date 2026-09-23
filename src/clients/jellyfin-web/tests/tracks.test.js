@@ -65,6 +65,36 @@ describe('playback/tracks patchTrackSwitching', () => {
   });
 });
 
+describe('playback/tracks onStreamReload (no global playbackManager)', () => {
+  beforeEach(() => {
+    document.querySelector = () => null;
+    delete window.playbackManager;
+    JWP.state.isSyncing = false;
+  });
+
+  it('suppresses broadcasting on a host stream reload while in a room', () => {
+    JWP.state.isHost = true;
+    JWP.state.inRoom = true;
+    JWP.playback.onStreamReload();
+    assert.equal(JWP.state.isSyncing, true);
+  });
+
+  it('does nothing for guests', () => {
+    JWP.state.isHost = false;
+    JWP.state.inRoom = true;
+    JWP.playback.onStreamReload();
+    assert.equal(JWP.state.isSyncing, false);
+  });
+
+  it('defers to the patched methods when a playbackManager exists', () => {
+    window.playbackManager = makePlaybackManager();
+    JWP.state.isHost = true;
+    JWP.state.inRoom = true;
+    JWP.playback.onStreamReload();
+    assert.equal(JWP.state.isSyncing, false);
+  });
+});
+
 describe('utils.startSyncing custom duration', () => {
   it('respects a custom ms argument', () => {
     JWP.state.isSyncing = false;
