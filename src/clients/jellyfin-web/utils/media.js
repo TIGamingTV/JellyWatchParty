@@ -31,12 +31,31 @@
     return null;
   };
 
+  // Jellyfin keeps the player's OSD page in the DOM after you leave the
+  // player, only hidden (`div.page ... hide`), and its buttons (e.g.
+  // .btnUserRating) still carry the last item's id. Reading that would report
+  // the previous movie as playing on the home screen, so skip anything
+  // inside a hidden page.
+  const isOnHiddenPage = (el) => typeof el.closest === 'function' && !!el.closest('.page.hide');
+
+  const firstOnVisiblePage = (selector) => {
+    if (typeof document.querySelectorAll !== 'function') {
+      const el = document.querySelector(selector);
+      return el && !isOnHiddenPage(el) ? el : null;
+    }
+    const list = document.querySelectorAll(selector);
+    for (let i = 0; i < list.length; i++) {
+      if (!isOnHiddenPage(list[i])) return list[i];
+    }
+    return null;
+  };
+
   const getItemIdFromDom = () => {
-    const titleEl = document.querySelector('.osdTitle[data-id], .videoOsdTitle[data-id], [class*="osd"] [data-id]');
+    const titleEl = firstOnVisiblePage('.osdTitle[data-id], .videoOsdTitle[data-id], [class*="osd"] [data-id]');
     if (titleEl?.dataset?.id && /^[a-f0-9]{32}$/i.test(titleEl.dataset.id)) {
       return titleEl.dataset.id;
     }
-    const itemIdEl = document.querySelector('.videoOsd [data-itemid], .videoOsdBottom [data-itemid]');
+    const itemIdEl = firstOnVisiblePage('.videoOsd [data-itemid], .videoOsdBottom [data-itemid]');
     if (itemIdEl?.dataset?.itemid && /^[a-f0-9]{32}$/i.test(itemIdEl.dataset.itemid)) {
       return itemIdEl.dataset.itemid;
     }
