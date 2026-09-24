@@ -51,6 +51,9 @@
     host,
     DEFAULT_WS_URL: `${protocol}//${host}:3000/ws`,
     SUPPRESS_MS: 2000,
+    // Host gives up waiting for the start countdown after this long and just
+    // plays (the server waits at most 10 s for everyone to be ready).
+    START_SAFETY_MS: 15000,
     TRACK_SWITCH_SUPPRESS_MS: 8000, // Safety-net suppression window for host audio/subtitle track switches (collapses early via settle-shortcut, see playback/tracks.js)
     SEEK_THRESHOLD: 1.0,          // Reduced from 2.5s - smaller seeks now broadcast (UX-P2)
     STATE_UPDATE_MS: 1000,        // Reduced from 2000ms - more responsive state updates (UX-P1)
@@ -130,6 +133,15 @@
     // item's position is never reported against the old media_id.
     mediaSwitchPending: false,
     mediaSwitchPendingUntil: 0,
+    // False until the room's first play has gone out. That play waits for
+    // everyone to be ready and starts after a countdown. Older session
+    // servers don't send it, so it defaults to true (no countdown).
+    roomStarted: true,
+    startPending: false,      // Host: first play requested, waiting for the countdown
+    startSafetyTimer: null,
+    // Host: the first play arrived while a media switch was still being
+    // confirmed; the start request is sent right after set_media.
+    startQueued: false,
     participantCount: 0,
     // Participant list from the server: [{ id, name, is_host, status }].
     // Empty with an older session server, which only sends counts.

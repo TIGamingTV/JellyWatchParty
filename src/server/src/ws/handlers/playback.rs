@@ -1,8 +1,10 @@
 use super::super::constants::{
-    COMMAND_COOLDOWN_MS, CONTROL_SCHEDULE_MS, MIN_STATE_UPDATE_INTERVAL_MS, PLAY_SCHEDULE_MS,
-    POSITION_JITTER_THRESHOLD,
+    COMMAND_COOLDOWN_MS, CONTROL_SCHEDULE_MS, MAX_READY_WAIT_MS, MIN_STATE_UPDATE_INTERVAL_MS,
+    PLAY_SCHEDULE_MS, POSITION_JITTER_THRESHOLD, START_READY_WAIT_MS,
 };
-use super::super::pending_play::{all_ready, schedule_pending_play};
+use super::super::pending_play::{
+    all_ready, broadcast_start_pending, schedule_pending_play, start_scheduled_play,
+};
 use super::super::validation::{is_valid_play_state, is_valid_position};
 use crate::types::{
     ClientMessageType, ClientSender, Clients, IncomingMessage, OutboundMessage, PendingPlay, Room,
@@ -136,7 +138,7 @@ pub(in crate::ws) async fn handle_playback(
         return;
     };
 
-    let mut pending_schedule: Option<(String, u64)> = None;
+    let mut pending_schedule: Option<(String, u64, u64)> = None;
     let broadcast_data: Option<(Vec<ClientSender>, String)> = 'broadcast: {
         let mut locked_rooms = rooms.write().await;
         let locked_clients = clients.read().await;
@@ -165,20 +167,50 @@ pub(in crate::ws) async fn handle_playback(
             room.pending_play = None;
         }
 
-        if is_player_event && action.as_deref() == Some("play") && !all_ready(room) {
-            let position = parsed
+        let play_position = || {
+            parsed
                 .payload
                 .as_ref()
                 .and_then(|p| p.get("position"))
                 .and_then(|v| v.as_f64())
                 .filter(|pos| is_valid_position(*pos))
-                .unwrap_or(room.state.position);
-            pending_schedule = handle_play_not_ready(room, position, current_ts);
+        };
+
+        // The room's first play: wait (longer) for everyone to be ready, then
+        // everyone, host included, starts together after a countdown.
+        if is_player_event && action.as_deref() == Some("play") && !room.started {
+            let position = play_position().unwrap_or(room.state.position);
+            if all_ready(room) {
+                start_scheduled_play(room, &locked_clients, position, current_ts);
+            } else if let Some((id, ts)) = handle_play_not_ready(room, position, current_ts) {
+                broadcast_start_pending(room, &locked_clients, START_READY_WAIT_MS);
+                pending_schedule = Some((id, ts, START_READY_WAIT_MS));
+            }
+            break 'broadcast None;
+        }
+
+        if is_player_event && action.as_deref() == Some("play") && !all_ready(room) {
+            let position = play_position().unwrap_or(room.state.position);
+            pending_schedule = handle_play_not_ready(room, position, current_ts)
+                .map(|(id, ts)| (id, ts, MAX_READY_WAIT_MS));
             break 'broadcast None;
         }
 
         if absorb_during_pending(room, &parsed, action.as_deref(), current_ts) {
             break 'broadcast None;
+        }
+
+        // The host was already playing (e.g. created the room mid-movie): the
+        // room has started, so a later pause/play gets no countdown.
+        if parsed.msg_type == ClientMessageType::StateUpdate
+            && parsed
+                .payload
+                .as_ref()
+                .and_then(|p| p.get("play_state"))
+                .and_then(|v| v.as_str())
+                == Some("playing")
+        {
+            room.started = true;
         }
 
         if parsed.msg_type == ClientMessageType::StateUpdate {
@@ -218,8 +250,8 @@ pub(in crate::ws) async fn handle_playback(
             }
         }
     }
-    if let Some((room_id, created_at)) = pending_schedule {
-        schedule_pending_play(room_id, created_at, clients.clone(), rooms.clone());
+    if let Some((room_id, created_at, wait_ms)) = pending_schedule {
+        schedule_pending_play(room_id, created_at, wait_ms, clients.clone(), rooms.clone());
     }
 }
 
@@ -227,6 +259,135 @@ pub(in crate::ws) async fn handle_playback(
 mod tests {
     use super::*;
     use crate::test_helpers;
+
+    fn play_msg(position: f64) -> IncomingMessage {
+        IncomingMessage {
+            msg_type: ClientMessageType::PlayerEvent,
+            room: Some("room-1".to_string()),
+            client: None,
+            payload: Some(serde_json::json!({ "action": "play", "position": position })),
+            ts: 0,
+            server_ts: None,
+        }
+    }
+
+    /// Fresh (not started) room-1 with a host and a guest; returns their rx.
+    async fn fresh_room_with_guest(
+        clients: &Clients,
+        rooms: &Rooms,
+        guest_ready: bool,
+    ) -> (crate::types::ClientReceiver, crate::types::ClientReceiver) {
+        let mut lc = clients.write().await;
+        let mut lr = rooms.write().await;
+        let host_rx = test_helpers::setup_room_with_host(&mut lc, &mut lr, "host");
+        let (mut guest, guest_rx) = test_helpers::create_client_with_rx("guest", "Guest", true);
+        guest.room_id = Some("room-1".to_string());
+        lc.insert("guest".to_string(), guest);
+        let room = lr.get_mut("room-1").unwrap();
+        room.started = false;
+        room.clients.push("guest".to_string());
+        if guest_ready {
+            room.ready_clients.insert("guest".to_string());
+        }
+        (host_rx, guest_rx)
+    }
+
+    #[tokio::test]
+    async fn first_play_waits_for_everyone_then_counts_down() {
+        let clients = test_helpers::create_clients();
+        let rooms = test_helpers::create_rooms();
+        let (mut host_rx, mut guest_rx) = fresh_room_with_guest(&clients, &rooms, false).await;
+
+        handle_playback("host", play_msg(3.0), &clients, &rooms).await;
+
+        // Guest not ready yet: nothing plays, everyone is told to wait.
+        for rx in [&mut host_rx, &mut guest_rx] {
+            let msg = test_helpers::recv_msg(rx).expect("start_pending");
+            assert_eq!(msg.msg_type, "start_pending");
+        }
+        {
+            let lr = rooms.read().await;
+            let room = lr.get("room-1").unwrap();
+            assert!(!room.started);
+            assert_eq!(room.pending_play.as_ref().unwrap().position, 3.0);
+        }
+
+        // The guest reports ready: the countdown goes out to both.
+        let ready = IncomingMessage {
+            msg_type: ClientMessageType::Ready,
+            room: Some("room-1".to_string()),
+            client: None,
+            payload: None,
+            ts: 0,
+            server_ts: None,
+        };
+        crate::ws::handlers::handle_ready("guest", &ready, &clients, &rooms).await;
+        for rx in [&mut host_rx, &mut guest_rx] {
+            let p = test_helpers::recv_msg(rx)
+                .expect("countdown play")
+                .payload
+                .unwrap();
+            assert_eq!(p["action"], "play");
+            assert_eq!(p["countdown"], true);
+            assert_eq!(p["position"], 3.0);
+        }
+        assert!(rooms.read().await.get("room-1").unwrap().started);
+    }
+
+    #[tokio::test]
+    async fn first_play_with_everyone_ready_counts_down_at_once() {
+        let clients = test_helpers::create_clients();
+        let rooms = test_helpers::create_rooms();
+        let (mut host_rx, mut guest_rx) = fresh_room_with_guest(&clients, &rooms, true).await;
+
+        handle_playback("host", play_msg(0.0), &clients, &rooms).await;
+
+        for rx in [&mut host_rx, &mut guest_rx] {
+            let p = test_helpers::recv_msg(rx)
+                .expect("countdown play")
+                .payload
+                .unwrap();
+            assert_eq!(p["countdown"], true);
+        }
+    }
+
+    #[tokio::test]
+    async fn a_host_already_playing_marks_the_room_started() {
+        let clients = test_helpers::create_clients();
+        let rooms = test_helpers::create_rooms();
+        let (_host_rx, _guest_rx) = fresh_room_with_guest(&clients, &rooms, true).await;
+        let update = IncomingMessage {
+            msg_type: ClientMessageType::StateUpdate,
+            room: Some("room-1".to_string()),
+            client: None,
+            payload: Some(serde_json::json!({ "position": 600.0, "play_state": "playing" })),
+            ts: 0,
+            server_ts: None,
+        };
+
+        handle_playback("host", update, &clients, &rooms).await;
+
+        assert!(rooms.read().await.get("room-1").unwrap().started);
+    }
+
+    #[tokio::test]
+    async fn plays_after_the_start_behave_as_before() {
+        let clients = test_helpers::create_clients();
+        let rooms = test_helpers::create_rooms();
+        let (mut host_rx, mut guest_rx) = fresh_room_with_guest(&clients, &rooms, true).await;
+        rooms.write().await.get_mut("room-1").unwrap().started = true;
+
+        handle_playback("host", play_msg(8.0), &clients, &rooms).await;
+
+        // Relayed to the guest only, with no countdown flag.
+        let p = test_helpers::recv_msg(&mut guest_rx)
+            .unwrap()
+            .payload
+            .unwrap();
+        assert_eq!(p["action"], "play");
+        assert!(p.get("countdown").is_none());
+        assert!(test_helpers::recv_msg(&mut host_rx).is_none());
+    }
 
     #[test]
     fn should_process_state_update_play_state_change() {

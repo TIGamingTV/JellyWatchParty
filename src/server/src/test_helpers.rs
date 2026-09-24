@@ -50,6 +50,7 @@ pub fn create_room(room_id: &str, host_id: &str) -> Room {
         password_hash: None,
         client_status: HashMap::new(),
         failed_joins: HashMap::new(),
+        started: true,
     }
 }
 

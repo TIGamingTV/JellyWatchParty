@@ -18,6 +18,12 @@
     state.roomMediaId = msg.payload.media_id || '';
     // (Re)entering a room: make the next tick report our status again.
     state.lastReportedStatus = '';
+    state.roomStarted = msg.payload.started !== false;
+    if (state.isHost && !state.roomStarted) {
+      // Created the room while already playing: no countdown later on.
+      const video = utils.getVideo();
+      if (video && !video.paused) state.roomStarted = true;
+    }
     if (JWP.chat && Array.isArray(msg.payload.chat_history)) {
       JWP.chat.hydrate(msg.payload.chat_history);
     }

@@ -1,4 +1,3 @@
-use super::super::constants::PLAY_SCHEDULE_MS;
 use super::super::dispatch::send_error;
 use super::super::pending_play::{all_ready, broadcast_scheduled_play};
 use crate::messaging::{broadcast_room_list, send_to_client};
@@ -58,14 +57,12 @@ pub(in crate::ws) async fn handle_ready(
         if let Some(room) = locked_rooms.get_mut(room_id) {
             room.ready_clients.insert(client_id.to_string());
             if room.pending_play.is_some() && all_ready(room) {
-                let target_server_ts = now_ms() + PLAY_SCHEDULE_MS;
                 let position = room
                     .pending_play
                     .as_ref()
                     .map(|p| p.position)
                     .unwrap_or(room.state.position);
-                room.pending_play = None;
-                broadcast_scheduled_play(room, clients, position, target_server_ts).await;
+                broadcast_scheduled_play(room, clients, position).await;
             }
         }
     }

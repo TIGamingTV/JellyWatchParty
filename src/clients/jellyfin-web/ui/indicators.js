@@ -92,6 +92,59 @@
     if (el) el.innerHTML = buildParticipantsHtml();
   };
 
+  // Start countdown overlay: "waiting for everyone", then 3, 2, 1 counted
+  // against server time, so every client flips at the same moment.
+  const COUNTDOWN_ID = 'jwp-countdown';
+  let countdownTimer = null;
+
+  const countdownEl = () => {
+    let el = document.getElementById(COUNTDOWN_ID);
+    if (!el && document.body) {
+      el = document.createElement('div');
+      el.id = COUNTDOWN_ID;
+      el.setAttribute('role', 'status');
+      el.setAttribute('aria-live', 'polite');
+      document.body.appendChild(el);
+    }
+    return el;
+  };
+
+  const hideCountdown = () => {
+    if (countdownTimer) {
+      clearInterval(countdownTimer);
+      countdownTimer = null;
+    }
+    const el = document.getElementById(COUNTDOWN_ID);
+    if (el) el.remove();
+  };
+
+  const showStartWaiting = () => {
+    hideCountdown();
+    const el = countdownEl();
+    if (el) el.innerHTML = '<div class="jwp-countdown-label">Waiting for everyone to be ready...</div>';
+  };
+
+  const countdownSecondsLeft = (targetServerTs) => {
+    const now = JWP.utils.getServerNow();
+    return Math.ceil((targetServerTs - now) / 1000);
+  };
+
+  const showCountdown = (targetServerTs) => {
+    hideCountdown();
+    const el = countdownEl();
+    if (!el) return;
+    const tick = () => {
+      const left = countdownSecondsLeft(targetServerTs);
+      if (left <= 0) {
+        hideCountdown();
+        return;
+      }
+      el.innerHTML = `<div class="jwp-countdown-number">${left}</div><div class="jwp-countdown-label">Starting together</div>`;
+    };
+    tick();
+    countdownTimer = setInterval(tick, 100);
+  };
+
   const stopPlayerCapture = (input) => {
     const stopPropagation = (e) => e.stopPropagation();
     input.addEventListener('keydown', stopPropagation);
@@ -103,6 +156,7 @@
 
   Object.assign(ui, {
     updateStatusIndicator, updateServerFooter, updateSyncIndicator, buildSyncStatusIndicator,
-    describeParticipantStatus, buildParticipantsHtml, renderParticipants, stopPlayerCapture
+    describeParticipantStatus, buildParticipantsHtml, renderParticipants,
+    showStartWaiting, showCountdown, hideCountdown, countdownSecondsLeft, stopPlayerCapture
   });
 })();

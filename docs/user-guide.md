@@ -67,6 +67,7 @@ The Jellyfin homepage displays active watch parties in a dedicated "Watch Partie
 
 | Action | Effect |
 |--------|--------|
+| Play (first time in the room) | Everyone sees "Waiting for everyone to be ready..." until all videos are loaded (10 s at most), then a 3, 2, 1 countdown, and all start together |
 | Play | All clients start playing |
 | Pause | All clients pause |
 | Seek | All clients jump to that position |
