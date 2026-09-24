@@ -140,6 +140,13 @@
       if (video.playbackRate !== 1) video.playbackRate = 1;
       return;
     }
+    // Ready is only reported while the room's item is on screen, and
+    // media_changed / joining ask once, usually before the item has opened.
+    // Report it as soon as the room's item is loaded; otherwise the server
+    // keeps this guest "not ready" and delays every host play.
+    if (state.readyRoomId !== state.roomId && video.readyState >= 2 && utils.isOnRoomMedia()) {
+      notifyReady();
+    }
     if (!utils.isOnRoomMedia()) {
       state.isDriftCorrecting = false;
       if (video.playbackRate !== 1) video.playbackRate = 1;
