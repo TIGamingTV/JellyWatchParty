@@ -53,8 +53,13 @@ fn build_room(client_id: &str, host_name: &str, payload: Option<&serde_json::Val
     let room_name = format!("Room de {}", host_name);
 
     info!(
-        "Creating room '{}' ({}) for {}",
-        room_name, room_id, client_id
+        "Creating room '{}' ({}) for {} (media_id: {:?}, start_pos: {}, has_password: {})",
+        room_name,
+        room_id,
+        client_id,
+        media_id,
+        start_pos,
+        password_hash.is_some()
     );
 
     Room {
@@ -74,6 +79,7 @@ fn build_room(client_id: &str, host_name: &str, payload: Option<&serde_json::Val
         chat_history: VecDeque::new(),
         password_hash,
         client_status: HashMap::new(),
+        failed_joins: HashMap::new(),
     }
 }
 
@@ -128,8 +134,6 @@ pub(in crate::ws) async fn handle_create_room(
     if let Some(room_id) = existing_room_id {
         close_room(&room_id, clients, rooms).await;
     }
-
-    info!("create_room payload: {:?}", parsed.payload);
 
     let payload_ref = parsed.payload.as_ref();
     let (host_name, payload_name) = {

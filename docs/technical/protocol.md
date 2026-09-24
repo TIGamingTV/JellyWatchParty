@@ -131,6 +131,8 @@ Join an existing room.
 
 **Response:** `room_state`, or `error` with `payload.reason: "wrong_password"` if the password is missing/incorrect.
 
+After 5 wrong passwords within 60 s, the same user (keyed by `user_id`, i.e. the JWT `sub`, not the client id) is refused for the rest of that 60 s window with `payload.reason: "too_many_attempts"` and `payload.retry_after_ms`, without the password being checked. The throttle is per room and per user, so one user guessing can't lock others out. A successful join clears the user's count.
+
 **Effects:**
 - Client added to `room.clients`
 - Client removed from `room.ready_clients`
@@ -660,7 +662,8 @@ Error response.
 | Payload Field | Type | Description |
 |---------------|------|-------------|
 | `message` | string | Human-readable error description |
-| `reason` | string | Optional machine-readable code for errors a client may want to special-case (currently only `"wrong_password"`, from `join_room`) |
+| `reason` | string | Optional machine-readable code for errors a client may want to special-case. Currently `"wrong_password"` and `"too_many_attempts"`, both from `join_room` |
+| `retry_after_ms` | number | Only with `reason: "too_many_attempts"`: milliseconds until the user may try the room's password again |
 
 ## Sequence Diagram: Complete Session
 
