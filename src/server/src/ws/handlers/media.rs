@@ -145,13 +145,20 @@ mod tests {
         assert_eq!(room.ready_clients, HashSet::from(["host".to_string()]));
         drop(lr);
 
-        // Host isn't sent media_changed (it already knows); guest is.
+        // The host isn't sent media_changed (it already knows) - only the
+        // refreshed room_list every connected client gets.
+        let msg_h = test_helpers::recv_msg(&mut rx_h).unwrap();
+        assert_eq!(msg_h.msg_type, "room_list");
         assert!(rx_h.try_recv().is_err());
+
+        // The guest gets media_changed first, then room_list.
         let msg_g = test_helpers::recv_msg(&mut rx_g).unwrap();
         assert_eq!(msg_g.msg_type, "media_changed");
         let payload = msg_g.payload.unwrap();
         assert_eq!(payload.get("media_id").unwrap(), MEDIA_B);
         assert_eq!(payload.get("position").unwrap(), 42.0);
+        let msg_g2 = test_helpers::recv_msg(&mut rx_g).unwrap();
+        assert_eq!(msg_g2.msg_type, "room_list");
     }
 
     #[tokio::test]
@@ -263,7 +270,9 @@ mod tests {
         );
         drop(lr);
         // Only member is the host, and hosts don't receive their own
-        // media_changed broadcast.
+        // media_changed broadcast - just the refreshed room_list.
+        let msg_h = test_helpers::recv_msg(&mut rx_h).unwrap();
+        assert_eq!(msg_h.msg_type, "room_list");
         assert!(rx_h.try_recv().is_err());
     }
 
