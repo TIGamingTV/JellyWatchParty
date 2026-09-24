@@ -1,4 +1,4 @@
-use crate::messaging::{broadcast_room_list, broadcast_to_room};
+use crate::messaging::{broadcast_participants, broadcast_room_list, broadcast_to_room};
 use crate::types::{Client, Clients, OutboundMessage, Room, Rooms, WsMessage};
 use crate::utils::now_ms;
 use log::info;
@@ -15,6 +15,7 @@ fn detach_client_from_room(
 
     room.clients.retain(|id| id != client_id);
     room.ready_clients.remove(client_id);
+    room.client_status.remove(client_id);
     let was_host = room.host_id == client_id;
     if was_host {
         room.pending_play = None;
@@ -39,6 +40,7 @@ fn detach_client_from_room(
         server_ts: Some(now_ms()),
     };
     broadcast_to_room(room, clients, &msg, None);
+    broadcast_participants(room, clients);
     None
 }
 
@@ -67,6 +69,7 @@ fn promote_new_host(room_id: &str, room: &mut Room, clients: &HashMap<String, Cl
         server_ts: Some(now_ms()),
     };
     broadcast_to_room(room, clients, &msg, None);
+    broadcast_participants(room, clients);
 }
 
 fn close_and_notify(

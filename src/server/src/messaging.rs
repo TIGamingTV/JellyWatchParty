@@ -28,6 +28,51 @@ pub fn build_room_state_payload(room: &Room, participant_count: usize) -> serde_
     })
 }
 
+/// The room's participant list, in join order: display name, whether each is
+/// the host, and the playback status each client last reported.
+pub fn build_participants(
+    room: &Room,
+    clients: &HashMap<String, Client>,
+) -> Vec<serde_json::Value> {
+    room.clients
+        .iter()
+        .map(|id| {
+            serde_json::json!({
+                "id": id,
+                "name": clients
+                    .get(id)
+                    .map(|c| c.user_name.as_str())
+                    .unwrap_or("Someone"),
+                "is_host": *id == room.host_id,
+                "status": room
+                    .client_status
+                    .get(id)
+                    .map(String::as_str)
+                    .unwrap_or("unknown"),
+            })
+        })
+        .collect()
+}
+
+/// Sends the participant list to everyone in the room. Called whenever
+/// membership, the host or someone's status changes.
+pub fn broadcast_participants(room: &Room, clients: &HashMap<String, Client>) {
+    broadcast_to_room(room, clients, &build_participants_msg(room, clients), None);
+}
+
+pub fn build_participants_msg(room: &Room, clients: &HashMap<String, Client>) -> WsMessage {
+    WsMessage {
+        msg_type: "participants".to_string(),
+        room: Some(room.room_id.clone()),
+        client: None,
+        payload: Some(serde_json::json!({
+            "participants": build_participants(room, clients),
+        })),
+        ts: now_ms(),
+        server_ts: Some(now_ms()),
+    }
+}
+
 fn build_room_list_msg(rooms: &HashMap<String, Room>) -> WsMessage {
     let list: Vec<serde_json::Value> = rooms
         .values()
@@ -204,6 +249,7 @@ mod tests {
                 last_command_ts: 0,
                 chat_history: VecDeque::new(),
                 password_hash: None,
+                client_status: HashMap::new(),
             },
         );
         rooms.insert(
@@ -224,6 +270,7 @@ mod tests {
                 last_command_ts: 0,
                 chat_history: VecDeque::new(),
                 password_hash: None,
+                client_status: HashMap::new(),
             },
         );
         let msg = build_room_list_msg(&rooms);

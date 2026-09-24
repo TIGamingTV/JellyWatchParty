@@ -69,6 +69,10 @@ pub struct Room {
     /// Never serialized to any client-facing payload.
     #[serde(skip)]
     pub password_hash: Option<(String, String)>,
+    /// Self-reported playback status per participant (see `client_status`),
+    /// shown to everyone in the room's participant list.
+    #[serde(skip)]
+    pub client_status: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -110,6 +114,7 @@ pub enum ClientMessageType {
     /// starts a different movie, or starts one after creating an empty
     /// room). See ws::handlers::media::handle_set_media.
     SetMedia,
+    ClientStatus,
     #[serde(other)]
     Unknown,
 }

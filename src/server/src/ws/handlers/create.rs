@@ -1,12 +1,14 @@
 use super::super::dispatch::{is_authenticated, send_error};
 use super::super::validation::{is_valid_media_id, is_valid_position, sanitize_name};
-use crate::messaging::{broadcast_room_list, build_room_state_payload, send_to_client};
+use crate::messaging::{
+    broadcast_participants, broadcast_room_list, build_room_state_payload, send_to_client,
+};
 use crate::password::hash_password;
 use crate::room::close_room;
 use crate::types::{Clients, IncomingMessage, PlaybackState, Room, Rooms, WsMessage};
 use crate::utils::now_ms;
 use log::info;
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 fn resolve_host_name(
     payload: Option<&serde_json::Value>,
@@ -71,6 +73,7 @@ fn build_room(client_id: &str, host_name: &str, payload: Option<&serde_json::Val
         last_command_ts: 0,
         chat_history: VecDeque::new(),
         password_hash,
+        client_status: HashMap::new(),
     }
 }
 
@@ -101,6 +104,7 @@ fn insert_and_notify(
             server_ts: Some(now_ms()),
         },
     );
+    broadcast_participants(&room, locked_clients);
 }
 
 pub(in crate::ws) async fn handle_create_room(

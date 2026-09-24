@@ -1,4 +1,4 @@
-use crate::messaging::{build_room_state_payload, send_to_client};
+use crate::messaging::{build_participants_msg, build_room_state_payload, send_to_client};
 use crate::types::{Clients, Rooms, WsMessage};
 use crate::utils::now_ms;
 use log::info;
@@ -77,6 +77,11 @@ pub async fn resend_room_state(client_id: &str, room_id: &str, clients: &Clients
             ts: now_ms(),
             server_ts: Some(now_ms()),
         },
+    );
+    send_to_client(
+        client_id,
+        &locked_clients,
+        &build_participants_msg(room, &locked_clients),
     );
 }
 

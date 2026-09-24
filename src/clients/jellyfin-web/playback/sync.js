@@ -132,6 +132,38 @@
     video.playbackRate = rate;
   };
 
+  // --- Participant status ---------------------------------------------------
+  // Each client reports its own playback status so everyone's panel can list
+  // who is in sync, catching up, buffering or not watching.
+  const STATUS_REPORT_MIN_MS = 1000;
+
+  const computeOwnStatus = () => {
+    const video = state.currentVideoElement || utils.getVideo();
+    if (!video) return 'idle';
+    if (state.isBuffering) return 'buffering';
+    if (state.isHost) return video.paused ? 'paused' : 'playing';
+    switch (state.syncStatus) {
+      case 'synced': return 'synced';
+      case 'syncing': return 'syncing';
+      case 'pending_play':
+      case 'wrong_media': return 'loading';
+      default: return 'syncing';
+    }
+  };
+
+  const reportOwnStatus = () => {
+    if (!state.inRoom || !JWP.actions || !JWP.actions.send) return;
+    const status = computeOwnStatus();
+    if (status === state.lastReportedStatus) return;
+    const now = utils.nowMs();
+    // Coalesce flapping (e.g. brief catch-up bursts) into at most one report
+    // per second; the next tick sends whatever the status settled on.
+    if (now - state.lastStatusReportAt < STATUS_REPORT_MIN_MS) return;
+    state.lastReportedStatus = status;
+    state.lastStatusReportAt = now;
+    JWP.actions.send('client_status', { status });
+  };
+
   const syncLoop = () => {
     const video = state.currentVideoElement || utils.getVideo();
     if (!video) return;
@@ -169,5 +201,5 @@
     applySyncCorrection(drift, abs, video, expected, serverNow);
   };
 
-  Object.assign(playback, { watchReady, syncLoop });
+  Object.assign(playback, { watchReady, syncLoop, computeOwnStatus, reportOwnStatus });
 })();

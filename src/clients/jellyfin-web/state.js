@@ -131,6 +131,11 @@
     mediaSwitchPending: false,
     mediaSwitchPendingUntil: 0,
     participantCount: 0,
+    // Participant list from the server: [{ id, name, is_host, status }].
+    // Empty with an older session server, which only sends counts.
+    participants: [],
+    lastReportedStatus: '',   // Own status last sent as client_status
+    lastStatusReportAt: 0,
     lastSyncServerTs: 0,
     lastSyncPosition: 0,
     lastSyncPlayState: '',

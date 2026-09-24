@@ -48,6 +48,7 @@ pub fn create_room(room_id: &str, host_id: &str) -> Room {
         last_command_ts: 0,
         chat_history: VecDeque::new(),
         password_hash: None,
+        client_status: HashMap::new(),
     }
 }
 

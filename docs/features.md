@@ -55,7 +55,7 @@ session server, web client) work together to make this happen.
 - **Join rooms** - Enter a room ID to join an existing session
 - **Leave rooms** - Exit cleanly with proper cleanup
 - **Room list** - See all active rooms on the server
-- **Participant count** - Track how many people are watching
+- **Participant list with status** - See who is in the room, who hosts, and whether each person is in sync, catching up, buffering, loading or not watching
 - **Automatic host transfer** - If the host leaves with others still in the room, the earliest-joined remaining participant is promoted to host instead of the room closing
 
 ### Playback Synchronization

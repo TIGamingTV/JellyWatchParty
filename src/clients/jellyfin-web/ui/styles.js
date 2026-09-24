@@ -51,6 +51,15 @@
     .jwp-sync-dot.syncing { background: #ffd740; animation: jwp-pulse 1s infinite; }
     .jwp-sync-dot.pending { background: #ff9800; animation: jwp-pulse 0.5s infinite; }
     .jwp-sync-dot.unknown { background: #9e9e9e; }
+    /* Participant list */
+    #jwp-participants-list { max-height: 120px; overflow-y: auto; }
+    .jwp-participant-count { font-size: 11px; color: #888; margin-bottom: 4px; }
+    .jwp-participant { display: flex; align-items: center; gap: 6px; padding: 3px 0; font-size: 12px; }
+    .jwp-participant .jwp-sync-dot { flex-shrink: 0; }
+    .jwp-participant-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .jwp-participant-you { color: #888; font-size: 11px; }
+    .jwp-participant-host { font-size: 14px; color: #ffd740; }
+    .jwp-participant-status { margin-left: auto; padding-left: 8px; color: #aaa; font-size: 11px; white-space: nowrap; }
     @keyframes jwp-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
     .jwp-sync-spinner { width: 12px; height: 12px; border: 2px solid #444; border-top-color: #ff9800; border-radius: 50%; animation: jwp-spin 0.8s linear infinite; }
     @keyframes jwp-spin { to { transform: rotate(360deg); } }
