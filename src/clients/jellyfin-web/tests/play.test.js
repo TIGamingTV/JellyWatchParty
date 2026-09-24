@@ -102,6 +102,16 @@ describe('playback/play without global playbackManager (Jellyfin 12.1)', () => {
     assert.equal(played[0].items[0].Id, ITEM);
     assert.equal(calls.length, 0);
   });
+
+  it('passes the start position to the playbackManager path (regression: used to hardcode 0)', async () => {
+    mockServer([]);
+    const played = [];
+    window.playbackManager = { play: (opts) => played.push(opts) };
+    JWP.playback.ensurePlayback(ITEM, 12.5);
+    await tick();
+    assert.equal(played.length, 1);
+    assert.equal(played[0].startPositionTicks, 125000000);
+  });
 });
 
 describe('actions.createRoom media id', () => {

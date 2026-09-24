@@ -129,6 +129,16 @@
       || (JWP.state && JWP.state.serverNowPlayingId) || null;
   };
 
+  // True when this client's own item matches the room's current media (or
+  // the room has no media set yet, so there's nothing to mismatch). Guards
+  // guest sync/ready against acting on stale state while a media switch is
+  // in flight (see ws/handlers/sync.js handleMediaChanged and issue #71).
+  const isOnRoomMedia = () => {
+    const roomMediaId = normalizeItemId(JWP.state && JWP.state.roomMediaId);
+    if (!roomMediaId) return true;
+    return normalizeItemId(getCurrentItemId()) === roomMediaId;
+  };
+
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
   // Updates the cached server-side now-playing id. Returns the id or null.
@@ -169,6 +179,7 @@
     clearServerNowPlaying,
     getOwnSession,
     apiFetch,
-    normalizeItemId
+    normalizeItemId,
+    isOnRoomMedia
   });
 })();

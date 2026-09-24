@@ -462,6 +462,20 @@ fn schedule_pending_play(room_id, created_at, rooms, clients) {
 }
 ```
 
+### Media Changes Re-Arm the Ready Gate
+
+`set_media` (host switches items, or starts one after creating an empty
+room — see [protocol.md]({{ '/technical/protocol/#set_media' |
+relative_url }})) resets `ready_clients` to just the host and clears
+`pending_play`, so the mechanism above runs again for the new item: the
+host's next `play` waits (up to `MAX_READY_WAIT_MS`) for guests to load
+it. Guests reset their own `readyRoomId` on `media_changed` so they
+re-send `ready` once the new item is actually loaded, and ignore
+`player_event`/`state_update`/position corrections for the old item in
+the meantime (`utils.isOnRoomMedia`) — otherwise a stale correction
+could seek the guest's *old* stream to the *new* item's position while
+they're still catching up.
+
 ## Threshold and Timing Summary
 
 | Parameter | Value | Location | Description |

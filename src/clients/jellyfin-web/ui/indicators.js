@@ -29,6 +29,9 @@
     if (status === 'synced') {
       return { dotClass: 'synced', label: 'In sync', showSpinner: false };
     }
+    if (status === 'wrong_media') {
+      return { dotClass: 'syncing', label: 'Loading host\u2019s media\u2026', showSpinner: false };
+    }
     return { dotClass: 'unknown', label: 'Not synced yet', showSpinner: false };
   };
 

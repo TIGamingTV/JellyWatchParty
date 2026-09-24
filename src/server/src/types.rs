@@ -106,6 +106,10 @@ pub enum ClientMessageType {
     Ping,
     ClientLog,
     ChatMessage,
+    /// Host-only: changes which item the room is watching (e.g. the host
+    /// starts a different movie, or starts one after creating an empty
+    /// room). See ws::handlers::media::handle_set_media.
+    SetMedia,
     #[serde(other)]
     Unknown,
 }
@@ -128,6 +132,7 @@ pub enum ServerMessageType {
     RoomClosed,
     ChatMessage,
     HostChanged,
+    MediaChanged,
 }
 
 /// Incoming WebSocket message from client
@@ -179,6 +184,10 @@ mod tests {
         let json = r#""state_update""#;
         let msg_type: ClientMessageType = serde_json::from_str(json).unwrap();
         assert_eq!(msg_type, ClientMessageType::StateUpdate);
+
+        let json = r#""set_media""#;
+        let msg_type: ClientMessageType = serde_json::from_str(json).unwrap();
+        assert_eq!(msg_type, ClientMessageType::SetMedia);
     }
 
     #[test]

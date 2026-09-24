@@ -56,6 +56,12 @@
             countEl.innerHTML = `<span class="material-icons" style="font-size:14px;vertical-align:middle;">groups</span> ${room.count} watching`;
           }
         }
+        // The host started something (or switched items) after this card was
+        // first drawn - rebuild it so the poster/title/join behavior catch up
+        // (see ws/handlers/sync.js handleMediaChanged, issue #71).
+        if (existing.dataset.mediaId !== (room.media_id || '')) {
+          existing.replaceWith(ui.createRoomCard(room, index));
+        }
       } else {
         itemsContainer.appendChild(ui.createRoomCard(room, index));
       }

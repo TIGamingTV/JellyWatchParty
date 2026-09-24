@@ -77,7 +77,7 @@
           <bdi>${lockIcon}${utils.escapeHtml(room.name)}</bdi>
         </div>
         <div class="cardText cardTextCentered cardText-secondary jwp-card-media">
-          <bdi class="jwp-media-title">${room.media_id ? 'Loading...' : 'No media'}</bdi>
+          <bdi class="jwp-media-title">${room.media_id ? 'Loading...' : 'Waiting for host to start something'}</bdi>
         </div>
       </div>
     `;
@@ -138,7 +138,12 @@
         e.stopPropagation();
         console.log('[JellyWatchParty] Play button clicked for room:', room.id, 'media:', room.media_id);
         if (!room.media_id) {
-          ui.showToast('No media in this room');
+          // No media yet (room created before the host started anything).
+          // Join directly rather than navigating anywhere - the guest picks
+          // up playback automatically via media_changed once the host does
+          // start something (see ws/handlers/sync.js handleMediaChanged).
+          if (JWP.actions && JWP.actions.joinRoom) JWP.actions.joinRoom(room.id);
+          ui.showToast('Joined - waiting for the host to start something');
           return;
         }
         state.pendingJoinRoomId = room.id;
