@@ -121,6 +121,56 @@ describe('utils/media server fallback (no global playbackManager)', () => {
   });
 });
 
+describe('utils.getCurrentItemId ignores the hidden player page', () => {
+  const OTHER = '0123456789abcdef0123456789abcdef';
+
+  // An OSD button carrying `data-id`, inside a page that is hidden or not.
+  const osdButton = (id, pageHidden) => ({
+    dataset: { id },
+    closest: (sel) => (sel === '.page.hide' && pageHidden ? {} : null)
+  });
+
+  let savedDocument;
+  beforeEach(() => {
+    savedDocument = globalThis.document;
+    delete window.playbackManager;
+    window.location.hash = '#/home';
+    globalThis.sessionStorage = { getItem: () => null };
+    JWP.state.serverNowPlayingId = '';
+  });
+  afterEach(() => { globalThis.document = savedDocument; });
+
+  const withOsd = (buttons) => {
+    globalThis.document = {
+      querySelector: () => buttons[0] || null,
+      querySelectorAll: (sel) => (/data-id/.test(sel) ? buttons : [])
+    };
+  };
+
+  it('skips the last item\'s OSD left behind on a hidden page (back on the home screen)', () => {
+    withOsd([osdButton(ITEM, true)]);
+    assert.equal(JWP.utils.getCurrentItemId(), null);
+  });
+
+  it('reads the OSD of the player that is on screen', () => {
+    withOsd([osdButton(ITEM, false)]);
+    assert.equal(JWP.utils.getCurrentItemId(), ITEM);
+  });
+
+  it('prefers the visible player over a stale hidden one', () => {
+    withOsd([osdButton(ITEM, true), osdButton(OTHER, false)]);
+    assert.equal(JWP.utils.getCurrentItemId(), OTHER);
+  });
+
+  it('isOnRoomMedia is false for a stale id once the room moved on', () => {
+    withOsd([osdButton(ITEM, true)]);
+    JWP.state.roomMediaId = OTHER;
+    // Nothing on screen, so not "on the room's media": ensurePlayback proceeds.
+    assert.equal(JWP.utils.isOnRoomMedia(), false);
+    JWP.state.roomMediaId = '';
+  });
+});
+
 describe('utils.isOnRoomMedia (issue #71: gate sync/ready against the wrong item)', () => {
   beforeEach(() => {
     globalThis.document = { querySelector: () => null };

@@ -1,4 +1,4 @@
-const { describe, it, beforeEach } = require('node:test');
+const { describe, it, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const JWP = require('./setup.js');
 
@@ -19,6 +19,53 @@ const makeVideo = (currentTime) => ({
   readyState: 4,
   networkState: 1,
   seeking: false
+});
+
+describe('playback/sync reports ready once the room\'s item is on screen', () => {
+  const ITEM = 'abcdef0123456789abcdef0123456789';
+  let sent;
+  let video;
+
+  beforeEach(() => {
+    sent = [];
+    JWP.actions = { send: (type, payload) => sent.push({ type, payload }) };
+    video = { currentTime: 0, paused: true, playbackRate: 1, readyState: 4, networkState: 1, seeking: false };
+    document.querySelector = (sel) => (sel === 'video' ? video : null);
+    window.location.hash = '#/video';
+    Object.assign(JWP.state, {
+      inRoom: true, isHost: false, roomId: 'room-1', readyRoomId: '',
+      roomMediaId: ITEM, serverNowPlayingId: '', currentVideoElement: null,
+      lastSyncPlayState: 'paused'
+    });
+  });
+
+  afterEach(() => {
+    Object.assign(JWP.state, { roomMediaId: '', serverNowPlayingId: '', readyRoomId: '' });
+    delete JWP.actions;
+  });
+
+  it('sends ready after media_changed once the new item has loaded', () => {
+    JWP.playback.syncLoop(); // still on nothing: not ready yet
+    assert.equal(sent.length, 0);
+    JWP.state.serverNowPlayingId = ITEM; // PlayNow opened the room's item
+    JWP.playback.syncLoop();
+    assert.deepEqual(sent.map((m) => m.type), ['ready']);
+    JWP.playback.syncLoop();
+    assert.equal(sent.length, 1, 'once per room');
+  });
+
+  it('waits until the video can play', () => {
+    JWP.state.serverNowPlayingId = ITEM;
+    video.readyState = 1;
+    JWP.playback.syncLoop();
+    assert.equal(sent.length, 0);
+  });
+
+  it('never reports ready for another item', () => {
+    JWP.state.serverNowPlayingId = '0123456789abcdef0123456789abcdef';
+    JWP.playback.syncLoop();
+    assert.equal(sent.length, 0);
+  });
 });
 
 describe('playback/sync syncLoop drift correction', () => {
