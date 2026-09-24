@@ -124,9 +124,7 @@ pub(super) async fn client_msg(
         ClientMessageType::PlayerEvent | ClientMessageType::StateUpdate => {
             handle_playback(client_id, parsed, clients, rooms).await
         }
-        ClientMessageType::SetMedia => {
-            handle_set_media(client_id, &parsed, clients, rooms).await
-        }
+        ClientMessageType::SetMedia => handle_set_media(client_id, &parsed, clients, rooms).await,
         ClientMessageType::Ping => handle_ping(client_id, &parsed, clients).await,
         ClientMessageType::ClientLog => handle_client_log(client_id, &parsed),
         ClientMessageType::ChatMessage => {

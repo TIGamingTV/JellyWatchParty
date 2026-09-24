@@ -191,7 +191,10 @@ mod tests {
         }
         {
             let mut lr = rooms.write().await;
-            lr.insert("room-1".to_string(), test_helpers::create_room("room-1", "host"));
+            lr.insert(
+                "room-1".to_string(),
+                test_helpers::create_room("room-1", "host"),
+            );
         }
 
         let parsed = set_media_msg("room-1", "not-valid-hex", 0.0);
@@ -244,14 +247,20 @@ mod tests {
         }
         {
             let mut lr = rooms.write().await;
-            lr.insert("room-1".to_string(), test_helpers::create_room("room-1", "host"));
+            lr.insert(
+                "room-1".to_string(),
+                test_helpers::create_room("room-1", "host"),
+            );
         }
 
         let parsed = set_media_msg("room-1", MEDIA_A, 0.0);
         handle_set_media("host", &parsed, &clients, &rooms).await;
 
         let lr = rooms.read().await;
-        assert_eq!(lr.get("room-1").unwrap().media_id, Some(MEDIA_A.to_string()));
+        assert_eq!(
+            lr.get("room-1").unwrap().media_id,
+            Some(MEDIA_A.to_string())
+        );
         drop(lr);
         // Only member is the host, and hosts don't receive their own
         // media_changed broadcast.
