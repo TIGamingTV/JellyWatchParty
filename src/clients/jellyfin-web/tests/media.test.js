@@ -63,7 +63,21 @@ describe('utils/media server fallback (no global playbackManager)', () => {
     assert.equal(JWP.state.serverNowPlayingId, ITEM);
     assert.equal(JWP.utils.getCurrentItemId(), ITEM);
     assert.equal(calls[0].url, 'http://jf/Sessions?deviceId=dev-1');
+    // Jellyfin 12 rejects a request that only carries X-Emby-Token (see
+    // issue #71), so Authorization: MediaBrowser ... must be present too.
+    assert.ok(calls[0].opts.headers.Authorization.startsWith('MediaBrowser '));
+    assert.ok(calls[0].opts.headers.Authorization.includes('Token="tok"'));
     assert.equal(calls[0].opts.headers['X-Emby-Token'], 'tok');
+  });
+
+  it('apiFetch sends only Authorization, never X-Emby-Token alone (regression for #71: 401 on Jellyfin 12)', async () => {
+    const calls = mockSessions([[]]);
+    await JWP.utils.apiFetch('/Sessions?deviceId=dev-1');
+    assert.ok(calls[0].opts.headers.Authorization, 'missing Authorization header');
+    assert.ok(
+      calls[0].opts.headers.Authorization.startsWith('MediaBrowser '),
+      'Authorization header must use the MediaBrowser scheme, not a bare token'
+    );
   });
 
   it('retries until the server reports the item', async () => {

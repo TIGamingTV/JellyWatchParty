@@ -2174,3 +2174,23 @@ Round 29–30's "floating button" workaround existed because a comment in `rende
 **Docs**: `docs/technical/client.md` and `docs/ARCHITECTURE.md` updated to describe the in-flow strategy and correct the React-wipes-foreign-nodes claim (noting it was disproven empirically against the real 12.0 build, not reasoned away).
 
 **Results**: 80/80 client tests pass (was 78). `node --check` clean across all client JS. Injection work dropped from an unconditional 2s poll to 3 total injections across the entire browser stress suite. No positioning, no collisions by construction, no layout shifts.
+
+---
+
+## Round 32 — `apiFetch` still sent the legacy header on Jellyfin 12 (issue #71, part 1 of 2)
+
+2.0.5.0 (PR #68, Round-adjacent fix for #67) added a server-backed fallback for Jellyfin 12.1's missing global `playbackManager`, but it authenticated with `apiFetch` in `utils/media.js`, which still sent the token as `X-Emby-Token` only. Jellyfin 12 rejects that header by default (`EnableLegacyAuthorization=false`), so every request built on `apiFetch` — `getOwnSession`, `refreshServerNowPlaying`, `resolveCurrentItemId`, `playViaSessionCommand`, and the whole native-client Bridge UI (`ui/bridge.js`, broken since 2.0.4) — got a 401 on a default 12.x install. Room creation still worked in the 2.0.5.0 test because the DOM item-id fallback (`[class*="osd"] [data-id]`) happened to match the player's rating button, masking the auth failure. Reported live-tested with exact repro steps and console output in issue #71 by @francotosqui, who also verified the fix works.
+
+Separately, `ws/auth.js`'s `/JellyWatchParty/Token` handshake already used the correct scheme (`buildAuthHeader`, `MediaBrowser ...`, added for #67) — it just wasn't shared with `apiFetch`.
+
+**Fix**: moved `buildAuthHeader` out of `ws/auth.js` into `utils/misc.js` (loads before both `ws/auth.js` and `utils/media.js`, since `apiFetch` needs it too and script load order is fixed in `plugin.js`). `ws/auth.js` keeps `actions.buildAuthHeader` as an alias for backward compatibility. `apiFetch` now sends `Authorization: MediaBrowser ...` (kept `X-Emby-Token` alongside for older servers, same pattern already used by the token handshake). `ui/bridge.js` needed no change — it already delegated to `utils.apiFetch`.
+
+Also: `getOwnSession` logs the HTTP status on a failed `/Sessions` lookup, and `play.js`'s "own session not found" warning no longer implies the session doesn't exist when the real cause is an auth rejection.
+
+**Guest pause toast** (the minor UX item from #71): a guest's local pause no longer resolves silently — `playback/bind.js` now shows "Only the host controls playback" (10s cooldown) when a guest pauses while the room is playing, before `ws/handlers/sync.js` resumes them within ~1s. Guarded by `lastSyncPlayState === 'playing'` so it doesn't fire when the video is programmatically paused because the host themselves is paused.
+
+**Tests**: `tests/media.test.js` fixed the regression-blind assertion (it checked `X-Emby-Token` only, so it couldn't have caught this) and added a case that fails if `apiFetch` ever sends `X-Emby-Token` without `Authorization`. New `tests/bind.test.js` covers the pause toast (host exempt, room-paused exempt, out-of-room exempt, rate-limited). Full suite: 102/102 passing (was 96).
+
+**Deferred to a follow-up PR**: issue #71 also reports that a room's `media_id` never follows the host after creation (new item after an empty-media room, or switching mid-session) — that needs a new `set_media`/`media_changed` protocol message plus server, client and doc changes, out of scope for this hotfix.
+
+**Version**: `JellyWatchPartyPlugin.csproj` bumped 2.0.5.0 → 2.0.5.1.

@@ -46,6 +46,23 @@
     }
   };
 
+  // Lets a guest know why their local pause didn't stick: playback is
+  // host-controlled, so sync.js resumes them within ~1s (see
+  // ws/handlers/sync.js handleStateUpdate). Only fires when the room is
+  // actually playing - i.e. the pause was the guest's own doing, not the
+  // video catching up to a host who is themselves paused.
+  const GUEST_PAUSE_TOAST_COOLDOWN_MS = 10000;
+  const onGuestPause = () => {
+    if (state.isHost || !state.inRoom) return;
+    if (state.lastSyncPlayState !== 'playing') return;
+    const now = utils.nowMs();
+    if (now - state.lastGuestPauseToastAt < GUEST_PAUSE_TOAST_COOLDOWN_MS) return;
+    state.lastGuestPauseToastAt = now;
+    if (JWP.ui && JWP.ui.showToast) {
+      JWP.ui.showToast('Only the host controls playback');
+    }
+  };
+
   const createVideoListeners = (video) => {
     return {
       waiting: () => {
@@ -71,7 +88,10 @@
         }
       },
       play: () => onHostEvent('play', video),
-      pause: () => onHostEvent('pause', video),
+      pause: () => {
+        onHostEvent('pause', video);
+        onGuestPause();
+      },
       seeked: () => {
         utils.log('VIDEO', { event: 'seeked', pos: video.currentTime });
         onHostEvent('seek', video);
