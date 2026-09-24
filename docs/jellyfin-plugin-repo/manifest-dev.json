@@ -8,12 +8,12 @@
     "category": "General",
     "versions": [
       {
-        "version": "0.0.133",
-        "changelog": "Merge pull request #72 from TIGamingTV/fix/issue-71-auth-401",
+        "version": "0.0.134",
+        "changelog": "Merge pull request #73 from TIGamingTV/feat/room-media-follows-host",
         "targetAbi": "12.0.0.0",
         "sourceUrl": "https://github.com/TIGamingTV/JellyWatchParty/releases/download/develop-latest/JellyWatchParty-dev.zip",
-        "checksum": "db2aecad89ffbc9dcbf3b5871f148d86",
-        "timestamp": "2026-09-24T08:39:20Z"
+        "checksum": "e281e8044ccce6608257d3cd2dbf734b",
+        "timestamp": "2026-09-24T08:44:33Z"
       }
     ]
   }
