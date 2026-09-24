@@ -8,12 +8,12 @@
     "category": "General",
     "versions": [
       {
-        "version": "0.0.142",
-        "changelog": "Merge pull request #78 from francotosqui/feat/panel-close-button",
+        "version": "0.0.143",
+        "changelog": "Merge pull request #79 from francotosqui/feat/participant-status",
         "targetAbi": "12.0.0.0",
         "sourceUrl": "https://github.com/TIGamingTV/JellyWatchParty/releases/download/develop-latest/JellyWatchParty-dev.zip",
-        "checksum": "acbe487fc9ad99a0bbc44ba17009d872",
-        "timestamp": "2026-09-24T22:02:13Z"
+        "checksum": "55df5e89be7d74269a58af198d4ed84b",
+        "timestamp": "2026-09-24T22:02:25Z"
       }
     ]
   }
