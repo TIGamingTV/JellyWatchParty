@@ -58,6 +58,8 @@
     state.mediaSwitchPending = false;
     state.mediaSwitchPendingUntil = 0;
     state.readyRoomId = '';
+    state.participants = [];
+    state.lastReportedStatus = '';
     state.isInitialSync = false;
     state.initialSyncUntil = 0;
     state.initialSyncTargetPos = 0;

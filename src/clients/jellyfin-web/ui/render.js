@@ -183,7 +183,7 @@
       </div>
       <div class="jwp-section" style="flex-shrink:0;">
         <div class="jwp-label">Participants</div>
-        <div id="jwp-participants-list" style="font-size:13px;">Online: ${state.participantCount || 1}</div>
+        <div id="jwp-participants-list" style="font-size:13px;">${ui.buildParticipantsHtml ? ui.buildParticipantsHtml() : `Online: ${state.participantCount || 1}`}</div>
         ${syncIndicator}
       </div>
       <div id="jwp-chat-section">

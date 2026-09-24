@@ -55,6 +55,43 @@
     `;
   };
 
+  // Participant list: who is in the room and how their playback is doing,
+  // from the statuses each client reports (see playback/sync.js).
+  const PARTICIPANT_STATUS = {
+    synced: { dotClass: 'synced', label: 'In sync' },
+    playing: { dotClass: 'synced', label: 'Playing' },
+    syncing: { dotClass: 'syncing', label: 'Catching up' },
+    buffering: { dotClass: 'pending', label: 'Buffering' },
+    loading: { dotClass: 'pending', label: 'Loading' },
+    paused: { dotClass: 'unknown', label: 'Paused' },
+    idle: { dotClass: 'unknown', label: 'Not watching' }
+  };
+
+  const describeParticipantStatus = (status) => PARTICIPANT_STATUS[status] || { dotClass: 'unknown', label: '...' };
+
+  const buildParticipantsHtml = () => {
+    const list = Array.isArray(state.participants) ? state.participants : [];
+    // Older session servers only send a count.
+    if (list.length === 0) return `Online: ${state.participantCount || 1}`;
+    const escape = JWP.utils.escapeHtml;
+    const rows = list.map((p) => {
+      const { dotClass, label } = describeParticipantStatus(p.status);
+      const you = p.id === state.clientId ? ' <span class="jwp-participant-you">(you)</span>' : '';
+      const host = p.is_host ? '<span class="material-icons jwp-participant-host" title="Host" aria-label="Host">star</span>' : '';
+      return `<div class="jwp-participant">`
+        + `<div class="jwp-sync-dot ${dotClass}"></div>`
+        + `<span class="jwp-participant-name">${escape(p.name || 'Someone')}${you}</span>${host}`
+        + `<span class="jwp-participant-status">${label}</span>`
+        + `</div>`;
+    }).join('');
+    return `<div class="jwp-participant-count">Online: ${list.length}</div>${rows}`;
+  };
+
+  const renderParticipants = () => {
+    const el = document.getElementById('jwp-participants-list');
+    if (el) el.innerHTML = buildParticipantsHtml();
+  };
+
   const stopPlayerCapture = (input) => {
     const stopPropagation = (e) => e.stopPropagation();
     input.addEventListener('keydown', stopPropagation);
@@ -64,5 +101,8 @@
     input.addEventListener('mousedown', stopPropagation);
   };
 
-  Object.assign(ui, { updateStatusIndicator, updateServerFooter, updateSyncIndicator, buildSyncStatusIndicator, stopPlayerCapture });
+  Object.assign(ui, {
+    updateStatusIndicator, updateServerFooter, updateSyncIndicator, buildSyncStatusIndicator,
+    describeParticipantStatus, buildParticipantsHtml, renderParticipants, stopPlayerCapture
+  });
 })();

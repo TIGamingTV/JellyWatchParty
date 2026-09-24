@@ -17,12 +17,17 @@
     }
   };
 
+  h.handleParticipants = (msg) => {
+    const list = msg.payload && msg.payload.participants;
+    if (!Array.isArray(list)) return;
+    state.participants = list;
+    state.participantCount = list.length;
+    if (state.inRoom && ui.renderParticipants) ui.renderParticipants();
+  };
+
   h.handleParticipantsUpdate = (msg) => {
     state.participantCount = msg.payload.participant_count;
-    if (state.inRoom) {
-      const el = document.getElementById('jwp-participants-list');
-      if (el) el.textContent = `Online: ${state.participantCount}`;
-    }
+    if (state.inRoom && ui.renderParticipants) ui.renderParticipants();
     if (state.lastParticipantCount && state.participantCount > state.lastParticipantCount) {
       ui.showToast('A participant joined the room');
     }
@@ -33,8 +38,7 @@
     if (msg.payload?.participant_count !== undefined) {
       state.participantCount = msg.payload.participant_count;
       if (state.inRoom) {
-        const el = document.getElementById('jwp-participants-list');
-        if (el) el.textContent = `Online: ${state.participantCount}`;
+        if (ui.renderParticipants) ui.renderParticipants();
         ui.showToast('A participant left the room');
       }
       state.lastParticipantCount = state.participantCount;
@@ -45,6 +49,7 @@
     state.inRoom = false;
     state.roomId = '';
     state.roomMediaId = '';
+    state.participants = [];
     const reason = msg.payload?.reason || 'The room was closed';
     ui.showToast(reason);
     ui.render();

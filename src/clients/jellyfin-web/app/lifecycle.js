@@ -103,6 +103,7 @@
       if (state.inRoom && !state.isHost) {
         playback.syncLoop();
       }
+      if (state.inRoom && playback.reportOwnStatus) playback.reportOwnStatus();
     }, SYNC_LOOP_MS);
   };
 

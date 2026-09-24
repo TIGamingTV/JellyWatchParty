@@ -81,6 +81,7 @@
       case 'client_hello': h.handleClientHello(msg); break;
       case 'room_state': h.handleRoomState(msg, video); break;
       case 'participants_update': h.handleParticipantsUpdate(msg); break;
+      case 'participants': h.handleParticipants(msg); break;
       case 'client_left': h.handleClientLeft(msg); break;
       case 'room_closed': h.handleRoomClosed(msg); break;
       case 'host_changed': h.handleHostChanged(msg); break;

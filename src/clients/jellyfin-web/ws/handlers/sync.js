@@ -16,6 +16,8 @@
     }
     state.isHost = (msg.payload.host_id === state.clientId);
     state.roomMediaId = msg.payload.media_id || '';
+    // (Re)entering a room: make the next tick report our status again.
+    state.lastReportedStatus = '';
     if (JWP.chat && Array.isArray(msg.payload.chat_history)) {
       JWP.chat.hydrate(msg.payload.chat_history);
     }

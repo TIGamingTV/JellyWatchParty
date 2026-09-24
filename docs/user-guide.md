@@ -92,7 +92,7 @@ The Jellyfin homepage displays active watch parties in a dedicated "Watch Partie
 - **Connection status** - Online/Offline indicator
 
 ### In-Room View
-- **Room name** and **participants** count
+- **Room name** and **participant list**: each person's name (the host has a star) and status: In sync, Catching up, Buffering, Loading, Not watching, or Playing / Paused for the host
 - **Sync indicator** - Shows sync status (participants only)
 - **Chat** - Text messaging with other participants
 - **RTT** - Round-trip time to server (latency indicator)

@@ -322,6 +322,30 @@ otherwise `media_id` never changes after `create_room`.
 - `"media_id is required"` - Missing `media_id` in payload
 - `"Invalid media_id"` - Not a 32-char hex string
 
+### `client_status`
+
+A participant reports its own playback status, for the room's participant list. Clients send it when the status changes, at most once per second.
+
+```json
+{
+  "type": "client_status",
+  "room": "uuid-room-id",
+  "payload": { "status": "syncing" },
+  "ts": 1678900000000
+}
+```
+
+| `status` | Meaning |
+|----------|---------|
+| `synced` | Guest is in sync with the host |
+| `syncing` | Guest is catching up (drift correction) |
+| `buffering` | Video is buffering |
+| `loading` | Waiting for a scheduled play, or opening the room's media |
+| `idle` | Not in the player |
+| `playing` / `paused` | The host's own state |
+
+**Effects:** ignored unless the value is one of the above, the sender is in the room and the status changed; otherwise everyone in the room gets `participants`.
+
 ## Server → Client Messages
 
 ### `client_hello`
@@ -416,6 +440,27 @@ Participant count update.
   "server_ts": 1678900000000
 }
 ```
+
+### `participants`
+
+The room's participant list, in join order. Sent to the whole room when someone joins or leaves, the host changes, or a status changes; also sent to the host on create and to a client that reattaches.
+
+```json
+{
+  "type": "participants",
+  "room": "uuid-room-id",
+  "payload": {
+    "participants": [
+      { "id": "uuid-a", "name": "Alice", "is_host": true, "status": "playing" },
+      { "id": "uuid-b", "name": "Bob", "is_host": false, "status": "syncing" }
+    ]
+  },
+  "ts": 1678900000000,
+  "server_ts": 1678900000000
+}
+```
+
+`status` is the participant's last `client_status`, or `unknown` before its first report. `participants_update` and `client_left` are still sent with the count, for older clients.
 
 ### `player_event`
 
