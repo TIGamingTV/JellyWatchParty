@@ -8,12 +8,12 @@
     "category": "General",
     "versions": [
       {
-        "version": "0.0.134",
-        "changelog": "Merge pull request #73 from TIGamingTV/feat/room-media-follows-host",
+        "version": "0.0.141",
+        "changelog": "Merge pull request #77 from francotosqui/fix/stale-osd-item-id",
         "targetAbi": "12.0.0.0",
         "sourceUrl": "https://github.com/TIGamingTV/JellyWatchParty/releases/download/develop-latest/JellyWatchParty-dev.zip",
-        "checksum": "e281e8044ccce6608257d3cd2dbf734b",
-        "timestamp": "2026-09-24T08:44:33Z"
+        "checksum": "a83aa12b3e17e52b773e97ca59c601d5",
+        "timestamp": "2026-09-24T22:01:42Z"
       }
     ]
   }
