@@ -34,8 +34,9 @@ src/
 │       ├── chat.rs       # Chat message handler
 │       ├── create.rs     # Room creation
 │       ├── join.rs       # Room joining
-│       ├── misc.rs       # Ping, list_rooms, etc.
-│       └── playback.rs   # player_event, state_update, ready
+│       ├── media.rs      # set_media (host changes the room's item)
+│       ├── misc.rs       # Ping, ready, leave_room, client_log, unknown
+│       └── playback.rs   # player_event, state_update
 └── room/
     ├── mod.rs
     ├── leave.rs          # Client leave / disconnect
@@ -271,6 +272,15 @@ Validates host permissions, applies action, broadcasts to room.
 
 #### `state_update`
 Applies filtering (cooldown, rate limit, jitter), broadcasts if accepted.
+
+#### `set_media` (`handlers/media.rs`)
+Host-only. Changes `room.media_id`, resets `room.state`/`pending_play`/
+`ready_clients` (to just the host), and broadcasts `media_changed` to
+the rest of the room plus a refreshed `room_list`. A no-op if the id
+already matches or the sender isn't the host. See [protocol.md]({{
+'/technical/protocol/#set_media' | relative_url }}) for the full
+payload/effects and issue #71 for why this exists — before it,
+`media_id` was write-once at `create_room`.
 
 #### `ping`
 Responds with `pong` for latency measurement.

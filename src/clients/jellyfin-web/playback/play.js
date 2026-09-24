@@ -3,8 +3,8 @@
   const playback = JWP.playback = JWP.playback || {};
   const utils = JWP.utils;
 
-  const tryPlayMethods = (pm, item) => {
-    const playOptions = { startPositionTicks: 0 };
+  const tryPlayMethods = (pm, item, startPositionTicks = 0) => {
+    const playOptions = { startPositionTicks };
     const errors = [];
     if (typeof pm.play === 'function') {
       try {
@@ -34,7 +34,7 @@
     }
     if (typeof pm.playItems === 'function') {
       try {
-        pm.playItems([item], 0);
+        pm.playItems([item], startPositionTicks);
         console.log('[JellyWatchParty] Playback started via pm.playItems()');
         return { success: true, errors };
       } catch (err) {
@@ -44,13 +44,13 @@
     return { success: false, errors };
   };
 
-  const playItem = (item) => {
+  const playItem = (item, startPositionTicks = 0) => {
     const pm = utils.getPlaybackManager();
     if (!pm) {
       console.warn('[JellyWatchParty] Playback failed: PlaybackManager not available');
       return false;
     }
-    const result = tryPlayMethods(pm, item);
+    const result = tryPlayMethods(pm, item, startPositionTicks);
     if (!result.success) {
       console.error('[JellyWatchParty] All playback methods failed:', result.errors);
       if (JWP.ui && JWP.ui.showToast) {
@@ -166,7 +166,7 @@
     }
     state.joiningItemId = itemId;
     ApiClient.getItem(userId, itemId).then((item) => {
-      if (!playItem(item)) retry(again, attempt);
+      if (!playItem(item, toStartTicks(startPos))) retry(again, attempt);
     }).catch(() => {
       retry(again, attempt);
     }).finally(() => {

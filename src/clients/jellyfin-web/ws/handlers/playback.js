@@ -75,6 +75,10 @@
 
   h.handlePlayerEvent = (msg, video) => {
     if (state.isHost || !video) return;
+    // The room switched media and we haven't loaded it yet - don't act on
+    // position/play-state commands meant for the new item while we're
+    // still (or still showing) the old one (issue #71).
+    if (!utils.isOnRoomMedia()) return;
     utils.startSyncing();
     if (msg.payload && typeof msg.payload.position === 'number') {
       const action = msg.payload.action;

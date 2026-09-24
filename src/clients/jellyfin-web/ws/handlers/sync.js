@@ -15,6 +15,7 @@
       state.clientId = msg.client;
     }
     state.isHost = (msg.payload.host_id === state.clientId);
+    state.roomMediaId = msg.payload.media_id || '';
     if (JWP.chat && Array.isArray(msg.payload.chat_history)) {
       JWP.chat.hydrate(msg.payload.chat_history);
     }
@@ -79,8 +80,46 @@
     }
   };
 
+  // The host started something after creating an empty room, or switched to
+  // a different item mid-session (issue #71). Re-runs the same "load and
+  // wait to be ready" flow as joining a room; roomMediaId gates syncLoop and
+  // the other player_event/state_update handlers until the new item is
+  // actually loaded, so stale position corrections never target it.
+  h.handleMediaChanged = (msg, video) => {
+    if (state.isHost) return; // we sent this; we already know
+    const mediaId = msg.payload && msg.payload.media_id;
+    if (!mediaId) return;
+    state.roomMediaId = mediaId;
+    state.readyRoomId = '';
+    state.syncStatus = 'unknown';
+    state.lastSyncServerTs = 0;
+    state.lastSyncPosition = 0;
+    state.lastSyncPlayState = 'paused';
+    state.isInitialSync = false;
+    state.initialSyncUntil = 0;
+    state.initialSyncTargetPos = 0;
+    state.syncCooldownUntil = 0;
+    state.isDriftCorrecting = false;
+    state.pendingPlayUntil = 0;
+    if (state.pendingActionTimer) {
+      clearTimeout(state.pendingActionTimer);
+      state.pendingActionTimer = null;
+    }
+    if (ui.updateSyncIndicator) ui.updateSyncIndicator();
+    ui.render();
+    if (ui.showToast) ui.showToast("Host switched media");
+    if (JWP.playback && JWP.playback.ensurePlayback) {
+      const roomPos = msg.payload && typeof msg.payload.position === 'number'
+        ? utils.adjustedPosition(msg.payload.position, msg.server_ts)
+        : 0;
+      JWP.playback.ensurePlayback(mediaId, roomPos);
+      if (JWP.playback.watchReady) JWP.playback.watchReady();
+    }
+  };
+
   h.handleStateUpdate = (msg, video) => {
     if (state.isHost || !video) return;
+    if (!utils.isOnRoomMedia()) return;
     if (msg.payload) {
       state.lastSyncPlayState = msg.payload.play_state || state.lastSyncPlayState;
     }

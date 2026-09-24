@@ -283,6 +283,45 @@ Send a text message to the room.
 - `"Chat message too long (max 500 characters)"` - Text exceeds limit
 - `"Room ID required for chat"` - Missing room ID
 
+### `set_media`
+
+Change which item the room is watching (host only). Used both when the
+host starts playing something after creating a room with no media, and
+when the host switches to a different item mid-session (issue #71) —
+otherwise `media_id` never changes after `create_room`.
+
+```json
+{
+  "type": "set_media",
+  "room": "uuid-room-id",
+  "payload": {
+    "media_id": "abc123def456",
+    "position": 0
+  },
+  "ts": 1678900000000
+}
+```
+
+| Payload Field | Type | Description |
+|---------------|------|-------------|
+| `media_id` | string | Required. 32-char hex Jellyfin item id |
+| `position` | number | Starting position in seconds (default `0`) |
+
+**Effects:**
+- No-op (nothing changed, nothing broadcast) if `media_id` already
+  matches `room.media_id`, or the sender isn't `room.host_id`
+- Sets `room.media_id`, resets `room.state` to `{position, play_state:
+  "paused"}`, clears `pending_play`, and resets `ready_clients` to just
+  the host — so the host's next `play` waits (up to 2s, same as any
+  pending play) for guests to load the new item before scheduling
+  playback for everyone
+- Broadcasts `media_changed` to every other room member
+- Broadcasts `room_list` to all (so lobby cards refresh their poster)
+
+**Error responses:**
+- `"media_id is required"` - Missing `media_id` in payload
+- `"Invalid media_id"` - Not a 32-char hex string
+
 ## Server → Client Messages
 
 ### `client_hello`
@@ -482,6 +521,31 @@ than closing.
 to the local `client_id`) and force a full UI re-render — the host-only
 Close/Leave button label only updates on a forced render, not the
 normal fast-render path.
+
+### `media_changed`
+
+The host changed which item the room is watching, via `set_media`.
+Sent to every room member except the host (who already knows).
+
+```json
+{
+  "type": "media_changed",
+  "room": "uuid-room-id",
+  "payload": {
+    "media_id": "abc123def456",
+    "position": 0
+  },
+  "ts": 1678900000000,
+  "server_ts": 1678900000000
+}
+```
+
+**Client processing (guest):** reset sync state (`readyRoomId`,
+`syncStatus`, `lastSyncServerTs/Position/PlayState`) as on join, call
+`ensurePlayback(media_id, position)`, then `watchReady()`. Until the
+guest's own current item matches `payload.media_id`, it should not
+report `ready` for the new item, apply position corrections, or show a
+"synced" status.
 
 ### `pong`
 

@@ -44,6 +44,7 @@
   h.handleRoomClosed = (msg) => {
     state.inRoom = false;
     state.roomId = '';
+    state.roomMediaId = '';
     const reason = msg.payload?.reason || 'The room was closed';
     ui.showToast(reason);
     ui.render();

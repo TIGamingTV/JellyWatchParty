@@ -110,6 +110,15 @@ exact same protocol messages a browser host would send
 It tracks its own `RoomId` by watching for the `room_state` message the
 server sends back after `create_room`, and clears it on `room_closed`.
 
+**Known limitation: doesn't send `set_media`.** The web host detects an
+item change and sends `set_media` (see [protocol.md]({{
+'/technical/protocol/#set_media' | relative_url }}), issue #71); a
+bridged native host does not, since `HostBridgeManager` disposes the
+bridge on `PlaybackStopped`, which fires on every item change —
+including switches within the same bridged session, not just the end of
+it. A native host that starts a different item currently just ends the
+bridge rather than updating the room's media. Tracked as a follow-up.
+
 ### `Services/SessionFollowerBridge.cs`
 
 One instance per *receiver* session — the receive-only counterpart to
@@ -143,6 +152,11 @@ follower to ready. `ready` persists for the room's lifetime, so it is sent
 once, on join.
 
 **Known limitations (receiver):**
+- **Does not follow `media_changed`.** `ParseRoomEvent` only understands
+  `player_event`, `state_update` and `room_state.state`; a `media_changed`
+  message (room switched to a different item) is ignored. Since the
+  follower is also disposed on its own session's `PlaybackStopped`, an
+  item switch just ends the bridge rather than following it.
 - **Password-protected rooms are not supported.** The follower's `join_room`
   does not carry the room password (the web client doesn't retain it), so the
   server rejects the join; the receiver simply never syncs.
