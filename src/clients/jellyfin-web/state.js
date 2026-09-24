@@ -156,6 +156,9 @@
     },
     // Video event listener cleanup
     videoListeners: null,
-    currentVideoElement: null
+    currentVideoElement: null,
+    // Cooldown so a guest pausing repeatedly doesn't spam the "host controls
+    // playback" toast (see playback/bind.js).
+    lastGuestPauseToastAt: 0
   };
 })();
