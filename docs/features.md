@@ -68,7 +68,7 @@ session server, web client) work together to make this happen.
 
 ### User Interface
 - **OSD button** - Watch Party button in the video player controls
-- **Slide-out panel** - Room list and controls
+- **Slide-out panel** - Room list and controls; closes with its X button, Escape, or a click outside it
 - **Home section** - Watch parties shown on Jellyfin homepage
 - **System notifications** - Centered toasts for play/pause, join/leave events
 - **Chat notifications** - Stacking toasts for incoming messages (top-right)
