@@ -176,7 +176,7 @@ Safari uses its native HLS implementation, which behaves differently:
 ## Known Limitations
 
 1. **Host-only control** - Only the host can control playback (democratic mode planned)
-2. **Single media** - One media item per room (by design)
+2. **One item at a time** - A room watches a single item, but it follows the host: switching movies mid-session (or starting one after creating a room with nothing playing) sends `set_media` and guests follow automatically
 3. **Ephemeral rooms** - Rooms are closed when the host leaves (with no other participants remaining) and doesn't reconnect within 90 seconds, or when the server restarts (by design); if other participants remain, host duties transfer automatically instead — see Automatic host transfer above
 4. **Guests need a browser or Jellyfin Media Player client** - The Watch Party UI (joining, chat, the room list) only exists in the injected web client and Jellyfin Desktop. Native/TV clients are broader via the [Native Client Bridge]({{ '/technical/host-bridge/' | relative_url }}): any such client can be bridged in as a room **host**, or attached to a room as a **receiver** that follows playback — but neither role gives it the interactive UI (chat, room list), and someone still drives the session from a supported client.
 5. **Chat history is capped and in-memory** - The last 50 messages are replayed to joining/reattaching clients, but history is lost when a room closes (rooms are ephemeral by design)

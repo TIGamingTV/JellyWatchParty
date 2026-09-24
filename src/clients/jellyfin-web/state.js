@@ -119,6 +119,17 @@
     playCommandUntil: 0,
     pendingJoinRoomId: '',  // Room to join after navigating to video player
     roomName: '',
+    // Mirrors the server's room.media_id. '' when the room has no media yet
+    // (e.g. just created). Used to detect a host media switch and to gate
+    // guest sync/ready against the wrong item (see ws/handlers/sync.js
+    // handleMediaChanged, utils.isOnRoomMedia).
+    roomMediaId: '',
+    // True while the host is confirming whether a newly loaded item is
+    // actually different media, before sending set_media (see
+    // playback/bind.js). Suppresses state broadcasts meanwhile so the new
+    // item's position is never reported against the old media_id.
+    mediaSwitchPending: false,
+    mediaSwitchPendingUntil: 0,
     participantCount: 0,
     lastSyncServerTs: 0,
     lastSyncPosition: 0,

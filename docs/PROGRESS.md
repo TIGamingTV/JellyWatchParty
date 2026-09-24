@@ -2194,3 +2194,112 @@ Also: `getOwnSession` logs the HTTP status on a failed `/Sessions` lookup, and `
 **Deferred to a follow-up PR**: issue #71 also reports that a room's `media_id` never follows the host after creation (new item after an empty-media room, or switching mid-session) — that needs a new `set_media`/`media_changed` protocol message plus server, client and doc changes, out of scope for this hotfix.
 
 **Version**: `JellyWatchPartyPlugin.csproj` bumped 2.0.5.0 → 2.0.5.1.
+
+---
+
+## Round 33 — A room's media never followed the host (issue #71, part 2 of 2)
+
+Part 2 of #71 (part 1: `apiFetch`'s 401 on Jellyfin 12, shipped separately
+as the 2.0.5.1 hotfix). `media_id` was write-once: set in `create_room`
+(`src/server/src/ws/handlers/create.rs`) and never touched again anywhere
+in the server or client. Reported live-tested by @francotosqui with two
+concrete cases: (A) host creates a room before playing anything — the
+media_id is `null` forever, guests stuck on "No media"; (B) host switches
+movies while a room is open — guests stay on the old movie but get seeked
+to the new movie's timestamps and shown as "synced".
+
+**New protocol message, `set_media` / `media_changed`** (documented in
+`docs/technical/protocol.md`): host-only, validates the id, no-ops if it
+matches the current one, otherwise sets `room.media_id`, resets
+`room.state` to paused at the given position, clears `pending_play`, and
+resets `ready_clients` to just the host — so the existing ready/pending-play
+gate (`docs/technical/sync.md` §6) runs again for the new item before the
+host's next `play` reaches everyone. Broadcasts `media_changed` to the rest
+of the room (not the host, who sent it) and a refreshed `room_list`.
+
+**Server** (`src/server/src/ws/handlers/media.rs`, new): `handle_set_media`,
+wired into `dispatch.rs` via a new `ClientMessageType::SetMedia` /
+`ServerMessageType::MediaChanged` pair in `types.rs`. 7 new tests: host
+changes media / non-host ignored / invalid id rejected / same id is a no-op
+/ empty room gets its first media / unknown room is a no-op, plus a
+`SetMedia` deserialize case in `types.rs`.
+
+**Client** (`src/clients/jellyfin-web`):
+- `state.js`: `roomMediaId` (mirrors `room.media_id`) and
+  `mediaSwitchPending`/`mediaSwitchPendingUntil` (host-side, see below).
+- `utils/media.js`: `isOnRoomMedia()` — true iff the room has no media set
+  yet, or this client's own item matches `roomMediaId`. Used to gate guest
+  sync (`playback/sync.js` `syncLoop`/`notifyReady`, `ws/handlers/sync.js`
+  `handleStateUpdate`, `ws/handlers/playback.js` `handlePlayerEvent`)
+  against acting on stale state for the *old* item while a media switch is
+  in flight. A new `syncStatus: 'wrong_media'` surfaces this in the sync
+  indicator ("Loading host's media…").
+- `ws/handlers/sync.js`: `applyRoomState` now stores `roomMediaId`; new
+  `handleMediaChanged` resets sync bookkeeping the same way a fresh join
+  does and calls `ensurePlayback`/`watchReady` — the guest side of both
+  cases A and B. Wired into `ws/connection.js`'s dispatch table.
+- `playback/bind.js` (host side, the harder half): on `loadstart` or the
+  first bind, `beginMediaResolution()` sets `mediaSwitchPending` (suppressing
+  `sendStateUpdate`/`onHostEvent` so a mid-load autoplay event is never
+  reported against the *old* `media_id`) and, once
+  `refreshServerNowPlaying()` settles ~1.5s later, `maybeSendSetMedia()`
+  compares the resolved item against `roomMediaId` and sends `set_media` if
+  it changed — applied optimistically to `state.roomMediaId` since the host
+  never receives its own `media_changed` echo. `resolveHostItemId()`
+  deliberately does *not* use the DOM/global heuristics
+  (`utils.getCurrentItemId`) when there's no global `playbackManager`
+  (Jellyfin 12.1+): issue #71 part 1 showed those heuristics can mismatch
+  there (the OSD's rating button carries the same `data-id` attribute the
+  selector looks for), so this path trusts only the server-confirmed
+  `serverNowPlayingId`. A 5s safety timeout (`mediaSwitchPendingUntil`)
+  prevents a lost promise from wedging the host silent.
+- `playback/play.js`: `tryPlayMethods`/`playItem`/`ensurePlayback` no
+  longer hardcode `startPositionTicks: 0` on the `playbackManager` path —
+  the requested start position is now honored there too (it already was on
+  the no-`playbackManager` `playViaSessionCommand` path).
+- **Host stays in the room when the player closes**
+  (`app/lifecycle.js` `onVideoPlayerExit`): previously *any* room member
+  leaving the player view called `leaveRoom()`, including the host — which
+  made case B basically unreachable through the UI, since backing out to
+  browse for another movie ejected the host and promoted a guest. Only
+  guests now auto-leave on player exit; the host keeps their room (and can
+  still leave explicitly, or via the existing disconnect/reconnect-timeout
+  rules) while they go find the next thing to watch.
+- **UI**: `ui/cards.js` — "Waiting for host to start something" instead of
+  "No media"; clicking Join on a media-less room now joins directly instead
+  of trying (and failing) to navigate to a details page. `ui/home.js`
+  `reconcileCards` rebuilds a room card when its `media_id` changes instead
+  of only ever updating the participant count.
+
+**Deferred** (documented as known limitations, not implemented): the native
+Host Bridge (`docs/technical/host-bridge.md`) does not send `set_media` on
+a bridged session's item switch — `HostBridgeManager` disposes the bridge
+on `PlaybackStopped`, which fires on every item change, not just session
+end. The receiver bridge likewise ignores `media_changed`. Both call out
+`(issue #71)` follow-up in the docs.
+
+**Tests**: 5 new client test files — `utils.isOnRoomMedia` (media.test.js),
+`ws/handlers/sync handleMediaChanged` (media-changed.test.js), the host-side
+detection logic (bind-media-switch.test.js, including the DOM-heuristic
+regression guard above), `onVideoPlayerExit` host-vs-guest behavior
+(lifecycle.test.js, exposed via `JWP._lifecycle.onVideoPlayerExit` for
+testability), plus a `playItem` start-position regression case in
+play.test.js. `JWP._bindInternal` exposes bind.js's set_media detection
+internals for tests only (real timers would otherwise cost ~1.5s/test).
+123/123 client tests pass. `node --check` clean across every touched file.
+Server-side: 7 new Rust tests in `media.rs`; **no Rust toolchain was
+available in this environment to run `cargo test`** — reviewed by hand
+against the codebase's existing lock-ordering, broadcast-exclusion, and
+early-return conventions (matched line-for-line against `playback.rs`,
+`join.rs`, `create.rs`, `pending_play.rs`) instead. Should be run before
+merge.
+
+**Docs updated**: `protocol.md` (`set_media`/`media_changed`), `server.md`
+(file tree + handler table, plus a pre-existing "ready is in playback.rs"
+correction), `sync.md` §6, `host-bridge.md` (both limitations noted above),
+`features.md` (single-media limitation reworded).
+
+**Version**: `JellyWatchPartyPlugin.csproj` bumped 2.0.5.1 → 2.0.6.0. This
+is a protocol change — an older session server answers `set_media` with
+"Unknown message type" (existing `handle_unknown` fallback, harmless), and
+older clients simply ignore `media_changed`.

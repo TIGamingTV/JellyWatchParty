@@ -21,7 +21,14 @@
     console.log('[JellyWatchParty] Video player closed, cleaning up...');
     const panel = document.getElementById(JWP.constants.PANEL_ID);
     if (panel) panel.classList.add('hide');
-    if (state.inRoom && JWP.actions && JWP.actions.leaveRoom) {
+    // A guest with no player open can't follow anything, so they leave.
+    // The host stays: closing the player is how a host browses for the next
+    // thing to watch (issue #71 case B/C) - they now send set_media once
+    // they start playing again (see playback/bind.js), instead of being
+    // dropped from the room and re-promoting a guest to host in the
+    // meantime. The host still leaves explicitly (Close/Leave button) or
+    // via the existing disconnect/reconnect-timeout rules.
+    if (state.inRoom && !state.isHost && JWP.actions && JWP.actions.leaveRoom) {
       JWP.actions.leaveRoom();
     }
     if (JWP.playback && JWP.playback.cleanupVideoListeners) {
@@ -121,13 +128,14 @@
     startIntervals();
   };
 
-  // Expose lifecycle internals for cleanup module
+  // Expose lifecycle internals for the cleanup module and for tests.
   JWP._lifecycle = {
     get panelStopPropagation() { return panelStopPropagation; },
     set panelStopPropagation(v) { panelStopPropagation = v; },
     get hadVideoElement() { return hadVideoElement; },
     set hadVideoElement(v) { hadVideoElement = v; },
-    clearAllIntervals
+    clearAllIntervals,
+    onVideoPlayerExit
   };
 
   JWP.app = JWP.app || {};

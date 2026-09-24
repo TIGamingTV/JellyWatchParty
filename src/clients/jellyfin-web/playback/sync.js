@@ -16,6 +16,11 @@
 
   const notifyReady = () => {
     if (!state.inRoom || !state.roomId || state.readyRoomId === state.roomId) return;
+    // Don't mark ready against a video that isn't actually the room's item
+    // yet (e.g. old stream still up while ensurePlayback works). The
+    // server's pending-play force-play timeout covers this if it's ever
+    // wrong for too long.
+    if (!utils.isOnRoomMedia()) return;
     const actions = JWP.actions;
     if (!actions || !actions.send) return;
     state.readyRoomId = state.roomId;
@@ -133,6 +138,15 @@
     if (!state.inRoom || state.isHost) {
       state.isDriftCorrecting = false;
       if (video.playbackRate !== 1) video.playbackRate = 1;
+      return;
+    }
+    if (!utils.isOnRoomMedia()) {
+      state.isDriftCorrecting = false;
+      if (video.playbackRate !== 1) video.playbackRate = 1;
+      if (state.syncStatus !== 'wrong_media') {
+        state.syncStatus = 'wrong_media';
+        if (JWP.ui && JWP.ui.updateSyncIndicator) JWP.ui.updateSyncIndicator();
+      }
       return;
     }
     if (!state.lastSyncServerTs || state.lastSyncPlayState !== 'playing') {

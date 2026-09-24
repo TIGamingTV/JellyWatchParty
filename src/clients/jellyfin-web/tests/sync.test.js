@@ -2,10 +2,11 @@ const { describe, it, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 const JWP = require('./setup.js');
 
-// playback/sync.js needs utils.getVideo/isVideoReady (utils/video.js) and
-// utils.log (utils/log.js); it tolerates a missing JWP.ui (guarded with
-// `JWP.ui &&` everywhere it's used).
+// playback/sync.js needs utils.getVideo/isVideoReady (utils/video.js),
+// utils.isOnRoomMedia (utils/media.js) and utils.log (utils/log.js); it
+// tolerates a missing JWP.ui (guarded with `JWP.ui &&` everywhere it's used).
 require('../utils/video.js');
+require('../utils/media.js');
 require('../utils/log.js');
 require('../playback/sync.js');
 

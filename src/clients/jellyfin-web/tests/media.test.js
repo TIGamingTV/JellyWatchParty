@@ -120,3 +120,41 @@ describe('utils/media server fallback (no global playbackManager)', () => {
     assert.equal(JWP.utils.getCurrentItemId(), null);
   });
 });
+
+describe('utils.isOnRoomMedia (issue #71: gate sync/ready against the wrong item)', () => {
+  beforeEach(() => {
+    globalThis.document = { querySelector: () => null };
+    window.location.hash = '#/video';
+    globalThis.sessionStorage = { getItem: () => null };
+    JWP.state.serverNowPlayingId = '';
+    JWP.state.roomMediaId = '';
+  });
+
+  it('is true when the room has no media set yet - nothing to mismatch', () => {
+    JWP.state.roomMediaId = '';
+    assert.equal(JWP.utils.isOnRoomMedia(), true);
+  });
+
+  it('is true when the current item matches the room media', () => {
+    JWP.state.roomMediaId = ITEM;
+    JWP.state.serverNowPlayingId = ITEM;
+    assert.equal(JWP.utils.isOnRoomMedia(), true);
+  });
+
+  it('is false when the current item is a different one', () => {
+    JWP.state.roomMediaId = ITEM;
+    JWP.state.serverNowPlayingId = 'ffffffffffffffffffffffffffffffff';
+    assert.equal(JWP.utils.isOnRoomMedia(), false);
+  });
+
+  it('is false when nothing is currently known to be playing but the room has media', () => {
+    JWP.state.roomMediaId = ITEM;
+    assert.equal(JWP.utils.isOnRoomMedia(), false);
+  });
+
+  it('normalizes dashes/case on both sides before comparing', () => {
+    JWP.state.roomMediaId = ITEM.toUpperCase();
+    JWP.state.serverNowPlayingId = ITEM_DASHED;
+    assert.equal(JWP.utils.isOnRoomMedia(), true);
+  });
+});

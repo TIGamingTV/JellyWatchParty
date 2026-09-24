@@ -84,6 +84,7 @@
       case 'client_left': h.handleClientLeft(msg); break;
       case 'room_closed': h.handleRoomClosed(msg); break;
       case 'host_changed': h.handleHostChanged(msg); break;
+      case 'media_changed': h.handleMediaChanged(msg, video); break;
       case 'player_event': h.handlePlayerEvent(msg, video); break;
       case 'state_update': h.handleStateUpdate(msg, video); break;
       case 'pong': h.handlePong(msg); break;
