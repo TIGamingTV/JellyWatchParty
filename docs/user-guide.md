@@ -70,7 +70,7 @@ The Jellyfin homepage displays active watch parties in a dedicated "Watch Partie
 | Play | All clients start playing |
 | Pause | All clients pause |
 | Seek | All clients jump to that position |
-| Close panel | Room stays active |
+| Close panel (X button, Escape, or click outside it) | Room stays active |
 | Leave room | Room closes, all participants disconnected (unless another participant remains — see [Features: Automatic host transfer]({{ '/features/' | relative_url }}#current-features)) |
 
 ## Participant Experience
@@ -96,7 +96,9 @@ The Jellyfin homepage displays active watch parties in a dedicated "Watch Partie
 - **Sync indicator** - Shows sync status (participants only)
 - **Chat** - Text messaging with other participants
 - **RTT** - Round-trip time to server (latency indicator)
-- **Leave button** - Exit the watch party
+- **Leave button** - Exit the watch party (for the host: **Close room**)
+
+The panel closes with the **X** in its header, with **Escape**, or by clicking anywhere outside it; the room stays active either way.
 
 ## Using Chat
 

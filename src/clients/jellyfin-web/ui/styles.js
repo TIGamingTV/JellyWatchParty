@@ -13,6 +13,14 @@
     }
     #${PANEL_ID}.hide { display: none; }
     .jwp-header { font-weight: bold; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; padding-bottom: 8px; }
+    .jwp-header-actions { display: flex; align-items: center; gap: 6px; }
+    .jwp-close-btn {
+      display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+      width: 28px; height: 28px; margin-left: 6px; padding: 0; border: none; border-radius: 50%;
+      background: transparent; color: #aaa; cursor: pointer;
+    }
+    .jwp-close-btn:hover, .jwp-close-btn:focus-visible { background: rgba(255,255,255,0.1); color: #fff; }
+    .jwp-close-btn .material-icons { font-size: 20px; }
     .jwp-section { margin-bottom: 15px; overflow-y: auto; }
     .jwp-label { font-size: 11px; color: #888; text-transform: uppercase; margin-bottom: 8px; letter-spacing: 0.5px; }
     .jwp-room-item {

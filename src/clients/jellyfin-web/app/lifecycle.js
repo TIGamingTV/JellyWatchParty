@@ -116,6 +116,7 @@
     clearAllIntervals();
     ui.injectStyles();
     createPanel();
+    if (ui.setupPanelDismiss) ui.setupPanelDismiss();
     // Re-place the toolbar button the moment Jellyfin's router rebuilds the
     // header, rather than up to UI_CHECK_MS later.
     if (ui.observeToolbar) ui.observeToolbar();
