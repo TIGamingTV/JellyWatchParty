@@ -12,6 +12,10 @@ pub(super) const COMMAND_COOLDOWN_MS: u64 = 2000;
 pub(super) const RATE_LIMIT_MESSAGES: u32 = 30; // Max messages per window
 pub(super) const RATE_LIMIT_WINDOW_MS: u64 = 1000; // Window size in ms
 
+// Room password brute-force throttle (per user, per room)
+pub(super) const MAX_FAILED_JOINS: u32 = 5; // Wrong passwords allowed per window
+pub(super) const FAILED_JOIN_WINDOW_MS: u64 = 60_000; // Window / lockout length in ms
+
 // Resource limits
 pub(super) const MAX_CLIENTS_PER_ROOM: usize = 20; // Max clients in a room
 

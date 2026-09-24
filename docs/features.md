@@ -51,7 +51,7 @@ session server, web client) work together to make this happen.
 
 ### Room Management
 - **Create rooms** - Start a watch party with a custom name
-- **Room passwords** - Optionally require a password to join a room
+- **Room passwords** - Optionally require a password to join a room. Passwords are kept only as an in-memory salted SHA-256 hash (rooms don't survive a restart), are never logged, and each user gets 5 wrong attempts per room per minute before being locked out for the rest of that minute
 - **Join rooms** - Enter a room ID to join an existing session
 - **Leave rooms** - Exit cleanly with proper cleanup
 - **Room list** - See all active rooms on the server

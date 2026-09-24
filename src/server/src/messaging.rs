@@ -250,6 +250,7 @@ mod tests {
                 chat_history: VecDeque::new(),
                 password_hash: None,
                 client_status: HashMap::new(),
+                failed_joins: HashMap::new(),
             },
         );
         rooms.insert(
@@ -271,6 +272,7 @@ mod tests {
                 chat_history: VecDeque::new(),
                 password_hash: None,
                 client_status: HashMap::new(),
+                failed_joins: HashMap::new(),
             },
         );
         let msg = build_room_list_msg(&rooms);

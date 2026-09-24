@@ -65,14 +65,21 @@ pub struct Room {
     /// aren't missing context (bounded by `MAX_CHAT_HISTORY`).
     #[serde(skip)]
     pub chat_history: VecDeque<ChatHistoryEntry>,
-    /// Salt + SHA-256 hash of an optional room password, checked on join.
-    /// Never serialized to any client-facing payload.
+    /// Salt + SHA-256 hash of an optional room password, checked on join
+    /// with a constant-time comparison. Never serialized to any client-facing
+    /// payload, and the plaintext is never logged.
     #[serde(skip)]
     pub password_hash: Option<(String, String)>,
     /// Self-reported playback status per participant (see `client_status`),
     /// shown to everyone in the room's participant list.
     #[serde(skip)]
     pub client_status: HashMap<String, String>,
+    /// Failed password attempts per user id: `(count, window_start_ms)`.
+    /// Keyed by `user_id` (the JWT `sub` when auth is enabled) rather than
+    /// the client id, which a client can rotate by reconnecting. Lives on the
+    /// room so it's dropped with it.
+    #[serde(skip)]
+    pub failed_joins: HashMap<String, (u32, u64)>,
 }
 
 #[derive(Debug, Clone, Serialize)]
