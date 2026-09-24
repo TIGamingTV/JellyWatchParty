@@ -103,7 +103,7 @@ Create a new watch party room.
 | `start_pos` | number | Initial position (seconds) |
 | `media_id` | string | Jellyfin media ID (optional) |
 | `password` | string | Optional room password. If set, `join_room` must supply a matching `password` (see below). Never echoed back to any client. |
-| `started` | boolean | Optional. `true` when the host is already playing: the room counts as started, so it gets no start countdown. |
+| `started` | boolean | Optional. `false` asks for the [start countdown](#start-countdown): the host is not playing yet and holds its first play. `true` means the host is already playing. **Leaving it out means the room has already started** (no countdown), so hosts that don't hold their first play, like the native Host Bridge or older web clients, never leave guests waiting. |
 
 **Response:** `room_state`
 
@@ -453,7 +453,7 @@ A room's first play (`started` is `false`) works differently from later ones:
 2. If everyone is ready, the server starts right away; otherwise it sends `start_pending` and waits for `ready` from everyone, up to 10 s.
 3. The server sends `player_event` `play` to **everyone, host included**, with `"countdown": true` and `target_server_ts` 3 s ahead, and marks the room started. All clients show 3, 2, 1 against server time and start at `target_server_ts`.
 
-With nobody else in the room there is no countdown (`"countdown": false`, the usual 1 s schedule). A room also counts as started if it was created with `started: true`, or once the host sends a `state_update` with `play_state: "playing"`. If the host's client gets no answer within 15 s, it just plays. Later plays behave as before.
+With nobody else in the room there is no countdown (`"countdown": false`, the usual 1 s schedule). A room also counts as started if it was created with `started: true` or without `started`, or once the host sends a `state_update` with `play_state: "playing"`. If the host's client gets no answer within 15 s, it just plays. Later plays behave as before.
 
 ### `participants_update`
 

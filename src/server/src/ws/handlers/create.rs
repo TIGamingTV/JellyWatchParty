@@ -50,12 +50,13 @@ fn build_room(client_id: &str, host_name: &str, payload: Option<&serde_json::Val
         .and_then(|v| v.as_str())
         .filter(|pw| !pw.is_empty())
         .map(hash_password);
-    // Created while the host is already playing: the room has started, so a
-    // later pause/play gets no start countdown.
+    // The start countdown is opt-in: only a host that sends `started: false`
+    // gets it. Hosts that don't send the flag (the native Host Bridge, older
+    // web clients) play straight away, so the server must not hold guests.
     let started = payload
         .and_then(|p| p.get("started"))
         .and_then(|v| v.as_bool())
-        .unwrap_or(false);
+        .unwrap_or(true);
     let room_name = format!("Room de {}", host_name);
 
     info!(
@@ -192,7 +193,10 @@ mod tests {
 
     #[test]
     fn build_room_started_flag() {
-        let fresh = build_room("c1", "Host", None);
+        // Missing flag (native Host Bridge, older web clients): no countdown.
+        assert!(build_room("c1", "Host", None).started);
+        assert!(build_room("c1", "Host", Some(&serde_json::json!({}))).started);
+        let fresh = build_room("c1", "Host", Some(&serde_json::json!({ "started": false })));
         assert!(!fresh.started);
         let playing = build_room("c1", "Host", Some(&serde_json::json!({ "started": true })));
         assert!(playing.started);
