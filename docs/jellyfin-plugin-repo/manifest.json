@@ -12,6 +12,14 @@
         "changelog": "**Full Changelog**: https://github.com/TIGamingTV/JellyWatchParty/compare/v2.0.5.0...v2.0.6.0",
         "targetAbi": "12.0.0.0",
         "sourceUrl": "https://github.com/TIGamingTV/JellyWatchParty/releases/download/v2.0.6.0/JellyWatchParty-v2.0.6.0.zip",
+        "checksum": "f36d248db3318d5113b8e23a40d64efe",
+        "timestamp": "2026-09-24T08:58:28Z"
+      },
+      {
+        "version": "2.0.6.0",
+        "changelog": "**Full Changelog**: https://github.com/TIGamingTV/JellyWatchParty/compare/v2.0.5.0...v2.0.6.0",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/TIGamingTV/JellyWatchParty/releases/download/v2.0.6.0/JellyWatchParty-v2.0.6.0.zip",
         "checksum": "8a8ece6a34898094b73967cb27b939a3",
         "timestamp": "2026-09-24T08:56:08Z"
       },
