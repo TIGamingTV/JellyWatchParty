@@ -85,9 +85,12 @@
     try {
       session = await utils.getOwnSession();
     } catch (e) {
+      console.warn('[JellyWatchParty] Own session lookup threw:', e && e.message);
       session = null;
     }
     if (!session || !session.id) {
+      // getOwnSession already logged the HTTP status (if any) that caused
+      // this - e.g. a 401 means the server rejected our auth headers.
       console.warn('[JellyWatchParty] Playback fallback failed: own session not found');
       return false;
     }

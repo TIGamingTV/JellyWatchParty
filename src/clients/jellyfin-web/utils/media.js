@@ -69,12 +69,20 @@
   };
 
   // Authenticated fetch against the Jellyfin server via the page's ApiClient.
+  //
+  // Sends the token as `Authorization: MediaBrowser ...`, since Jellyfin 12
+  // rejects the legacy `X-Emby-Token` header by default (see
+  // utils.buildAuthHeader in utils/misc.js for details). X-Emby-Token is
+  // kept alongside it for older servers that only understand that header.
   const apiFetch = (path, options) => {
     const apiClient = window.ApiClient;
     if (!apiClient) return Promise.reject(new Error('ApiClient not available'));
     const token = typeof apiClient.accessToken === 'function' ? apiClient.accessToken() : null;
     const serverAddress = typeof apiClient.serverAddress === 'function' ? apiClient.serverAddress() : '';
-    const headers = Object.assign({}, options && options.headers, token ? { 'X-Emby-Token': token } : {});
+    const authHeaders = token
+      ? { Authorization: utils.buildAuthHeader(apiClient, token), 'X-Emby-Token': token }
+      : {};
+    const headers = Object.assign({}, options && options.headers, authHeaders);
     return fetch(`${serverAddress}${path}`, Object.assign({}, options, { headers }));
   };
 
@@ -99,7 +107,11 @@
     const deviceId = getDeviceId();
     if (!deviceId) return null;
     const res = await apiFetch(`/Sessions?deviceId=${encodeURIComponent(deviceId)}`);
-    if (!res || !res.ok) return null;
+    if (!res) return null;
+    if (!res.ok) {
+      console.warn('[JellyWatchParty] GET /Sessions failed with status', res.status);
+      return null;
+    }
     const sessions = await res.json();
     if (!Array.isArray(sessions)) return null;
     const userId = normalizeItemId(getUserId());
