@@ -31,7 +31,7 @@ uuid = { version = "1", features = ["v4"] }
 env_logger = "0.10"
 log = "0.4"
 jsonwebtoken = "9"
-sha2 = "0.10"
+argon2 = "0.5"
 
 [dev-dependencies]
 # Drives the router directly (`ServiceExt::oneshot`) in the routes tests so the

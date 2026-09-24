@@ -1,28 +1,33 @@
-use sha2::{Digest, Sha256};
+use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
+use argon2::Argon2;
 
 /// Hashes a room password with a fresh random salt.
 ///
-/// Uses a single fast SHA-256 pass rather than a deliberately slow KDF
-/// (argon2/bcrypt): rooms are in-memory and gone on restart, so there's no
-/// persisted hash database to protect against offline cracking. The threat
-/// model is "keep a random logged-in Jellyfin user from wandering into a
-/// private room," not resisting a dedicated cracking rig.
+/// Uses Argon2id, a deliberately memory-hard KDF, so that even if room
+/// state (and its hashes) is extracted from memory, offline cracking is
+/// far more expensive than with a fast general-purpose digest like SHA-256.
 pub fn hash_password(password: &str) -> (String, String) {
-    let salt = uuid::Uuid::new_v4().to_string();
+    let salt = SaltString::generate(&mut argon2::password_hash::rand_core::OsRng);
     let hash = hash_with_salt(password, &salt);
-    (salt, hash)
+    (salt.to_string(), hash)
 }
 
 /// Checks a candidate password against a stored (salt, hash) pair.
 pub fn verify_password(candidate: &str, salt: &str, expected_hash: &str) -> bool {
-    hash_with_salt(candidate, salt) == expected_hash
+    let Ok(parsed_hash) = PasswordHash::new(expected_hash) else {
+        return false;
+    };
+    let _ = salt;
+    Argon2::default()
+        .verify_password(candidate.as_bytes(), &parsed_hash)
+        .is_ok()
 }
 
-fn hash_with_salt(password: &str, salt: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(salt.as_bytes());
-    hasher.update(password.as_bytes());
-    format!("{:x}", hasher.finalize())
+fn hash_with_salt(password: &str, salt: &SaltString) -> String {
+    Argon2::default()
+        .hash_password(password.as_bytes(), salt)
+        .expect("argon2 hashing failed")
+        .to_string()
 }
 
 #[cfg(test)]
