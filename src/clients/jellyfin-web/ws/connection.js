@@ -81,11 +81,13 @@
       case 'client_hello': h.handleClientHello(msg); break;
       case 'room_state': h.handleRoomState(msg, video); break;
       case 'participants_update': h.handleParticipantsUpdate(msg); break;
+      case 'participants': h.handleParticipants(msg); break;
       case 'client_left': h.handleClientLeft(msg); break;
       case 'room_closed': h.handleRoomClosed(msg); break;
       case 'host_changed': h.handleHostChanged(msg); break;
       case 'media_changed': h.handleMediaChanged(msg, video); break;
       case 'player_event': h.handlePlayerEvent(msg, video); break;
+      case 'start_pending': h.handleStartPending(msg); break;
       case 'state_update': h.handleStateUpdate(msg, video); break;
       case 'pong': h.handlePong(msg); break;
       case 'chat_message': if (JWP.chat && msg.payload) JWP.chat.receive(msg); break;

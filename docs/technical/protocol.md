@@ -103,6 +103,7 @@ Create a new watch party room.
 | `start_pos` | number | Initial position (seconds) |
 | `media_id` | string | Jellyfin media ID (optional) |
 | `password` | string | Optional room password. If set, `join_room` must supply a matching `password` (see below). Never echoed back to any client. |
+| `started` | boolean | Optional. `false` asks for the [start countdown](#start-countdown): the host is not playing yet and holds its first play. `true` means the host is already playing. **Leaving it out means the room has already started** (no countdown), so hosts that don't hold their first play, like the native Host Bridge or older web clients, never leave guests waiting. |
 
 **Response:** `room_state`
 
@@ -130,6 +131,8 @@ Join an existing room.
 | `password` | string | Required only if the room was created with a password. Not checked for a client that's already a member of the room (e.g. a re-sent join after a panel refresh). |
 
 **Response:** `room_state`, or `error` with `payload.reason: "wrong_password"` if the password is missing/incorrect.
+
+After 5 wrong passwords within 60 s, the same user (keyed by `user_id`, i.e. the JWT `sub`, not the client id) is refused for the rest of that 60 s window with `payload.reason: "too_many_attempts"` and `payload.retry_after_ms`, without the password being checked. The throttle is per room and per user, so one user guessing can't lock others out. A successful join clears the user's count.
 
 **Effects:**
 - Client added to `room.clients`
@@ -322,6 +325,30 @@ otherwise `media_id` never changes after `create_room`.
 - `"media_id is required"` - Missing `media_id` in payload
 - `"Invalid media_id"` - Not a 32-char hex string
 
+### `client_status`
+
+A participant reports its own playback status, for the room's participant list. Clients send it when the status changes, at most once per second.
+
+```json
+{
+  "type": "client_status",
+  "room": "uuid-room-id",
+  "payload": { "status": "syncing" },
+  "ts": 1678900000000
+}
+```
+
+| `status` | Meaning |
+|----------|---------|
+| `synced` | Guest is in sync with the host |
+| `syncing` | Guest is catching up (drift correction) |
+| `buffering` | Video is buffering |
+| `loading` | Waiting for a scheduled play, or opening the room's media |
+| `idle` | Not in the player |
+| `playing` / `paused` | The host's own state |
+
+**Effects:** ignored unless the value is one of the above, the sender is in the room and the status changed; otherwise everyone in the room gets `participants`.
+
 ## Server → Client Messages
 
 ### `client_hello`
@@ -395,11 +422,38 @@ Full room state. Sent after `create_room` or `join_room`.
 
 | Payload Field | Type | Description |
 |---------------|------|-------------|
+| `started` | boolean | `false` until the room's first play has gone out (see [Start countdown](#start-countdown)). Clients treat a missing value as `true`. |
 | `chat_history` | array | Up to the last 50 chat messages sent in this room, oldest first — empty for a freshly created room. Replayed on both initial join and reconnect-reattach so late joiners and reconnecting clients aren't missing context. |
 
 Sent after `create_room`, `join_room`, and on reattachment after a
 dropped-connection reconnect (see
 [Server: Reconnect and Room Lifecycle]({{ '/technical/server/' | relative_url }}#reconnect-and-room-lifecycle)).
+
+### `start_pending`
+
+The host pressed play for the first time, but not everyone is ready yet. Sent to the whole room, host included.
+
+```json
+{
+  "type": "start_pending",
+  "room": "uuid-room-id",
+  "payload": { "timeout_ms": 10000 },
+  "ts": 1678900000000,
+  "server_ts": 1678900000000
+}
+```
+
+Clients show "Waiting for everyone to be ready...". The server starts when everyone has sent `ready`, or after `timeout_ms` at the latest.
+
+### Start countdown
+
+A room's first play (`started` is `false`) works differently from later ones:
+
+1. The host's client keeps its video paused and sends `player_event` `play`. It sends no `state_update` while waiting. If the host's new item is still being confirmed (before `set_media`), the play is held and sent right after `set_media`, so the server already knows which item everyone has to load.
+2. If everyone is ready, the server starts right away; otherwise it sends `start_pending` and waits for `ready` from everyone, up to 10 s.
+3. The server sends `player_event` `play` to **everyone, host included**, with `"countdown": true` and `target_server_ts` 3 s ahead, and marks the room started. All clients show 3, 2, 1 against server time and start at `target_server_ts`.
+
+With nobody else in the room there is no countdown (`"countdown": false`, the usual 1 s schedule). A room also counts as started if it was created with `started: true` or without `started`, or once the host sends a `state_update` with `play_state: "playing"`. If the host's client gets no answer within 15 s, it just plays. Later plays behave as before.
 
 ### `participants_update`
 
@@ -416,6 +470,27 @@ Participant count update.
   "server_ts": 1678900000000
 }
 ```
+
+### `participants`
+
+The room's participant list, in join order. Sent to the whole room when someone joins or leaves, the host changes, or a status changes; also sent to the host on create and to a client that reattaches.
+
+```json
+{
+  "type": "participants",
+  "room": "uuid-room-id",
+  "payload": {
+    "participants": [
+      { "id": "uuid-a", "name": "Alice", "is_host": true, "status": "playing" },
+      { "id": "uuid-b", "name": "Bob", "is_host": false, "status": "syncing" }
+    ]
+  },
+  "ts": 1678900000000,
+  "server_ts": 1678900000000
+}
+```
+
+`status` is the participant's last `client_status`, or `unknown` before its first report. `participants_update` and `client_left` are still sent with the count, for older clients.
 
 ### `player_event`
 
@@ -615,7 +690,8 @@ Error response.
 | Payload Field | Type | Description |
 |---------------|------|-------------|
 | `message` | string | Human-readable error description |
-| `reason` | string | Optional machine-readable code for errors a client may want to special-case (currently only `"wrong_password"`, from `join_room`) |
+| `reason` | string | Optional machine-readable code for errors a client may want to special-case. Currently `"wrong_password"` and `"too_many_attempts"`, both from `join_room` |
+| `retry_after_ms` | number | Only with `reason: "too_many_attempts"`: milliseconds until the user may try the room's password again |
 
 ## Sequence Diagram: Complete Session
 

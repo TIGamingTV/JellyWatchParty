@@ -67,10 +67,11 @@ The Jellyfin homepage displays active watch parties in a dedicated "Watch Partie
 
 | Action | Effect |
 |--------|--------|
+| Play (first time in the room) | Everyone sees "Waiting for everyone to be ready..." until all videos are loaded (10 s at most), then a 3, 2, 1 countdown, and all start together |
 | Play | All clients start playing |
 | Pause | All clients pause |
 | Seek | All clients jump to that position |
-| Close panel | Room stays active |
+| Close panel (X button, Escape, or click outside it) | Room stays active |
 | Leave room | Room closes, all participants disconnected (unless another participant remains — see [Features: Automatic host transfer]({{ '/features/' | relative_url }}#current-features)) |
 
 ## Participant Experience
@@ -92,11 +93,13 @@ The Jellyfin homepage displays active watch parties in a dedicated "Watch Partie
 - **Connection status** - Online/Offline indicator
 
 ### In-Room View
-- **Room name** and **participants** count
+- **Room name** and **participant list**: each person's name (the host has a star) and status: In sync, Catching up, Buffering, Loading, Not watching, or Playing / Paused for the host
 - **Sync indicator** - Shows sync status (participants only)
 - **Chat** - Text messaging with other participants
 - **RTT** - Round-trip time to server (latency indicator)
-- **Leave button** - Exit the watch party
+- **Leave button** - Exit the watch party (for the host: **Close room**)
+
+The panel closes with the **X** in its header, with **Escape**, or by clicking anywhere outside it; the room stays active either way.
 
 ## Using Chat
 

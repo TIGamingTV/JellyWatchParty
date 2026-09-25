@@ -23,18 +23,77 @@
     if (!state.isHost || !actions || !actions.send) return;
     if (state.isSyncing) return;
     if (isMediaSwitchPending()) return;
+    // Held paused for the start countdown: a "paused" update would pause the
+    // guests who are about to start.
+    if (state.startPending) return;
     if (utils.isSeeking()) return;
     if (state.isBuffering || !utils.isVideoReady()) return;
     const now = utils.nowMs();
     if (now - state.lastStateSentAt < STATE_UPDATE_MS) return;
     state.lastStateSentAt = now;
+    // The server counts the room as started once the host reports playing;
+    // mirror that so a later pause/play doesn't trigger a countdown.
+    if (!video.paused) state.roomStarted = true;
     actions.send('state_update', { position: video.currentTime, play_state: video.paused ? 'paused' : 'playing' });
+  };
+
+  // The room's first play: keep the host's video where it is, ask the server
+  // to start, and let the countdown (ws/handlers/playback.js) start everyone,
+  // host included, at the same moment.
+  const sendStart = (video) => {
+    state.startQueued = false;
+    utils.log('HOST', { action: 'start_requested', pos: video.currentTime });
+    JWP.actions.send('player_event', { action: 'play', position: video.currentTime, play_state: 'playing' });
+  };
+
+  // A start held back while the host's new item was being confirmed goes out
+  // right after set_media, so the server already knows the item everyone
+  // has to load before it counts down.
+  const flushQueuedStart = () => {
+    if (!state.startQueued || !state.startPending) return;
+    const video = state.currentVideoElement || utils.getVideo();
+    if (!video || !JWP.actions || !JWP.actions.send) return;
+    sendStart(video);
+  };
+
+  const requestStart = (video) => {
+    utils.suppress();
+    video.pause();
+    state.startPending = true;
+    if (JWP.ui && JWP.ui.showStartWaiting) JWP.ui.showStartWaiting();
+    if (isMediaSwitchPending()) {
+      state.startQueued = true;
+    } else {
+      sendStart(video);
+    }
+    if (state.startSafetyTimer) clearTimeout(state.startSafetyTimer);
+    state.startSafetyTimer = setTimeout(() => {
+      state.startSafetyTimer = null;
+      if (!state.startPending) return;
+      // No countdown came back (e.g. the connection dropped): just play. Not
+      // suppressed, so the play is relayed to the guests the usual way.
+      state.startPending = false;
+      state.startQueued = false;
+      state.roomStarted = true;
+      if (JWP.ui && JWP.ui.hideCountdown) JWP.ui.hideCountdown();
+      video.play().catch(() => {});
+    }, JWP.constants.START_SAFETY_MS);
   };
 
   const onHostEvent = (action, video) => {
     const actions = JWP.actions;
     if (!state.isHost || !actions || !actions.send || !utils.shouldSend()) return;
     if (state.isSyncing) return;
+    if (action === 'play' && state.inRoom && (state.startPending || !state.roomStarted)) {
+      if (state.startPending) {
+        // Pressed play again while waiting: stay paused, the start is on its way.
+        utils.suppress();
+        video.pause();
+        return;
+      }
+      requestStart(video);
+      return;
+    }
     if (isMediaSwitchPending()) return;
     if (action === 'seek' && !utils.isVideoReady()) return;
     if (action === 'pause') {
@@ -165,7 +224,10 @@
     if (nowPlayingRefreshTimer) clearTimeout(nowPlayingRefreshTimer);
     nowPlayingRefreshTimer = setTimeout(() => {
       nowPlayingRefreshTimer = null;
-      Promise.resolve(utils.refreshServerNowPlaying()).finally(maybeSendSetMedia);
+      Promise.resolve(utils.refreshServerNowPlaying()).finally(() => {
+        maybeSendSetMedia();
+        flushQueuedStart();
+      });
     }, NOW_PLAYING_REFRESH_DELAY_MS);
   };
 
@@ -200,6 +262,9 @@
     video.addEventListener('seeked', listeners.seeked);
     video.addEventListener('loadstart', listeners.loadstart);
     beginMediaResolution();
+    if (state.isHost && state.inRoom && !state.roomStarted && !state.startPending && !video.paused) {
+      requestStart(video);
+    }
     if (state.intervals.stateUpdate) {
       clearInterval(state.intervals.stateUpdate);
     }

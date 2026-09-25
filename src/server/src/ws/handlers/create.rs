@@ -1,12 +1,14 @@
 use super::super::dispatch::{is_authenticated, send_error};
 use super::super::validation::{is_valid_media_id, is_valid_position, sanitize_name};
-use crate::messaging::{broadcast_room_list, build_room_state_payload, send_to_client};
+use crate::messaging::{
+    broadcast_participants, broadcast_room_list, build_room_state_payload, send_to_client,
+};
 use crate::password::hash_password;
 use crate::room::close_room;
 use crate::types::{Clients, IncomingMessage, PlaybackState, Room, Rooms, WsMessage};
 use crate::utils::now_ms;
 use log::info;
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 fn resolve_host_name(
     payload: Option<&serde_json::Value>,
@@ -48,11 +50,23 @@ fn build_room(client_id: &str, host_name: &str, payload: Option<&serde_json::Val
         .and_then(|v| v.as_str())
         .filter(|pw| !pw.is_empty())
         .map(hash_password);
+    // The start countdown is opt-in: only a host that sends `started: false`
+    // gets it. Hosts that don't send the flag (the native Host Bridge, older
+    // web clients) play straight away, so the server must not hold guests.
+    let started = payload
+        .and_then(|p| p.get("started"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
     let room_name = format!("Room de {}", host_name);
 
     info!(
-        "Creating room '{}' ({}) for {}",
-        room_name, room_id, client_id
+        "Creating room '{}' ({}) for {} (media_id: {:?}, start_pos: {}, has_password: {})",
+        room_name,
+        room_id,
+        client_id,
+        media_id,
+        start_pos,
+        password_hash.is_some()
     );
 
     Room {
@@ -71,6 +85,9 @@ fn build_room(client_id: &str, host_name: &str, payload: Option<&serde_json::Val
         last_command_ts: 0,
         chat_history: VecDeque::new(),
         password_hash,
+        client_status: HashMap::new(),
+        failed_joins: HashMap::new(),
+        started,
     }
 }
 
@@ -101,6 +118,7 @@ fn insert_and_notify(
             server_ts: Some(now_ms()),
         },
     );
+    broadcast_participants(&room, locked_clients);
 }
 
 pub(in crate::ws) async fn handle_create_room(
@@ -124,8 +142,6 @@ pub(in crate::ws) async fn handle_create_room(
     if let Some(room_id) = existing_room_id {
         close_room(&room_id, clients, rooms).await;
     }
-
-    info!("create_room payload: {:?}", parsed.payload);
 
     let payload_ref = parsed.payload.as_ref();
     let (host_name, payload_name) = {
@@ -173,6 +189,17 @@ mod tests {
         assert!((room.state.position - 42.5).abs() < f64::EPSILON);
         assert_eq!(room.state.play_state, "paused");
         assert!(room.clients.contains(&"host-1".to_string()));
+    }
+
+    #[test]
+    fn build_room_started_flag() {
+        // Missing flag (native Host Bridge, older web clients): no countdown.
+        assert!(build_room("c1", "Host", None).started);
+        assert!(build_room("c1", "Host", Some(&serde_json::json!({}))).started);
+        let fresh = build_room("c1", "Host", Some(&serde_json::json!({ "started": false })));
+        assert!(!fresh.started);
+        let playing = build_room("c1", "Host", Some(&serde_json::json!({ "started": true })));
+        assert!(playing.started);
     }
 
     #[test]

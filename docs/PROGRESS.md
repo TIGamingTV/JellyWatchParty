@@ -2303,3 +2303,43 @@ correction), `sync.md` §6, `host-bridge.md` (both limitations noted above),
 is a protocol change — an older session server answers `set_media` with
 "Unknown message type" (existing `handle_unknown` fallback, harmless), and
 older clients simply ignore `media_changed`.
+
+## Round 34 — Room password hardening (in response to PR #76)
+
+**Trigger**: PR #76 (automated CWE-328 report) proposed replacing the salted
+SHA-256 room-password hash with Argon2id. Rejected: hashes are in-memory only
+(`#[serde(skip)]`, gone on restart), so a slow KDF protects nothing an
+attacker with memory access couldn't read in plaintext off incoming frames;
+and `verify_password` runs under the global `rooms`/`clients` write locks, so
+a default-cost Argon2 (~19 MiB, tens of ms) × the 30 msg/s rate limit would
+let one user stall every room. The patch also likely didn't compile
+(`OsRng` without `argon2`'s `std` feature) and was branched off `main`.
+
+Reviewing it surfaced three real issues, fixed here:
+
+- **Plaintext password in logs (high)**: `create.rs` logged the whole
+  `create_room` payload at `info` (the default level), password included.
+  Removed; the `Creating room` line now logs `media_id`, `start_pos`, and a
+  `has_password` bool instead.
+- **No online-guessing limit (medium)**: `join_room` now allows 5 wrong
+  passwords per user per room per 60 s (`MAX_FAILED_JOINS`,
+  `FAILED_JOIN_WINDOW_MS`), then answers `error` with
+  `reason: "too_many_attempts"` + `retry_after_ms` without evaluating the
+  password. Keyed by `user_id` (JWT `sub`), not client id, which a client can
+  rotate by reconnecting; per-user rather than room-wide so a guesser can't
+  lock legitimate guests out. State is `Room.failed_joins`, pruned of expired
+  entries on each failure and dropped with the room. In no-JWT mode clients
+  that never send an identity share the `anonymous` user id and therefore a
+  counter — acceptable, that mode has no trust boundary. The web client needs
+  no change: it already toasts `payload.message` and only re-prompts on
+  `wrong_password`.
+- **Non-constant-time compare (low)**: `verify_password` now uses a local
+  XOR-fold `ct_eq` instead of `==`. SHA-256 kept.
+
+**Tests**: 11 new Rust tests (throttle helpers, lockout, client-id rotation,
+per-user isolation, window expiry, reset on success, `ct_eq`, malformed
+hash). `cargo fmt`, `cargo clippy --all-targets -D warnings`, `cargo test`
+(132/132) clean.
+
+**Docs updated**: `protocol.md` (`join_room` throttle, `error.reason`
+values, `retry_after_ms`), `features.md` (room password note).

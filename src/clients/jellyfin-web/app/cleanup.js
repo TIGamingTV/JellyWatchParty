@@ -36,6 +36,7 @@
     const lc = JWP._lifecycle;
     if (lc) lc.clearAllIntervals();
     if (JWP.ui && JWP.ui.disconnectToolbarObserver) JWP.ui.disconnectToolbarObserver();
+    if (JWP.ui && JWP.ui.teardownPanelDismiss) JWP.ui.teardownPanelDismiss();
     if (state.pendingActionTimer) {
       clearTimeout(state.pendingActionTimer);
       state.pendingActionTimer = null;

@@ -51,14 +51,15 @@ session server, web client) work together to make this happen.
 
 ### Room Management
 - **Create rooms** - Start a watch party with a custom name
-- **Room passwords** - Optionally require a password to join a room
+- **Room passwords** - Optionally require a password to join a room. Passwords are kept only as an in-memory salted SHA-256 hash (rooms don't survive a restart), are never logged, and each user gets 5 wrong attempts per room per minute before being locked out for the rest of that minute
 - **Join rooms** - Enter a room ID to join an existing session
 - **Leave rooms** - Exit cleanly with proper cleanup
 - **Room list** - See all active rooms on the server
-- **Participant count** - Track how many people are watching
+- **Participant list with status** - See who is in the room, who hosts, and whether each person is in sync, catching up, buffering, loading or not watching
 - **Automatic host transfer** - If the host leaves with others still in the room, the earliest-joined remaining participant is promoted to host instead of the room closing
 
 ### Playback Synchronization
+- **Start countdown** - The room's first play waits (up to 10 s) until everyone's video is loaded, then everyone, host included, sees 3, 2, 1 and starts at the same moment
 - **Play/Pause sync** - Host controls playback state for all clients
 - **Seek sync** - Jumping to a position syncs everyone
 - **Position sync** - Continuous updates keep clients aligned
@@ -68,7 +69,7 @@ session server, web client) work together to make this happen.
 
 ### User Interface
 - **OSD button** - Watch Party button in the video player controls
-- **Slide-out panel** - Room list and controls
+- **Slide-out panel** - Room list and controls; closes with its X button, Escape, or a click outside it
 - **Home section** - Watch parties shown on Jellyfin homepage
 - **System notifications** - Centered toasts for play/pause, join/leave events
 - **Chat notifications** - Stacking toasts for incoming messages (top-right)

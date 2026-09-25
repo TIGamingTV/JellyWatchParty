@@ -4,6 +4,9 @@ pub(super) const CLIENT_CHANNEL_BUFFER: usize = 100;
 pub(super) const PLAY_SCHEDULE_MS: u64 = 1000; // Reduced from 1500ms for better UX (UX-P1)
 pub(super) const CONTROL_SCHEDULE_MS: u64 = 300;
 pub(super) const MAX_READY_WAIT_MS: u64 = 2000;
+// The room's first play waits longer for everyone to load, then counts down.
+pub(super) const START_READY_WAIT_MS: u64 = 10_000;
+pub(super) const START_COUNTDOWN_MS: u64 = 3000;
 pub(super) const MIN_STATE_UPDATE_INTERVAL_MS: u64 = 500;
 pub(super) const POSITION_JITTER_THRESHOLD: f64 = 0.5;
 pub(super) const COMMAND_COOLDOWN_MS: u64 = 2000;
@@ -11,6 +14,10 @@ pub(super) const COMMAND_COOLDOWN_MS: u64 = 2000;
 // Rate limiting constants
 pub(super) const RATE_LIMIT_MESSAGES: u32 = 30; // Max messages per window
 pub(super) const RATE_LIMIT_WINDOW_MS: u64 = 1000; // Window size in ms
+
+// Room password brute-force throttle (per user, per room)
+pub(super) const MAX_FAILED_JOINS: u32 = 5; // Wrong passwords allowed per window
+pub(super) const FAILED_JOIN_WINDOW_MS: u64 = 60_000; // Window / lockout length in ms
 
 // Resource limits
 pub(super) const MAX_CLIENTS_PER_ROOM: usize = 20; // Max clients in a room

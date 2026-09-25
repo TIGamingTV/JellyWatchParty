@@ -53,6 +53,75 @@
     if (!panel.classList.contains('hide')) render(true);
   };
 
+  const isPanelOpen = () => {
+    const panel = document.getElementById(PANEL_ID);
+    return !!panel && !panel.classList.contains('hide');
+  };
+
+  const hidePanel = () => {
+    const panel = document.getElementById(PANEL_ID);
+    if (panel) panel.classList.add('hide');
+  };
+
+  // The panel used to close only by clicking the same toolbar/OSD button that
+  // opened it, which isn't discoverable. It now also closes from its own X
+  // button, with Escape, or on a click anywhere outside it.
+  const CLOSE_BTN_HTML = '<button type="button" class="jwp-close-btn" id="jwp-btn-close-panel" title="Close" aria-label="Close panel">'
+    + '<span class="material-icons close" aria-hidden="true"></span></button>';
+
+  // Things a click may land on without closing the panel: the panel itself,
+  // the buttons that toggle it (their own click handler toggles), and the
+  // plugin's modal and toasts, which sit outside the panel in the DOM.
+  const DISMISS_EXEMPT_SELECTOR = `#${PANEL_ID}, #${BTN_ID}, #${GLOBAL_BTN_ID}, .jwp-modal-overlay, .jwp-toast-container, .jwp-toast-system`;
+
+  const shouldDismissOnPointer = (target) => {
+    if (!isPanelOpen()) return false;
+    if (!target || typeof target.closest !== 'function') return false;
+    return !target.closest(DISMISS_EXEMPT_SELECTOR);
+  };
+
+  const shouldDismissOnKey = (e) => {
+    if (!e || e.key !== 'Escape' || !isPanelOpen()) return false;
+    // A password prompt is open: Escape belongs to it (it cancels the modal).
+    return !document.querySelector('.jwp-modal-overlay');
+  };
+
+  const onDismissPointer = (e) => {
+    // Close without swallowing the event, so the click still reaches whatever
+    // was under it (e.g. the player's own controls).
+    if (shouldDismissOnPointer(e.target)) hidePanel();
+  };
+
+  const onDismissKey = (e) => {
+    if (!shouldDismissOnKey(e)) return;
+    // Registered in the capture phase: stop Escape here so Jellyfin doesn't
+    // also treat it as "back" and leave the player.
+    e.preventDefault();
+    e.stopPropagation();
+    hidePanel();
+  };
+
+  let dismissListening = false;
+
+  const setupPanelDismiss = () => {
+    if (dismissListening || typeof window.addEventListener !== 'function') return;
+    window.addEventListener('pointerdown', onDismissPointer, true);
+    window.addEventListener('keydown', onDismissKey, true);
+    dismissListening = true;
+  };
+
+  const teardownPanelDismiss = () => {
+    if (!dismissListening) return;
+    window.removeEventListener('pointerdown', onDismissPointer, true);
+    window.removeEventListener('keydown', onDismissKey, true);
+    dismissListening = false;
+  };
+
+  const bindCloseButton = (panel) => {
+    const closeBtn = panel.querySelector('#jwp-btn-close-panel');
+    if (closeBtn) closeBtn.onclick = hidePanel;
+  };
+
   const renderLobby = (panel) => {
     // The native-client host bridge is an opt-in admin feature: only surface
     // the "Host From Another Device" picker when an admin has enabled it.
@@ -63,7 +132,10 @@
             <div id="jwp-bridge-available"></div>
           </div>` : '';
     panel.innerHTML = `
-      <div class="jwp-header"><span>JellyWatchParty</span> <span id="jwp-ws-indicator"></span></div>
+      <div class="jwp-header">
+        <span>JellyWatchParty</span>
+        <span class="jwp-header-actions"><span id="jwp-ws-indicator"></span>${CLOSE_BTN_HTML}</span>
+      </div>
       <div class="jwp-lobby-container">
           <div class="jwp-section">
             <div class="jwp-label">Available Rooms</div>
@@ -87,6 +159,7 @@
       if (password === null) return; // cancelled — don't create a room
       JWP.actions.createRoom(password);
     };
+    bindCloseButton(panel);
     ui.updateRoomListUI();
     ui.updateBridgeListUI();
   };
@@ -105,11 +178,12 @@
       <div class="jwp-header">
         <span style="color:#69f0ae">\u25CF</span>
         <span style="flex-grow:1; margin-left:8px;">${utils.escapeHtml(state.roomName)}</span>
-        <button class="jwp-btn danger" id="jwp-btn-leave">${state.isHost ? 'Close' : 'Leave'}</button>
+        <button class="jwp-btn danger" id="jwp-btn-leave">${state.isHost ? 'Close room' : 'Leave'}</button>
+        ${CLOSE_BTN_HTML}
       </div>
       <div class="jwp-section" style="flex-shrink:0;">
         <div class="jwp-label">Participants</div>
-        <div id="jwp-participants-list" style="font-size:13px;">Online: ${state.participantCount || 1}</div>
+        <div id="jwp-participants-list" style="font-size:13px;">${ui.buildParticipantsHtml ? ui.buildParticipantsHtml() : `Online: ${state.participantCount || 1}`}</div>
         ${syncIndicator}
       </div>
       <div id="jwp-chat-section">
@@ -128,6 +202,7 @@
     `;
     const leaveBtn = panel.querySelector('#jwp-btn-leave');
     if (leaveBtn) leaveBtn.onclick = () => JWP.actions && JWP.actions.leaveRoom && JWP.actions.leaveRoom();
+    bindCloseButton(panel);
     ui.updateBridgeListUI();
   };
 
@@ -404,6 +479,12 @@
 
   Object.assign(ui, {
     render,
+    hidePanel,
+    isPanelOpen,
+    shouldDismissOnPointer,
+    shouldDismissOnKey,
+    setupPanelDismiss,
+    teardownPanelDismiss,
     injectOsdButton,
     injectGlobalButton,
     applyNativeSyncButtonVisibility,

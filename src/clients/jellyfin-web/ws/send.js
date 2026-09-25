@@ -34,7 +34,9 @@
     const payload = {
       start_pos: v ? v.currentTime : 0,
       media_id: mediaId,
-      user_name: userName
+      user_name: userName,
+      // Already playing: no start countdown for this room.
+      started: !!(v && !v.paused)
     };
     if (password) payload.password = password;
     send('create_room', payload);
@@ -58,6 +60,16 @@
     state.mediaSwitchPending = false;
     state.mediaSwitchPendingUntil = 0;
     state.readyRoomId = '';
+    state.participants = [];
+    state.lastReportedStatus = '';
+    state.startPending = false;
+    state.startQueued = false;
+    state.roomStarted = true;
+    if (state.startSafetyTimer) {
+      clearTimeout(state.startSafetyTimer);
+      state.startSafetyTimer = null;
+    }
+    if (JWP.ui && JWP.ui.hideCountdown) JWP.ui.hideCountdown();
     state.isInitialSync = false;
     state.initialSyncUntil = 0;
     state.initialSyncTargetPos = 0;
