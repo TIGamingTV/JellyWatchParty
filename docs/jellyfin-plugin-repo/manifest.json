@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "2.0.8.0",
+        "changelog": "## What's Changed\r\n* feat(protocol,web,server): room media follows the host (set_media) by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/73\r\n* fix(web): stale item id from the hidden player OSD, and guest ready after media_changed (#71 follow-up) by @francotosqui in https://github.com/TIGamingTV/JellyWatchParty/pull/77\r\n* feat(web): close the panel from an X button, Escape, or a click outside by @francotosqui in https://github.com/TIGamingTV/JellyWatchParty/pull/78\r\n* feat: show each participant's name and playback status by @francotosqui in https://github.com/TIGamingTV/JellyWatchParty/pull/79\r\n* fix(server): stop logging room passwords and throttle failed joins by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/83\r\n* feat: start the room's first play together after a countdown by @francotosqui in https://github.com/TIGamingTV/JellyWatchParty/pull/80\r\n* Develop by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/84\r\n\r\n## New Contributors\r\n* @francotosqui made their first contribution in https://github.com/TIGamingTV/JellyWatchParty/pull/77\r\n\r\n**Full Changelog**: https://github.com/TIGamingTV/JellyWatchParty/compare/v2.0.7.0...v2.0.8.0",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/TIGamingTV/JellyWatchParty/releases/download/v2.0.8.0/JellyWatchParty-v2.0.8.0.zip",
+        "checksum": "c18d792c6b0445b98acf6fed0d8bcc4d",
+        "timestamp": "2026-09-25T15:37:38Z"
+      },
+      {
         "version": "2.0.7.0",
         "changelog": "## What's Changed\r\n* fix(web): resolve item id and start playback without global playbackManager by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/68\r\n* fix(web): send Authorization header from apiFetch, not just X-Emby-Token by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/72\r\n* fix(web): send Authorization header from apiFetch, not just X-Emby-Token by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/74\r\n* fix(server): correct set_media tests for the room_list broadcast to host by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/75\r\n\r\n\r\n**Full Changelog**: https://github.com/TIGamingTV/JellyWatchParty/compare/v2.0.6.0...v2.0.7.0",
         "targetAbi": "12.0.0.0",
