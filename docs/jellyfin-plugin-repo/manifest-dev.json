@@ -8,12 +8,12 @@
     "category": "General",
     "versions": [
       {
-        "version": "0.0.144",
-        "changelog": "Merge pull request #83 from TIGamingTV/fix/room-password-hardening",
+        "version": "0.0.145",
+        "changelog": "Merge pull request #80 from francotosqui/feat/start-countdown",
         "targetAbi": "12.0.0.0",
         "sourceUrl": "https://github.com/TIGamingTV/JellyWatchParty/releases/download/develop-latest/JellyWatchParty-dev.zip",
-        "checksum": "e3b7958adec68d8c42a4eda14a65399f",
-        "timestamp": "2026-09-24T22:25:27Z"
+        "checksum": "bffdd079dde94c61395fd7f58b35ab24",
+        "timestamp": "2026-09-25T05:02:32Z"
       }
     ]
   }
