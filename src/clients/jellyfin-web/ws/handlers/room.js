@@ -50,6 +50,10 @@
     state.roomId = '';
     state.roomMediaId = '';
     state.participants = [];
+    state.startPending = false;
+    state.startQueued = false;
+    state.roomStarted = true;
+    if (ui.hideCountdown) ui.hideCountdown();
     const reason = msg.payload?.reason || 'The room was closed';
     ui.showToast(reason);
     ui.render();

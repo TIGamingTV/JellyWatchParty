@@ -59,6 +59,7 @@ session server, web client) work together to make this happen.
 - **Automatic host transfer** - If the host leaves with others still in the room, the earliest-joined remaining participant is promoted to host instead of the room closing
 
 ### Playback Synchronization
+- **Start countdown** - The room's first play waits (up to 10 s) until everyone's video is loaded, then everyone, host included, sees 3, 2, 1 and starts at the same moment
 - **Play/Pause sync** - Host controls playback state for all clients
 - **Seek sync** - Jumping to a position syncs everyone
 - **Position sync** - Continuous updates keep clients aligned

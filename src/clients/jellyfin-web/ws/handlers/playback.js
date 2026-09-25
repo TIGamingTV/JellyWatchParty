@@ -7,6 +7,10 @@
   const { SEEK_THRESHOLD } = JWP.constants;
 
   const handlePlayerPlay = (msg, video) => {
+    state.roomStarted = true;
+    if (msg.payload.countdown && ui.showCountdown) {
+      ui.showCountdown(msg.payload.target_server_ts || msg.server_ts);
+    }
     state.lastSyncPlayState = 'playing';
     state.lastSyncServerTs = msg.server_ts;
     state.lastSyncPosition = msg.payload.position;
@@ -31,6 +35,7 @@
   };
 
   const handlePlayerPause = (msg, video) => {
+    if (ui.hideCountdown) ui.hideCountdown();
     state.lastSyncPlayState = 'paused';
     state.syncCooldownUntil = 0;
     state.isInitialSync = false;
@@ -73,8 +78,42 @@
     video.pause();
   };
 
+  // The server answered the host's first play: start at the shared moment,
+  // after the countdown when there is one.
+  const handleHostStart = (msg, video) => {
+    const p = msg.payload || {};
+    const target = p.target_server_ts || msg.server_ts;
+    if (state.startSafetyTimer) {
+      clearTimeout(state.startSafetyTimer);
+      state.startSafetyTimer = null;
+    }
+    if (p.countdown && ui.showCountdown) ui.showCountdown(target);
+    utils.scheduleAt(target, () => {
+      state.startPending = false;
+      state.roomStarted = true;
+      if (ui.hideCountdown) ui.hideCountdown();
+      if (!video) return;
+      utils.suppress();
+      if (typeof p.position === 'number' && Math.abs(video.currentTime - p.position) > SEEK_THRESHOLD) {
+        video.currentTime = p.position;
+      }
+      video.play().catch(() => {});
+    });
+  };
+
+  h.handleStartPending = (msg) => {
+    state.roomStarted = false;
+    if (ui.showStartWaiting) ui.showStartWaiting();
+  };
+
   h.handlePlayerEvent = (msg, video) => {
-    if (state.isHost || !video) return;
+    if (state.isHost) {
+      if (state.startPending && msg.payload && msg.payload.action === 'play') {
+        handleHostStart(msg, video);
+      }
+      return;
+    }
+    if (!video) return;
     // The room switched media and we haven't loaded it yet - don't act on
     // position/play-state commands meant for the new item while we're
     // still (or still showing) the old one (issue #71).

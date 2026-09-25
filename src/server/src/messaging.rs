@@ -24,6 +24,7 @@ pub fn build_room_state_payload(room: &Room, participant_count: usize) -> serde_
         "state": room.state,
         "participant_count": participant_count,
         "media_id": room.media_id,
+        "started": room.started,
         "chat_history": chat_history,
     })
 }
@@ -251,6 +252,7 @@ mod tests {
                 password_hash: None,
                 client_status: HashMap::new(),
                 failed_joins: HashMap::new(),
+                started: true,
             },
         );
         rooms.insert(
@@ -273,6 +275,7 @@ mod tests {
                 password_hash: None,
                 client_status: HashMap::new(),
                 failed_joins: HashMap::new(),
+                started: true,
             },
         );
         let msg = build_room_list_msg(&rooms);

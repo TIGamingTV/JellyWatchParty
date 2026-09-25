@@ -103,6 +103,7 @@ Create a new watch party room.
 | `start_pos` | number | Initial position (seconds) |
 | `media_id` | string | Jellyfin media ID (optional) |
 | `password` | string | Optional room password. If set, `join_room` must supply a matching `password` (see below). Never echoed back to any client. |
+| `started` | boolean | Optional. `false` asks for the [start countdown](#start-countdown): the host is not playing yet and holds its first play. `true` means the host is already playing. **Leaving it out means the room has already started** (no countdown), so hosts that don't hold their first play, like the native Host Bridge or older web clients, never leave guests waiting. |
 
 **Response:** `room_state`
 
@@ -421,11 +422,38 @@ Full room state. Sent after `create_room` or `join_room`.
 
 | Payload Field | Type | Description |
 |---------------|------|-------------|
+| `started` | boolean | `false` until the room's first play has gone out (see [Start countdown](#start-countdown)). Clients treat a missing value as `true`. |
 | `chat_history` | array | Up to the last 50 chat messages sent in this room, oldest first — empty for a freshly created room. Replayed on both initial join and reconnect-reattach so late joiners and reconnecting clients aren't missing context. |
 
 Sent after `create_room`, `join_room`, and on reattachment after a
 dropped-connection reconnect (see
 [Server: Reconnect and Room Lifecycle]({{ '/technical/server/' | relative_url }}#reconnect-and-room-lifecycle)).
+
+### `start_pending`
+
+The host pressed play for the first time, but not everyone is ready yet. Sent to the whole room, host included.
+
+```json
+{
+  "type": "start_pending",
+  "room": "uuid-room-id",
+  "payload": { "timeout_ms": 10000 },
+  "ts": 1678900000000,
+  "server_ts": 1678900000000
+}
+```
+
+Clients show "Waiting for everyone to be ready...". The server starts when everyone has sent `ready`, or after `timeout_ms` at the latest.
+
+### Start countdown
+
+A room's first play (`started` is `false`) works differently from later ones:
+
+1. The host's client keeps its video paused and sends `player_event` `play`. It sends no `state_update` while waiting. If the host's new item is still being confirmed (before `set_media`), the play is held and sent right after `set_media`, so the server already knows which item everyone has to load.
+2. If everyone is ready, the server starts right away; otherwise it sends `start_pending` and waits for `ready` from everyone, up to 10 s.
+3. The server sends `player_event` `play` to **everyone, host included**, with `"countdown": true` and `target_server_ts` 3 s ahead, and marks the room started. All clients show 3, 2, 1 against server time and start at `target_server_ts`.
+
+With nobody else in the room there is no countdown (`"countdown": false`, the usual 1 s schedule). A room also counts as started if it was created with `started: true` or without `started`, or once the host sends a `state_update` with `play_state: "playing"`. If the host's client gets no answer within 15 s, it just plays. Later plays behave as before.
 
 ### `participants_update`
 

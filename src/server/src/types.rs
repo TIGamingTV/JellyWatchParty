@@ -80,6 +80,10 @@ pub struct Room {
     /// room so it's dropped with it.
     #[serde(skip)]
     pub failed_joins: HashMap<String, (u32, u64)>,
+    /// False until the room's first play goes out. That first play waits for
+    /// everyone to be ready and starts with a countdown (see `pending_play`).
+    #[serde(skip)]
+    pub started: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
