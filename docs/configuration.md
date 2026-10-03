@@ -51,7 +51,12 @@ hit that symptom on an older version, check your Jellyfin server logs for
 | `HOST` | `0.0.0.0` | Address to bind to |
 | `ALLOWED_ORIGINS` | `http://localhost:8096,https://localhost:8096` | CORS allowed origins (comma-separated) |
 | `JWT_SECRET` | (empty) | Secret for validating tokens |
-| `LOG_LEVEL` | `info` | Log level: `error`, `warn`, `info`, `debug`, `trace` |
+| `JWT_AUDIENCE` | `JellyWatchParty` | Expected `aud` claim; must match the plugin's JWT Audience |
+| `JWT_ISSUER` | `Jellyfin` | Expected `iss` claim; must match the plugin's JWT Issuer |
+| `RUST_LOG` | `info` | Log level: `error`, `warn`, `info`, `debug`, `trace` |
+
+The admin panel has its own `ADMIN_*` variables (port, login, cookie
+options). See [Admin Panel]({{ '/admin-panel/' | relative_url }}#environment-variables).
 
 ```yaml
 services:
@@ -62,7 +67,7 @@ services:
     environment:
       - ALLOWED_ORIGINS=https://jellyfin.example.com
       - JWT_SECRET=${JWT_SECRET}
-      - LOG_LEVEL=info
+      - RUST_LOG=info
     restart: unless-stopped
 ```
 
@@ -134,7 +139,7 @@ services:
     environment:
       - ALLOWED_ORIGINS=https://jellyfin.example.com
       - JWT_SECRET=${JWT_SECRET}
-      - LOG_LEVEL=warn
+      - RUST_LOG=warn
     restart: unless-stopped
 ```
 

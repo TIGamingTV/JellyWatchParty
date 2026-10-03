@@ -8,6 +8,9 @@ services:
     container_name: jwp-session-server
     ports:
       - "${SESSION_SERVER_PORT:-3000}:3000"
+      # Admin panel (web UI). Only listens when ADMIN_PASSWORD is set.
+      # Use "127.0.0.1:${ADMIN_PANEL_PORT:-3001}:..." to keep it off the LAN.
+      - "${ADMIN_PANEL_PORT:-3001}:${ADMIN_PORT:-3001}"
     restart: unless-stopped
     environment:
       - HOST=${HOST:-0.0.0.0}
@@ -16,6 +19,16 @@ services:
       - JWT_SECRET=${JWT_SECRET:-}
       - JWT_AUDIENCE=${JWT_AUDIENCE:-JellyWatchParty}
       - JWT_ISSUER=${JWT_ISSUER:-Jellyfin}
+      - RUST_LOG=${RUST_LOG:-info}
+      # Admin panel (opt-out). Not started unless ADMIN_PASSWORD is set.
+      - ADMIN_ENABLED=${ADMIN_ENABLED:-true}
+      - ADMIN_PORT=${ADMIN_PORT:-3001}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      - ADMIN_SESSION_TTL_SECS=${ADMIN_SESSION_TTL_SECS:-43200}
+      - ADMIN_COOKIE_SECURE=${ADMIN_COOKIE_SECURE:-false}
+      - ADMIN_TRUST_X_FORWARDED_FOR=${ADMIN_TRUST_X_FORWARDED_FOR:-false}
+      - ADMIN_EMPTY_GROUP_TTL_SECS=${ADMIN_EMPTY_GROUP_TTL_SECS:-600}
     deploy:
       resources:
         limits:

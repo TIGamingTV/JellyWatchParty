@@ -33,9 +33,43 @@
     }
   };
 
-  const withClientId = (baseUrl, clientId) => {
+  // The server hands each client a secret in client_hello; only a connection
+  // presenting it may reattach to that client id (and its room/host role).
+  const RESUME_SECRET_STORAGE_KEY = 'owp_resume_secret';
+
+  const getResumeSecret = () => {
+    try {
+      return window.localStorage.getItem(RESUME_SECRET_STORAGE_KEY) || state.sessionOnlyResumeSecret || '';
+    } catch (err) {
+      return state.sessionOnlyResumeSecret || '';
+    }
+  };
+
+  // Called on client_hello. If the server refused to reattach (no or wrong
+  // secret) it issued a different id: adopt that one so the next reconnect
+  // resumes it.
+  const rememberSession = (clientId, resumeSecret) => {
+    if (!clientId) return;
+    state.sessionOnlyClientId = clientId;
+    state.sessionOnlyResumeSecret = resumeSecret || '';
+    try {
+      window.localStorage.setItem(CLIENT_ID_STORAGE_KEY, clientId);
+      if (resumeSecret) {
+        window.localStorage.setItem(RESUME_SECRET_STORAGE_KEY, resumeSecret);
+      } else {
+        window.localStorage.removeItem(RESUME_SECRET_STORAGE_KEY);
+      }
+    } catch (err) {
+      // Storage unavailable (private mode): the session-only copies above
+      // still let this page reconnect.
+    }
+  };
+
+  const withClientId = (baseUrl, clientId, resumeSecret = '') => {
     const separator = baseUrl.includes('?') ? '&' : '?';
-    return `${baseUrl}${separator}client_id=${encodeURIComponent(clientId)}`;
+    let url = `${baseUrl}${separator}client_id=${encodeURIComponent(clientId)}`;
+    if (resumeSecret) url += `&resume=${encodeURIComponent(resumeSecret)}`;
+    return url;
   };
 
   const onWsOpen = (token) => {
@@ -117,8 +151,9 @@
       token = await actions.fetchAuthToken();
     }
     const wsUrl = state.wsUrl || DEFAULT_WS_URL;
-    const fullWsUrl = withClientId(wsUrl, getPersistentClientId());
-    console.log('[JellyWatchParty] Connecting to WebSocket:', fullWsUrl);
+    const fullWsUrl = withClientId(wsUrl, getPersistentClientId(), getResumeSecret());
+    // Never log the resume secret.
+    console.log('[JellyWatchParty] Connecting to WebSocket:', fullWsUrl.replace(/([?&]resume=)[^&]*/, '$1***'));
     // Only validate an explicit admin-configured URL - DEFAULT_WS_URL is derived
     // from the page's own location, so it's reachable by definition.
     const urlWarnings = state.wsUrl ? utils.validateWsUrl(state.wsUrl) : [];
@@ -163,5 +198,5 @@
     }, interval);
   };
 
-  Object.assign(actions, { connect, schedulePing });
+  Object.assign(actions, { connect, schedulePing, rememberSession, _withClientId: withClientId });
 })();

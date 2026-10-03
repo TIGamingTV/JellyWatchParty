@@ -54,6 +54,13 @@
 
   const leaveRoom = () => {
     send('leave_room');
+    resetRoomState();
+  };
+
+  // Forgets everything about the current room locally. Used when leaving,
+  // and when an admin moves this client straight into another room (the
+  // server already took it out of the old one).
+  const resetRoomState = () => {
     state.inRoom = false;
     state.roomId = '';
     state.roomMediaId = '';
@@ -86,5 +93,5 @@
     if (panel) panel.classList.add('hide');
   };
 
-  Object.assign(actions, { send, createRoom, joinRoom, leaveRoom });
+  Object.assign(actions, { send, createRoom, joinRoom, leaveRoom, resetRoomState });
 })();

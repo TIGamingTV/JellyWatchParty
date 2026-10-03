@@ -13,6 +13,9 @@
   h.handleClientHello = (msg) => {
     if (msg.payload && msg.payload.client_id) {
       state.clientId = msg.payload.client_id;
+      if (JWP.actions && JWP.actions.rememberSession) {
+        JWP.actions.rememberSession(msg.payload.client_id, msg.payload.resume_secret);
+      }
       ui.render();
     }
   };

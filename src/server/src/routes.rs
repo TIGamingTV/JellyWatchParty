@@ -84,6 +84,7 @@ async fn ws_handler(
     ws: WebSocketUpgrade,
 ) -> Response {
     let client_id = params.get("client_id").cloned();
+    let resume_secret = params.get("resume").cloned();
     ws.on_upgrade(move |socket| {
         crate::ws::client_connection(
             socket,
@@ -91,6 +92,7 @@ async fn ws_handler(
             state.rooms,
             state.jwt_config,
             client_id,
+            resume_secret,
         )
     })
 }
@@ -344,5 +346,53 @@ mod tests {
 
         assert_eq!(msg.msg_type, "client_hello");
         assert_eq!(msg.client.as_deref(), Some(client_id));
+    }
+
+    async fn hello(
+        socket: &mut tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+    ) -> serde_json::Value {
+        let frame = socket.next().await.unwrap().unwrap();
+        let msg: crate::types::WsMessage =
+            serde_json::from_str(&frame.into_text().unwrap()).unwrap();
+        assert_eq!(msg.msg_type, "client_hello");
+        msg.payload.unwrap()
+    }
+
+    /// A second connection that only knows a client id (they are visible to
+    /// everyone in a room) must not take over that client's session; one
+    /// with the resume secret from `client_hello` must.
+    #[tokio::test]
+    async fn ws_reattach_requires_resume_secret() {
+        let addr = spawn_server(vec!["https://example.com"]).await;
+        let client_id = "550e8400-e29b-41d4-a716-446655440001";
+        let origin = Some("https://example.com");
+
+        let mut first = connect_ws(addr, &format!("?client_id={}", client_id), origin)
+            .await
+            .unwrap();
+        let first_hello = hello(&mut first).await;
+        assert_eq!(first_hello["client_id"], client_id);
+        let secret = first_hello["resume_secret"].as_str().unwrap().to_string();
+        assert_eq!(secret.len(), 64);
+
+        let mut thief = connect_ws(addr, &format!("?client_id={}", client_id), origin)
+            .await
+            .unwrap();
+        let thief_hello = hello(&mut thief).await;
+        assert_ne!(thief_hello["client_id"], client_id);
+        assert_ne!(thief_hello["resume_secret"], secret.as_str());
+
+        let mut owner = connect_ws(
+            addr,
+            &format!("?client_id={}&resume={}", client_id, secret),
+            origin,
+        )
+        .await
+        .unwrap();
+        let owner_hello = hello(&mut owner).await;
+        assert_eq!(owner_hello["client_id"], client_id);
+        assert_eq!(owner_hello["resume_secret"], secret.as_str());
     }
 }

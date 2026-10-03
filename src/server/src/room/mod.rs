@@ -1,5 +1,6 @@
 mod close;
 mod leave;
+pub mod ops;
 mod reconnect;
 
 pub use close::close_room;

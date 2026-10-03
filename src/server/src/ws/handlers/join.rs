@@ -1,61 +1,13 @@
-use super::super::constants::{FAILED_JOIN_WINDOW_MS, MAX_CLIENTS_PER_ROOM, MAX_FAILED_JOINS};
+use super::super::constants::{FAILED_JOIN_WINDOW_MS, MAX_FAILED_JOINS};
 use super::super::dispatch::{is_authenticated, send_error};
 use super::super::validation::sanitize_name;
-use crate::messaging::{
-    broadcast_participants, broadcast_to_room, build_room_state_payload, send_to_client,
-};
+use crate::messaging::{broadcast_room_list, send_to_client};
 use crate::password::verify_password;
-use crate::types::{Client, Clients, IncomingMessage, Room, Rooms, WsMessage};
+use crate::room::ops::{add_member, AddOptions, MAX_CLIENTS_PER_ROOM};
+use crate::types::{Client, Clients, IncomingMessage, Rooms, WsMessage};
 use crate::utils::now_ms;
-use log::{info, warn};
+use log::warn;
 use std::collections::HashMap;
-
-fn add_client_to_room(
-    client_id: &str,
-    room: &mut Room,
-    locked_clients: &mut HashMap<String, Client>,
-    payload_name: &Option<String>,
-) {
-    if !room.clients.contains(&client_id.to_string()) {
-        room.clients.push(client_id.to_string());
-    }
-    room.ready_clients.remove(client_id);
-    if let Some(client) = locked_clients.get_mut(client_id) {
-        client.room_id = Some(room.room_id.clone());
-        if let Some(ref name) = payload_name {
-            client.user_name = name.clone();
-        }
-    }
-}
-
-fn notify_join(client_id: &str, room: &Room, locked_clients: &HashMap<String, Client>) {
-    send_to_client(
-        client_id,
-        locked_clients,
-        &WsMessage {
-            msg_type: "room_state".to_string(),
-            room: Some(room.room_id.clone()),
-            client: Some(client_id.to_string()),
-            payload: Some(build_room_state_payload(room, room.clients.len())),
-            ts: now_ms(),
-            server_ts: Some(now_ms()),
-        },
-    );
-    broadcast_to_room(
-        room,
-        locked_clients,
-        &WsMessage {
-            msg_type: "participants_update".to_string(),
-            room: Some(room.room_id.clone()),
-            client: None,
-            payload: Some(serde_json::json!({ "participant_count": room.clients.len() })),
-            ts: now_ms(),
-            server_ts: Some(now_ms()),
-        },
-        Some(client_id),
-    );
-    broadcast_participants(room, locked_clients);
-}
 
 /// If `user_id` has used up its wrong-password budget for this room and the
 /// window hasn't expired yet, returns how many ms until it may try again.
@@ -200,57 +152,38 @@ pub(in crate::ws) async fn handle_join_room(
         room.failed_joins.remove(&user_id);
     }
 
-    info!("Client {} joining room {}", client_id, room_id);
-    add_client_to_room(client_id, room, &mut locked_clients, &payload_name);
-    notify_join(client_id, room, &locked_clients);
+    if let (Some(name), Some(client)) = (payload_name, locked_clients.get_mut(client_id)) {
+        client.user_name = name;
+    }
+    let opts = AddOptions {
+        by_admin: false,
+        promote_if_hostless: true,
+    };
+    if let Err(e) = add_member(
+        room_id,
+        client_id,
+        &mut locked_rooms,
+        &mut locked_clients,
+        opts,
+    ) {
+        warn!(
+            "Client {} could not join room {}: {}",
+            client_id,
+            room_id,
+            e.message()
+        );
+        return;
+    }
+    drop(locked_clients);
+    drop(locked_rooms);
+    // Member counts changed (and leaving another room may have closed it).
+    broadcast_room_list(clients, rooms).await;
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_helpers;
-
-    #[test]
-    fn add_client_to_room_updates_state() {
-        let mut clients = HashMap::new();
-        let (client, _rx) = test_helpers::create_client_with_rx("u2", "Guest", true);
-        clients.insert("guest-1".to_string(), client);
-        let mut room = test_helpers::create_room("room-1", "host-1");
-
-        add_client_to_room("guest-1", &mut room, &mut clients, &None);
-
-        assert!(room.clients.contains(&"guest-1".to_string()));
-        assert_eq!(
-            clients.get("guest-1").unwrap().room_id,
-            Some("room-1".to_string())
-        );
-    }
-
-    #[test]
-    fn add_client_to_room_clears_ready() {
-        let mut clients = HashMap::new();
-        let (client, _rx) = test_helpers::create_client_with_rx("u2", "Guest", true);
-        clients.insert("guest-1".to_string(), client);
-        let mut room = test_helpers::create_room("room-1", "host-1");
-        room.ready_clients.insert("guest-1".to_string());
-
-        add_client_to_room("guest-1", &mut room, &mut clients, &None);
-
-        assert!(!room.ready_clients.contains("guest-1"));
-    }
-
-    #[test]
-    fn add_client_to_room_with_payload_name() {
-        let mut clients = HashMap::new();
-        let (client, _rx) = test_helpers::create_client_with_rx("u2", "OldName", true);
-        clients.insert("guest-1".to_string(), client);
-        let mut room = test_helpers::create_room("room-1", "host-1");
-
-        let payload_name = Some("NewName".to_string());
-        add_client_to_room("guest-1", &mut room, &mut clients, &payload_name);
-
-        assert_eq!(clients.get("guest-1").unwrap().user_name, "NewName");
-    }
 
     #[tokio::test]
     async fn handle_join_room_rejects_wrong_password() {

@@ -10,21 +10,30 @@ nav_order: 1
 
 JellyWatchParty uses a JSON-over-WebSocket protocol for real-time communication between clients and the session server.
 
-**Endpoint:** `ws(s)://<host>:3000/ws?client_id=<persistent-client-id>`
+**Endpoint:** `ws(s)://<host>:3000/ws?client_id=<persistent-client-id>&resume=<resume-secret>`
 
-### `client_id` Query Parameter
+### `client_id` and `resume` Query Parameters
 
 The client generates a UUID once, persists it in `localStorage`, and
 sends it as `?client_id=` on every connection attempt (including
-reconnects). This is a *different* identifier from the per-connection
-`client` field used elsewhere in this protocol and from the
-`client_hello.payload.client_id` below — this query param is what lets
-the server recognize "this is the same client as before" across a
-dropped connection, so it can reattach the client to its existing room
-membership (and resend `room_state`) instead of treating it as brand
-new. Only values that look like a real UUIDv4 are trusted; anything
-else is ignored and the server mints a fresh ID instead. See
-[Server: Persistent Client ID]({{ '/technical/server/' | relative_url }}#persistent-client-id) for the
+reconnects). This query param is what lets the server recognize "this is
+the same client as before" across a dropped connection, so it can
+reattach the client to its existing room membership (and resend
+`room_state`) instead of treating it as brand new. Only values that look
+like a real UUIDv4 are trusted; anything else is ignored and the server
+mints a fresh ID instead.
+
+Client ids are not secret (every room member sees them in
+`participants`), so knowing one is not enough to take a session over.
+Each new client entry gets a random **resume secret**, sent only to that
+client in `client_hello`. A connection reattaches only if it also sends
+that secret as `&resume=`. If the id is already in use and the secret is
+missing or wrong, the server ignores the requested id and issues a new
+one in `client_hello`; the client should then store the new id and
+secret. Clients from before this change (no `resume`) still connect, but
+lose their room on reconnect while the old entry is still held.
+
+See [Server: Persistent Client ID]({{ '/technical/server/' | relative_url }}#persistent-client-id) for the
 reattachment mechanics.
 
 ## Message Format
@@ -353,14 +362,18 @@ A participant reports its own playback status, for the room's participant list. 
 
 ### `client_hello`
 
-Sent immediately after WebSocket connection.
+Sent immediately after WebSocket connection. `client_id` may differ from
+the requested `?client_id=` (see [above](#client_id-and-resume-query-parameters));
+`resume_secret` is needed to reattach to this id later and is never sent to
+anyone else.
 
 ```json
 {
   "type": "client_hello",
   "client": "uuid-client-id",
   "payload": {
-    "client_id": "uuid-client-id"
+    "client_id": "uuid-client-id",
+    "resume_secret": "64-hex-chars"
   },
   "ts": 1678900000000,
   "server_ts": 1678900000000
@@ -424,8 +437,10 @@ Full room state. Sent after `create_room` or `join_room`.
 |---------------|------|-------------|
 | `started` | boolean | `false` until the room's first play has gone out (see [Start countdown](#start-countdown)). Clients treat a missing value as `true`. |
 | `chat_history` | array | Up to the last 50 chat messages sent in this room, oldest first — empty for a freshly created room. Replayed on both initial join and reconnect-reattach so late joiners and reconnecting clients aren't missing context. |
+| `admin_moved` | boolean | Only present (`true`) when an admin put this client into the room from the [admin panel]({{ '/admin-panel/' | relative_url }}). The client may have been in another room a moment ago; the server already took it out of that one (that room sees a normal leave). The web client drops its old room state and shows a toast. |
 
-Sent after `create_room`, `join_room`, and on reattachment after a
+Sent after `create_room`, `join_room`, when an admin adds the client to a
+room, and on reattachment after a
 dropped-connection reconnect (see
 [Server: Reconnect and Room Lifecycle]({{ '/technical/server/' | relative_url }}#reconnect-and-room-lifecycle)).
 
@@ -540,14 +555,20 @@ Periodic state update relayed from host.
 
 ### `room_closed`
 
-Room was closed (host disconnected or room empty).
+The room was closed (host started a new room, room empty, or an admin
+closed it), or an admin removed this client from it.
 
 ```json
 {
   "type": "room_closed",
+  "room": "uuid-room-id",
+  "payload": { "reason": "An admin removed you from the room", "removed": true },
   "ts": 1678900000000
 }
 ```
+
+`reason` is shown to the user. `removed` is `true` when only this client
+was taken out and the room itself goes on.
 
 ### `client_left`
 
@@ -572,10 +593,10 @@ A participant left the room.
 
 ### `host_changed`
 
-The host left (or disconnected past the reconnect grace period) while
-other participants remained, so the earliest-joined remaining
-participant was promoted to host in place — the room stays open rather
-than closing.
+Someone else is host now. Sent when the host left (or disconnected past
+the reconnect grace period) while other participants remained — the
+earliest-joined remaining participant is promoted in place and the room
+stays open — and when an admin hands the host role to another member.
 
 ```json
 {

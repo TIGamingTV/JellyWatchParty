@@ -74,8 +74,18 @@
   };
 
   h.handleRoomState = (msg, video) => {
+    const adminMoved = !!(msg.payload && msg.payload.admin_moved);
+    if (adminMoved && state.inRoom && state.roomId && state.roomId !== msg.room
+        && JWP.actions && JWP.actions.resetRoomState) {
+      // The server already took us out of the old room; drop its local state
+      // (countdown, chat, sync timers) before taking on the new one.
+      JWP.actions.resetRoomState();
+    }
     applyRoomState(msg);
     ui.render();
+    if (adminMoved && ui.showToast) {
+      ui.showToast(`An admin added you to "${msg.payload.name || 'a watch party'}"`);
+    }
     syncToRoom(msg, video);
     if (!state.isHost && msg.payload?.media_id) {
       if (JWP.playback && JWP.playback.ensurePlayback) {

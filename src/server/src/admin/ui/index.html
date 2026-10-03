@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>JellyWatchParty Admin</title>
+  <link rel="stylesheet" href="app.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <h1>JellyWatchParty <span class="muted">Admin</span></h1>
+    <div id="server-info" class="muted"></div>
+    <button id="logout" class="btn btn-ghost hidden" type="button">Log out</button>
+  </header>
+
+  <main>
+    <section id="login-view" class="card login hidden">
+      <h2>Sign in</h2>
+      <form id="login-form" autocomplete="on">
+        <label>Username <input id="login-user" name="username" autocomplete="username" required></label>
+        <label>Password <input id="login-pass" name="password" type="password" autocomplete="current-password" required></label>
+        <button class="btn" type="submit">Sign in</button>
+        <p id="login-error" class="error" role="alert"></p>
+      </form>
+    </section>
+
+    <section id="app-view" class="hidden">
+      <div id="banner" class="banner hidden" role="status"></div>
+
+      <section class="card">
+        <h2>Create a group</h2>
+        <form id="create-form" class="row" autocomplete="off">
+          <label class="grow">Name <input id="create-name" maxlength="100" required placeholder="Friday movie night"></label>
+          <label class="grow">Password <input id="create-pass" maxlength="200" placeholder="Leave empty for an open group"></label>
+          <button id="create-gen" class="btn btn-ghost" type="button">Generate</button>
+          <button class="btn" type="submit">Create</button>
+        </form>
+        <p class="muted small">Members join with this password from the Watch Party panel. You can add people here without it. A group nobody joins is removed after a while.</p>
+      </section>
+
+      <section>
+        <h2>Rooms <span id="room-count" class="muted"></span></h2>
+        <div id="rooms" class="rooms"></div>
+      </section>
+
+      <section class="card">
+        <h2>Connected clients not in a room</h2>
+        <div id="unassigned"></div>
+      </section>
+
+      <section id="devices-section" class="card hidden">
+        <h2>Jellyfin devices</h2>
+        <div id="devices"></div>
+      </section>
+    </section>
+  </main>
+</body>
+</html>

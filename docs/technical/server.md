@@ -20,7 +20,15 @@ src/
 ├── tasks.rs          # Background tasks (zombie cleanup, shutdown)
 ├── messaging.rs      # Message sending functions
 ├── auth.rs           # JWT authentication (optional)
-├── utils.rs          # Utilities (timestamp)
+├── utils.rs          # Utilities (timestamp, random tokens)
+├── password.rs       # Room password hashing, constant-time compare
+├── admin/            # Admin panel (second listener, own port)
+│   ├── mod.rs            # Router, session/CSRF middleware, security headers
+│   ├── config.rs         # ADMIN_* environment variables
+│   ├── auth.rs           # Login, sessions, failed-login throttle
+│   ├── api.rs            # JSON API (overview, rooms, members, host)
+│   ├── ui.rs             # Serves the embedded UI
+│   └── ui/               # index.html, app.js, app.css (no build step)
 ├── ws/
 │   ├── mod.rs
 │   ├── connection.rs     # WebSocket connection lifecycle
@@ -41,6 +49,7 @@ src/
     ├── mod.rs
     ├── leave.rs          # Client leave / disconnect
     ├── close.rs          # Room closure
+    ├── ops.rs            # Shared room operations (add/move, kick, set host, close, groups)
     └── reconnect.rs      # Grace-period disconnect + reattachment
 ```
 
@@ -288,7 +297,24 @@ Responds with `pong` for latency measurement.
 ## Module: `room/`
 
 ### Description
-Manages room lifecycle and client disconnection. Split into `leave.rs` (client leave/disconnect), `close.rs` (room closure), and `reconnect.rs` (grace-period disconnect + reattachment).
+Manages room lifecycle and client disconnection. Split into `leave.rs` (client leave/disconnect), `close.rs` (room closure), `reconnect.rs` (grace-period disconnect + reattachment) and `ops.rs`.
+
+`ops.rs` holds the operations that both the websocket handlers and the
+admin API use, all on already-locked maps (rooms first, then clients):
+
+| Function | Used by | What it does |
+|----------|---------|--------------|
+| `add_member` | `join_room`, admin "add" | Moves a client into a room. If it is in another room it leaves that one first (normal leave notifications there). Makes it host if the room has none. Sends `room_state` (with `admin_moved` when an admin did it), `participants_update` and `participants`. No password check. |
+| `kick_member` | admin "remove" | A normal leave for the room, plus `room_closed` with a reason to the removed client. |
+| `set_host` | admin "make host" | Hands over the host role, drops a pending play, sends `host_changed` and `participants`. |
+| `close_room` | host starting a new room, admin "close" | Removes the room and tells its members why. |
+| `create_group` / `update_room` | admin | Creates an empty, hostless group (password optional); renames it or sets/clears its password. |
+
+A room may be **hostless** (`host_id` empty) only while it is an empty
+admin-created group. Host-only messages are ignored then (no client id
+is empty), and the first member to arrive becomes host. Groups nobody
+joins are removed after `ADMIN_EMPTY_GROUP_TTL_SECS`
+(`tasks::spawn_empty_group_reaper`).
 
 ### Function `schedule_disconnect` (`room/reconnect.rs`)
 
@@ -429,7 +455,8 @@ pub fn validate_token(token: &str, secret: &str) -> Result<Claims, Error> {
 ### Design Considerations
 
 1. **RwLock**: Read-heavy workload; multiple readers, exclusive writer
-2. **No deadlock**: Only one lock acquired at a time per handler
+2. **No deadlock**: Handlers that need both maps always take `rooms`
+   before `clients` (including leave/disconnect and every admin action)
 3. **Message cloning**: one `OutboundMessage` is serialized once and cloned per
    recipient for efficient broadcasting
 4. **Bounded channels**: Backpressure via bounded `mpsc::Sender` per client
@@ -449,6 +476,14 @@ transport and keeps the existing room/host state (`ws/connection.rs`)
 instead of registering a new client. A client-supplied ID is only trusted
 if it looks like a real UUIDv4 — anything else falls back to a freshly
 minted server-side ID.
+
+Client ids are visible to everyone in a room, so reattaching also needs
+the entry's **resume secret**: a random 64-hex-char value created with the
+entry and sent only to its owner in `client_hello`. The client stores it
+next to its id and sends it as `&resume=`. Without the right secret
+(`decide_attach` in `ws/connection.rs`, constant-time compare), a
+connection asking for an id that is in use gets a fresh id instead of
+taking over the entry's room membership and host role.
 
 ### Reconnection Behavior
 

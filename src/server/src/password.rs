@@ -36,7 +36,7 @@ fn hash_with_salt(password: &str, salt: &str) -> String {
 
 /// Constant-time byte comparison. Length isn't secret here (always 64 hex
 /// chars), so an early return on mismatched length is fine.
-fn ct_eq(a: &[u8], b: &[u8]) -> bool {
+pub(crate) fn ct_eq(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
         return false;
     }
