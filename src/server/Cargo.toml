@@ -32,6 +32,12 @@ env_logger = "0.10"
 log = "0.4"
 jsonwebtoken = "9"
 sha2 = "0.10"
+# Talks to the Jellyfin REST API for the admin panel's device bridge.
+# 0.12 rather than 0.13: its `rustls-tls` uses ring + bundled webpki roots,
+# which builds on the musl/Alpine image as-is (0.13's rustls default pulls
+# aws-lc-rs, which needs cmake). No default features: no http2 (keeps `h2`
+# out, see axum above), no native-tls, no system proxy lookup.
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 [dev-dependencies]
 # Drives the router directly (`ServiceExt::oneshot`) in the routes tests so the

@@ -1,5 +1,6 @@
 mod admin;
 mod auth;
+mod jellyfin;
 mod messaging;
 mod password;
 mod room;
@@ -14,6 +15,7 @@ mod test_helpers;
 
 use crate::admin::config::{AdminSetup, RECOMMENDED_MIN_PASSWORD_LEN};
 use crate::auth::JwtConfig;
+use crate::jellyfin::JellyfinSetup;
 use crate::types::{Clients, Rooms};
 use log::{info, warn};
 use std::collections::HashMap;
@@ -94,8 +96,39 @@ fn start_admin_panel(
                 );
             }
             tasks::spawn_empty_group_reaper(clients.clone(), rooms.clone(), cfg.empty_group_ttl_ms);
-            let state = admin::AdminState::new(clients.clone(), rooms.clone(), cfg, jwt_enabled);
+            let jellyfin = start_jellyfin_bridge(clients, rooms);
+            let state =
+                admin::AdminState::new(clients.clone(), rooms.clone(), cfg, jwt_enabled, jellyfin);
             tokio::spawn(admin::serve(state, tasks::wait_for_shutdown(shutdown_rx)));
         }
     }
+}
+
+/// The Jellyfin device bridge belongs to the admin panel: it is only set up
+/// when the panel runs, and only with `JELLYFIN_URL` + `JELLYFIN_API_KEY`.
+fn start_jellyfin_bridge(clients: &Clients, rooms: &Rooms) -> admin::JellyfinStatus {
+    let reason = match JellyfinSetup::from_env() {
+        JellyfinSetup::Enabled(cfg) => {
+            match jellyfin::Bridges::start(&cfg, clients.clone(), rooms.clone()) {
+                Ok(b) => {
+                    info!(
+                        "Admin panel: Jellyfin devices enabled ({}, polling every {} ms)",
+                        cfg.url, cfg.poll_interval_ms
+                    );
+                    return admin::JellyfinStatus::Enabled(b);
+                }
+                Err(e) => e,
+            }
+        }
+        JellyfinSetup::NotConfigured => {
+            info!("Admin panel: Jellyfin devices off (set JELLYFIN_URL and JELLYFIN_API_KEY to bridge TV apps and other clients)");
+            return admin::JellyfinStatus::Unavailable(
+                "Set JELLYFIN_URL and JELLYFIN_API_KEY on the session server to add Jellyfin devices"
+                    .into(),
+            );
+        }
+        JellyfinSetup::Misconfigured(e) => e,
+    };
+    warn!("Admin panel: Jellyfin devices off - {}", reason);
+    admin::JellyfinStatus::Unavailable(reason)
 }

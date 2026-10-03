@@ -122,6 +122,8 @@ The [admin panel]({{ '/admin-panel/' | relative_url }}) runs on its own port and
 - strict Content-Security-Policy and no framing;
 - every admin action logged as an `admin:` line.
 
+`JELLYFIN_API_KEY` (for [Jellyfin devices]({{ '/admin-panel/' | relative_url }}#jellyfin-devices)) is a full-admin Jellyfin credential held by the session server. It is only sent to `JELLYFIN_URL`, never to browsers or clients. Keep it in `.env` or a secret file, and use `https://` for `JELLYFIN_URL` across untrusted networks.
+
 ## Reconnect Takeover Protection
 
 Reconnecting with a known `client_id` used to be enough to take over that client's session, including its room and host role (client ids are visible to everyone in a room). Each client entry now has a random resume secret, sent only to its owner; reattaching requires it, and a connection without it gets a new id. See [Protocol]({{ '/technical/protocol/' | relative_url }}#client_id-and-resume-query-parameters).

@@ -56,7 +56,8 @@ hit that symptom on an older version, check your Jellyfin server logs for
 | `RUST_LOG` | `info` | Log level: `error`, `warn`, `info`, `debug`, `trace` |
 
 The admin panel has its own `ADMIN_*` variables (port, login, cookie
-options). See [Admin Panel]({{ '/admin-panel/' | relative_url }}#environment-variables).
+options), and `JELLYFIN_URL` / `JELLYFIN_API_KEY` for putting Jellyfin
+devices into rooms. See [Admin Panel]({{ '/admin-panel/' | relative_url }}#environment-variables).
 
 ```yaml
 services:

@@ -51,6 +51,20 @@ pub struct Client {
     pub resume_secret: String,
     /// When this entry was first registered (ms since epoch).
     pub connected_at: u64,
+    pub kind: ClientKind,
+}
+
+/// What sits behind a client entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ClientKind {
+    /// A websocket connection (the Jellyfin web client, the plugin's
+    /// bridges, third-party clients).
+    #[default]
+    Web,
+    /// A Jellyfin session this server drives itself over the Jellyfin API
+    /// (admin panel device bridge). Its "socket" is an in-process task, so
+    /// it is never reaped as a zombie and can't be reattached to.
+    Bridge,
 }
 
 #[derive(Debug, Clone, Serialize)]

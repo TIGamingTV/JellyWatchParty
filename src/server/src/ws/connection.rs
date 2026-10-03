@@ -35,6 +35,7 @@ fn register_client(
         last_seen: now,
         resume_secret: random_token(),
         connected_at: now,
+        kind: crate::types::ClientKind::Web,
     }
 }
 
@@ -80,6 +81,9 @@ enum Attach {
 fn decide_attach(existing: Option<&crate::types::Client>, resume: Option<&str>) -> Attach {
     match existing {
         None => Attach::Register,
+        // A bridged Jellyfin device is driven in-process; no socket may
+        // ever take its place.
+        Some(c) if c.kind == crate::types::ClientKind::Bridge => Attach::Refuse,
         Some(c) => match resume {
             Some(r) if ct_eq(r.as_bytes(), c.resume_secret.as_bytes()) => Attach::Reattach,
             _ => Attach::Refuse,

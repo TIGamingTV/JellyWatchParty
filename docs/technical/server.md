@@ -29,6 +29,12 @@ src/
 │   ├── api.rs            # JSON API (overview, rooms, members, host)
 │   ├── ui.rs             # Serves the embedded UI
 │   └── ui/               # index.html, app.js, app.css (no build step)
+├── jellyfin/         # Admin panel device bridge (Jellyfin REST API)
+│   ├── mod.rs            # JELLYFIN_* configuration
+│   ├── api.rs            # /Sessions, Playing/{cmd}, PlayNow (reqwest)
+│   ├── logic.rs          # Pure host/receiver decisions + position estimate
+│   ├── bridge.rs         # Poller, one task per bridged device, add/remove
+│   └── time.rs           # ISO-8601 timestamp parsing
 ├── ws/
 │   ├── mod.rs
 │   ├── connection.rs     # WebSocket connection lifecycle
@@ -401,6 +407,41 @@ pub fn handle_leave(client_id: &str, clients: &mut HashMap, rooms: &mut HashMap)
     }
 }
 ```
+
+## Module: `jellyfin/`
+
+### Description
+Lets the admin panel put Jellyfin sessions that can't run the web client
+(TV apps, Fladder, ...) into rooms. Only started with the admin panel and
+`JELLYFIN_URL` + `JELLYFIN_API_KEY`.
+
+- A bridged device is an ordinary client entry with
+  `kind: ClientKind::Bridge`, added through `ops::add_member`. Its
+  outbound channel is read by a task in `bridge.rs` instead of a socket.
+  Bridge entries are skipped by the zombie reaper and can never be
+  reattached to over `/ws`.
+- **Host or receiver is not stored**: on every tick the task checks
+  whether it is `room.host_id`. As host it turns the device's state into
+  `set_media` / `player_event` / `state_update`; as receiver it sends the
+  device `PlayNow` / `Pause` / `Unpause` / `Seek`. Both go through
+  `ws::dispatch_internal`, i.e. the same handlers (host checks, ready gate,
+  scheduling) as websocket traffic, including `ready` and `client_status`.
+- One poller reads `GET /Sessions` every `BRIDGE_POLL_INTERVAL_MS`, only
+  while a bridge exists or the panel looked within 30 s, and publishes a
+  snapshot on a `watch` channel that wakes every bridge task.
+- Positions: Jellyfin only updates `PlayState.PositionTicks` when the
+  device reports progress, so `logic::device_view` extrapolates from
+  `LastPlaybackCheckIn` (capped at 30 s). After sending a seek or
+  pause, the receiver assumes it took effect until a newer check-in
+  arrives (`FollowerMemory`), so stale reports don't cause repeat seeks.
+- Receiver thresholds: seek beyond 2 s drift (4 s cooldown, 1 s lead while
+  playing), pause/unpause 2.5 s cooldown, `PlayNow` 15 s cooldown.
+- Authenticates with `Authorization: MediaBrowser ... DeviceId=
+  "jellywatchparty-session-server", Token="<api key>"`. Jellyfin treats
+  API-key callers as privileged for remote control
+  (`SessionManager.AssertCanControl`). Its own session is hidden.
+- A device missing from `/Sessions` for 90 s leaves its room; a room
+  closing stops its bridges.
 
 ## Module: `messaging.rs`
 

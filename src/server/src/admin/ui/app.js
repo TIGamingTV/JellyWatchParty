@@ -6,6 +6,7 @@
 
   let pollTimer = null;
   let overview = null;
+  let devices = null; // last api/jellyfin/sessions answer
 
   // --- tiny DOM helper: never uses innerHTML, so names can't inject markup.
   const el = (tag, props = {}, ...children) => {
@@ -84,7 +85,7 @@
 
   const fmtDrift = (d) => (typeof d === 'number' ? `${d > 0 ? '+' : ''}${d.toFixed(1)}s` : '');
 
-  const KIND_LABEL = { web: 'Web', jellyfin: 'Jellyfin device', plugin_bridge: 'Plugin bridge' };
+  const KIND_LABEL = { web: 'Watch Party', jellyfin: 'Jellyfin device', plugin_bridge: 'Plugin bridge' };
 
   const generatePassword = () => {
     const alphabet = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -110,21 +111,64 @@
     startPolling();
   };
 
-  // Clients an admin can put into `roomId`: signed-in web clients that are
-  // not already in it (in another room, or in none).
-  const movableClients = (ov, roomId) => {
+  // Who an admin can put into `roomId`: signed-in web clients and bridged
+  // devices that are not already in it, and Jellyfin devices not yet
+  // bridged anywhere.
+  const candidates = (ov, roomId) => {
     const out = [];
     for (const c of ov.unassigned) {
-      if (c.authenticated && c.kind === 'web') out.push({ id: c.id, label: `${c.name} (no room)` });
+      if (c.authenticated) out.push({ value: `c:${c.id}`, label: `${c.name} (no room)`, group: 'Watch Party clients' });
     }
     for (const r of ov.rooms) {
       if (r.id === roomId) continue;
       for (const m of r.members) {
-        if (m.kind === 'web') out.push({ id: m.id, label: `${m.name} (in ${r.name})` });
+        out.push({
+          value: `c:${m.id}`,
+          label: `${m.name} (in ${r.name})`,
+          group: m.kind === 'jellyfin' ? 'Jellyfin devices' : 'Watch Party clients'
+        });
+      }
+    }
+    if (devices && devices.enabled) {
+      for (const d of devices.sessions) {
+        if (d.bridged_as) continue;
+        const playing = d.now_playing ? ` - ${d.now_playing.name || 'playing'}` : '';
+        out.push({
+          value: `j:${d.id}`,
+          label: `${d.user_name || 'Jellyfin'} - ${d.device_name || d.client} (${d.client})${playing}${d.remote_control ? '' : ' [host only]'}`,
+          group: 'Jellyfin devices'
+        });
       }
     }
     return out;
   };
+
+  const groupedOptions = (items) => {
+    const groups = new Map();
+    for (const i of items) {
+      if (!groups.has(i.group)) groups.set(i.group, []);
+      groups.get(i.group).push(el('option', { value: i.value, text: i.label }));
+    }
+    return [...groups].map(([label, opts]) => el('optgroup', { label }, opts));
+  };
+
+  // Adds `value` ("c:<client id>" or "j:<jellyfin session id>") to a room,
+  // as host or receiver.
+  const addToRoom = (roomId, value, role) => {
+    const [kind, id] = [value.slice(0, 1), value.slice(2)];
+    if (kind === 'j') {
+      return act(role === 'host' ? 'Device added as host' : 'Device added',
+        () => api('POST', `api/rooms/${enc(roomId)}/members`, { jellyfin_session_id: id, role }));
+    }
+    return act(role === 'host' ? 'Added as host' : 'Added', async () => {
+      await api('POST', `api/rooms/${enc(roomId)}/members`, { client_id: id });
+      if (role === 'host') await api('PUT', `api/rooms/${enc(roomId)}/host`, { member: id });
+    });
+  };
+
+  const roleSelect = (label) => el('select', { 'aria-label': label },
+    el('option', { value: 'receiver', text: 'as receiver' }),
+    el('option', { value: 'host', text: 'as host' }));
 
   const memberRow = (room, m) => {
     const actions = el('td', { className: 'actions' });
@@ -209,24 +253,18 @@
         el('tbody', {}, room.members.map((m) => memberRow(room, m))))
       : el('p', { className: 'empty', text: 'Nobody here yet.' });
 
-    const candidates = movableClients(ov, room.id);
-    const select = el('select', { 'aria-label': `Client to add to ${room.name}` },
-      el('option', { value: '', text: candidates.length ? 'Add a client...' : 'No other clients connected' }),
-      candidates.map((c) => el('option', { value: c.id, text: c.label })));
-    const addRow = el('div', { className: 'row add-row' }, select,
+    const options = candidates(ov, room.id);
+    const select = el('select', { 'aria-label': `Who to add to ${room.name}` },
+      el('option', { value: '', text: options.length ? 'Add someone...' : 'Nobody else to add' }),
+      groupedOptions(options));
+    const role = roleSelect(`Role in ${room.name}`);
+    const addRow = el('div', { className: 'row add-row' }, select, role,
       el('button', {
         className: 'btn btn-small', type: 'button', text: 'Add',
-        onclick: () => {
-          if (!select.value) return;
-          act('Client added', () => api('POST', `api/rooms/${enc(room.id)}/members`, { client_id: select.value }));
-        }
+        onclick: () => { if (select.value) addToRoom(room.id, select.value, role.value); }
       }));
 
-    const extra = window.JWPAdminExtras && window.JWPAdminExtras.roomControls
-      ? window.JWPAdminExtras.roomControls(ov, room, { el, api, act, enc })
-      : null;
-
-    return el('div', { className: 'card' }, head, meta, table, addRow, extra);
+    return el('div', { className: 'card' }, head, meta, table, addRow);
   };
 
   const renderRooms = (ov) => {
@@ -253,12 +291,10 @@
         ov.rooms.map((r) => el('option', { value: r.id, text: r.name })));
       const cell = el('td', { className: 'actions' });
       if (c.authenticated) {
-        cell.append(select, el('button', {
+        const role = roleSelect(`Role for ${c.name}`);
+        cell.append(select, role, el('button', {
           className: 'btn btn-small', type: 'button', text: 'Add',
-          onclick: () => {
-            if (!select.value) return;
-            act(`Added ${c.name}`, () => api('POST', `api/rooms/${enc(select.value)}/members`, { client_id: c.id }));
-          }
+          onclick: () => { if (select.value) addToRoom(select.value, `c:${c.id}`, role.value); }
         }));
       } else {
         cell.append(el('span', { className: 'muted small', text: 'Not signed in' }));
@@ -271,10 +307,79 @@
     box.append(el('table', {}, el('tbody', {}, rows)));
   };
 
+  // Where a bridged device is, from the overview.
+  const findMember = (ov, clientId) => {
+    for (const r of ov.rooms) {
+      const m = r.members.find((x) => x.id === clientId);
+      if (m) return { room: r, member: m };
+    }
+    return null;
+  };
+
+  const renderDevices = (ov) => {
+    const section = $('devices-section');
+    const box = $('devices');
+    const jf = (ov.server && ov.server.jellyfin) || {};
+    section.classList.remove('hidden');
+    box.replaceChildren();
+    if (!jf.enabled) {
+      box.append(el('p', { className: 'muted', text: jf.reason || 'Jellyfin devices are not set up.' }),
+        el('p', { className: 'muted small', text: 'With JELLYFIN_URL and JELLYFIN_API_KEY set, you can put TV apps and other Jellyfin clients that can\'t show the Watch Party panel into rooms from here.' }));
+      return;
+    }
+    if (devices && devices.error) {
+      box.append(el('p', { className: 'error', text: devices.error }));
+    }
+    const list = (devices && devices.sessions) || [];
+    if (!list.length) {
+      box.append(el('p', { className: 'empty', text: 'No other Jellyfin clients are active. Open a Jellyfin app on the device and it shows up here.' }));
+      return;
+    }
+    const rows = list.map((d) => {
+      const where = d.bridged_as ? findMember(ov, d.bridged_as) : null;
+      const actions = el('td', { className: 'actions' });
+      if (where) {
+        actions.append(el('span', { className: 'muted small', text: `${where.member.is_host ? 'Host' : 'Receiver'} in ${where.room.name} ` }),
+          el('button', {
+            className: 'btn btn-danger btn-small', type: 'button', text: 'Remove',
+            onclick: () => act('Device removed', () => api('DELETE', `api/rooms/${enc(where.room.id)}/members/${enc(where.member.id)}`))
+          }));
+      } else {
+        const room = el('select', { 'aria-label': `Room for ${d.device_name}` },
+          el('option', { value: '', text: ov.rooms.length ? 'Choose a room...' : 'Create a group first' }),
+          ov.rooms.map((r) => el('option', { value: r.id, text: r.name })));
+        const role = roleSelect(`Role for ${d.device_name}`);
+        if (!d.remote_control) {
+          role.value = 'host';
+          role.querySelector('option[value="receiver"]').disabled = true;
+        }
+        actions.append(room, role, el('button', {
+          className: 'btn btn-small', type: 'button', text: 'Add',
+          onclick: () => { if (room.value) addToRoom(room.value, `j:${d.id}`, role.value); }
+        }));
+      }
+      const playing = d.now_playing
+        ? `${d.paused ? 'Paused' : 'Playing'}: ${d.now_playing.name || d.now_playing.id.slice(0, 8)} at ${fmtTime(d.position)}`
+        : 'Nothing playing';
+      return el('tr', {},
+        el('td', {}, `${d.user_name || '-'}`, el('div', { className: 'muted small', text: `${d.device_name} - ${d.client}` })),
+        el('td', {}, playing),
+        el('td', {}, d.remote_control
+          ? el('span', { className: 'badge', text: 'Host or receiver' })
+          : el('span', { className: 'badge', title: 'This app does not accept remote control from Jellyfin', text: 'Host only' })),
+        actions);
+    });
+    box.append(el('table', {},
+      el('thead', {}, el('tr', {}, el('th', { text: 'User / device' }), el('th', { text: 'Now' }), el('th', { text: 'Can be' }), el('th', {}))),
+      el('tbody', {}, rows)));
+  };
+
   const renderServerInfo = (ov) => {
     const s = ov.server || {};
+    const jf = s.jellyfin || {};
     const parts = [`v${s.version}`, `up ${fmtUptime(s.uptime_secs || 0)}`,
-      `JWT ${s.auth_enabled ? 'on' : 'off'}`, `${ov.totals.clients} connected`];
+      `JWT ${s.auth_enabled ? 'on' : 'off'}`, `${ov.totals.clients} connected`,
+      `Jellyfin ${!jf.enabled ? 'off' : jf.error ? 'unreachable' : 'connected'}`];
     $('server-info').textContent = parts.join(' | ');
   };
 
@@ -289,14 +394,17 @@
     renderServerInfo(ov);
     renderRooms(ov);
     renderUnassigned(ov);
-    if (window.JWPAdminExtras && window.JWPAdminExtras.render) {
-      window.JWPAdminExtras.render(ov, { el, api, act, enc, $ });
-    }
+    renderDevices(ov);
   };
 
   const refresh = async (force = false) => {
     try {
-      overview = await api('GET', 'api/overview');
+      const [ov, dev] = await Promise.all([
+        api('GET', 'api/overview'),
+        api('GET', 'api/jellyfin/sessions').catch(() => null)
+      ]);
+      overview = ov;
+      devices = dev;
       if (force || !isInteracting()) render(overview);
     } catch (e) {
       if (!$('app-view').classList.contains('hidden')) banner(e.message, 'error');
@@ -357,6 +465,5 @@
     }
   };
 
-  window.JWPAdmin = { el, api, act, enc, fmtTime, fmtDrift, refresh };
   document.addEventListener('DOMContentLoaded', init);
 })();

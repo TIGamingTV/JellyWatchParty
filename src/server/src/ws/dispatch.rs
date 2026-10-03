@@ -137,6 +137,32 @@ pub(super) async fn client_msg(
     }
 }
 
+/// Runs a message from an in-process room member (a bridged Jellyfin
+/// device) through the same handlers websocket traffic uses, so it gets
+/// exactly the same host checks, scheduling and broadcasts. Rate and size
+/// limits don't apply; only the messages a member needs are accepted.
+pub async fn dispatch_internal(
+    client_id: &str,
+    parsed: IncomingMessage,
+    clients: &Clients,
+    rooms: &Rooms,
+) {
+    match parsed.msg_type {
+        ClientMessageType::Ready => handle_ready(client_id, &parsed, clients, rooms).await,
+        ClientMessageType::PlayerEvent | ClientMessageType::StateUpdate => {
+            handle_playback(client_id, parsed, clients, rooms).await
+        }
+        ClientMessageType::SetMedia => handle_set_media(client_id, &parsed, clients, rooms).await,
+        ClientMessageType::ClientStatus => {
+            handle_client_status(client_id, &parsed, clients, rooms).await
+        }
+        other => warn!(
+            "Internal member {} sent unsupported message {:?}",
+            client_id, other
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

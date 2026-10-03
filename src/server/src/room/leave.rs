@@ -1,5 +1,5 @@
 use crate::messaging::{broadcast_participants, broadcast_room_list, broadcast_to_room};
-use crate::types::{Client, Clients, OutboundMessage, Room, Rooms, WsMessage};
+use crate::types::{Client, ClientKind, Clients, OutboundMessage, Room, Rooms, WsMessage};
 use crate::utils::now_ms;
 use log::info;
 use std::collections::HashMap;
@@ -49,7 +49,14 @@ fn detach_client_from_room(
 /// is insertion-ordered, so the new host is simply the first entry left
 /// after the departing host was removed.
 fn promote_new_host(room_id: &str, room: &mut Room, clients: &HashMap<String, Client>) {
-    room.host_id = room.clients[0].clone();
+    // Earliest-joined person first; a bridged device only takes over when
+    // nobody else is left.
+    room.host_id = room
+        .clients
+        .iter()
+        .find(|id| clients.get(*id).is_some_and(|c| c.kind == ClientKind::Web))
+        .unwrap_or(&room.clients[0])
+        .clone();
     announce_host(room_id, room, clients, None);
     broadcast_participants(room, clients);
 }
@@ -220,6 +227,29 @@ mod tests {
         );
         let msg_b = test_helpers::recv_msg(&mut rx_b).unwrap();
         assert_eq!(msg_b.msg_type, "host_changed");
+    }
+
+    #[test]
+    fn a_person_is_promoted_before_a_bridged_device() {
+        let mut clients = HashMap::new();
+        let mut rooms = HashMap::new();
+        let _rx = test_helpers::setup_room_with_host(&mut clients, &mut rooms, "host-1");
+        let (mut tv, _rx_tv) = test_helpers::create_client_with_rx("ut", "TV", true);
+        tv.kind = ClientKind::Bridge;
+        tv.room_id = Some("room-1".to_string());
+        let (mut person, _rx_p) = test_helpers::create_client_with_rx("up", "Person", true);
+        person.room_id = Some("room-1".to_string());
+        clients.insert("tv".to_string(), tv);
+        clients.insert("person".to_string(), person);
+        rooms.get_mut("room-1").unwrap().clients =
+            vec!["host-1".into(), "tv".into(), "person".into()];
+
+        detach_client_from_room("host-1", &mut clients, &mut rooms);
+        assert_eq!(rooms["room-1"].host_id, "person");
+
+        // Only devices left: the earliest one takes over.
+        detach_client_from_room("person", &mut clients, &mut rooms);
+        assert_eq!(rooms["room-1"].host_id, "tv");
     }
 
     #[test]
