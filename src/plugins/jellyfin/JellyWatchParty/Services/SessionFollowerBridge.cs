@@ -43,6 +43,7 @@ public sealed class SessionFollowerBridge : IAsyncDisposable
 
     private readonly string _sessionId;
     private readonly string _userId;
+    private readonly string? _deviceId;
     private readonly string _userName;
     private readonly string _roomId;
     private readonly PluginConfiguration _config;
@@ -70,6 +71,7 @@ public sealed class SessionFollowerBridge : IAsyncDisposable
         _sessionId = session.Id;
         _userId = session.UserId.ToString("N");
         _userName = $"{session.UserName} ({session.DeviceName})";
+        _deviceId = session.DeviceId;
         _roomId = roomId;
         _config = config;
         _sessionManager = sessionManager;
@@ -81,6 +83,9 @@ public sealed class SessionFollowerBridge : IAsyncDisposable
 
     public string UserName => _userName;
 
+    /// <summary>The Jellyfin user (id, "N" format) whose session this is.</summary>
+    public string OwnerUserId => _userId;
+
     public bool Connected => _socket.State == WebSocketState.Open;
 
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -89,7 +94,7 @@ public sealed class SessionFollowerBridge : IAsyncDisposable
 
         await SendAsync(SessionHostBridge.BuildAuthPayload(_userId, _userName, _config), "auth", room: null, cancellationToken)
             .ConfigureAwait(false);
-        await SendAsync(BuildJoinRoomPayload(_userName), "join_room", _roomId, cancellationToken)
+        await SendAsync(BuildJoinRoomPayload(_userName, _deviceId), "join_room", _roomId, cancellationToken)
             .ConfigureAwait(false);
 
         // RoomId is set only once the server confirms the join with a
@@ -348,7 +353,12 @@ public sealed class SessionFollowerBridge : IAsyncDisposable
     /// </summary>
     internal readonly record struct RoomPlaybackState(bool? IsPaused, double? PositionSeconds);
 
-    internal static JObject BuildJoinRoomPayload(string userName) => new() { ["user_name"] = userName };
+    internal static JObject BuildJoinRoomPayload(string userName, string? deviceId = null)
+    {
+        var payload = new JObject { ["user_name"] = userName };
+        SessionHostBridge.AddBridgeDeviceId(payload, deviceId);
+        return payload;
+    }
 
     // The server's ready handler keys off the connection's client id and the
     // envelope room only; the payload body is unused, so an empty object is fine.

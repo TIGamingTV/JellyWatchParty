@@ -56,6 +56,9 @@ public sealed class SessionHostBridge : IAsyncDisposable
 
     public string UserName => _userName;
 
+    /// <summary>The Jellyfin user (id, "N" format) whose session this is.</summary>
+    public string OwnerUserId => _userId;
+
     public bool Connected => _socket.State == WebSocketState.Open;
 
     public async Task StartAsync(SessionInfo session, CancellationToken cancellationToken)
@@ -294,7 +297,21 @@ public sealed class SessionHostBridge : IAsyncDisposable
             payload["media_id"] = itemId.Value.ToString("N");
         }
 
+        AddBridgeDeviceId(payload, session.DeviceId);
         return payload;
+    }
+
+    /// <summary>
+    /// Tells the session server which Jellyfin device this connection stands
+    /// in for, so its admin panel can show it as a plugin bridge and won't
+    /// bridge the same device a second time.
+    /// </summary>
+    internal static void AddBridgeDeviceId(JObject payload, string? deviceId)
+    {
+        if (!string.IsNullOrEmpty(deviceId))
+        {
+            payload["bridge_device_id"] = deviceId;
+        }
     }
 
     internal static JObject BuildPlayerEventPayload(bool isPaused, double positionSeconds) =>

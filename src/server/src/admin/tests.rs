@@ -448,3 +448,18 @@ async fn jellyfin_devices_report_why_they_are_off() {
     .await;
     assert_eq!(r.status, StatusCode::BAD_REQUEST);
 }
+
+#[tokio::test]
+async fn plugin_bridges_are_labelled_in_the_overview() {
+    let s = state();
+    let token = login(&s).await;
+    let t = Some(token.as_str());
+    {
+        let mut lr = s.rooms.write().await;
+        let mut lc = s.clients.write().await;
+        let _rx = test_helpers::setup_room_with_host(&mut lc, &mut lr, "fladder-bridge");
+        lc.get_mut("fladder-bridge").unwrap().bridge_device = Some("dev-1".into());
+    }
+    let ov = call(&s, "GET", "/api/overview", t, None).await.json;
+    assert_eq!(ov["rooms"][0]["members"][0]["kind"], "plugin_bridge");
+}

@@ -31,6 +31,16 @@ pub(super) fn sanitize_name(name: &str) -> Option<String> {
     }
 }
 
+/// `bridge_device_id` from a create/join payload: a Jellyfin DeviceId,
+/// accepted if it is 1-200 printable ASCII characters.
+pub(in crate::ws) fn bridge_device_id(payload: Option<&serde_json::Value>) -> Option<String> {
+    payload?
+        .get("bridge_device_id")?
+        .as_str()
+        .filter(|d| !d.is_empty() && d.len() <= 200 && d.chars().all(|c| c.is_ascii_graphic()))
+        .map(String::from)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -119,5 +129,21 @@ mod tests {
         let result = sanitize_name(&long_name);
         assert!(result.is_some());
         assert_eq!(result.unwrap().len(), MAX_NAME_LENGTH);
+    }
+
+    #[test]
+    fn bridge_device_id_is_validated() {
+        let ok = serde_json::json!({ "bridge_device_id": "abc-123_=" });
+        assert_eq!(bridge_device_id(Some(&ok)).as_deref(), Some("abc-123_="));
+        for bad in [
+            serde_json::json!({ "bridge_device_id": "" }),
+            serde_json::json!({ "bridge_device_id": "has space" }),
+            serde_json::json!({ "bridge_device_id": "x".repeat(201) }),
+            serde_json::json!({ "bridge_device_id": 5 }),
+            serde_json::json!({}),
+        ] {
+            assert_eq!(bridge_device_id(Some(&bad)), None);
+        }
+        assert_eq!(bridge_device_id(None), None);
     }
 }

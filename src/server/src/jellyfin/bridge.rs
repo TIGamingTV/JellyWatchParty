@@ -65,7 +65,9 @@ impl AddError {
             AddError::NoRemoteControl => {
                 "This app doesn't accept remote control, so it can only be a host".into()
             }
-            AddError::AlreadyBridged => "This device is already in a room".into(),
+            AddError::AlreadyBridged => {
+                "This device is already in a room (from here or from the Watch Party panel)".into()
+            }
             AddError::Op(e) => e.message().into(),
         }
     }
@@ -204,14 +206,6 @@ impl Bridges {
         self.entries().get(client_id).map(|e| e.info.clone())
     }
 
-    /// The client id of the bridge for this device, if it is bridged.
-    pub fn bridged_device(&self, device_id: &str, user_id: &str) -> Option<String> {
-        self.entries()
-            .iter()
-            .find(|(_, e)| e.info.device_id == device_id && e.info.jf_user_id == user_id)
-            .map(|(id, _)| id.clone())
-    }
-
     /// Puts a Jellyfin session into a room. `Host` also makes it the host;
     /// `Receiver` needs a device that accepts remote control.
     pub async fn add(
@@ -236,9 +230,6 @@ impl Bridges {
             return Err(AddError::NoRemoteControl);
         }
         let user_id = s.user_id();
-        if self.bridged_device(s.device_id(), &user_id).is_some() {
-            return Err(AddError::AlreadyBridged);
-        }
 
         let client_id = uuid::Uuid::new_v4().to_string();
         let (tx, rx) = mpsc::channel(BRIDGE_CHANNEL_BUFFER);
@@ -262,6 +253,14 @@ impl Bridges {
             if !rooms.contains_key(room_id) {
                 return Err(AddError::Op(OpError::RoomNotFound));
             }
+            // Bridged already, by this panel or by the plugin's in-panel
+            // bridge (which tags its connection with the device id).
+            if clients
+                .values()
+                .any(|c| c.bridges_device(s.device_id(), &user_id))
+            {
+                return Err(AddError::AlreadyBridged);
+            }
             clients.insert(
                 client_id.clone(),
                 Client {
@@ -276,6 +275,7 @@ impl Bridges {
                     resume_secret: random_token(),
                     connected_at: now,
                     kind: ClientKind::Bridge,
+                    bridge_device: Some(s.device_id().to_string()),
                 },
             );
             let opts = AddOptions {
@@ -1002,15 +1002,25 @@ mod tests {
             Err(AddError::SessionNotFound)
         ));
 
+        // A plugin bridge already stands in for the TV: refused.
+        {
+            let (mut plugin, _rx) =
+                test_helpers::create_client_with_rx("aaaabbbb", "Bob (TV)", true);
+            plugin.bridge_device = Some("tv-device".into());
+            clients.write().await.insert("plugin-bridge".into(), plugin);
+        }
+        assert!(matches!(
+            b.add("room-1", "tv-session", Role::Receiver).await,
+            Err(AddError::AlreadyBridged)
+        ));
+        clients.write().await.remove("plugin-bridge");
+
         let id = b.add("room-1", "tv-session", Role::Receiver).await.unwrap();
         assert!(matches!(
             b.add("room-1", "tv-session", Role::Receiver).await,
             Err(AddError::AlreadyBridged)
         ));
-        assert_eq!(
-            b.bridged_device("tv-device", "aaaabbbb").as_deref(),
-            Some(id.as_str())
-        );
+        assert!(clients.read().await[&id].bridges_device("tv-device", "aaaabbbb"));
 
         // Idle TV: told to play the room's item from the room's position.
         let calls = m.calls.clone();

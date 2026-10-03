@@ -36,6 +36,7 @@ fn register_client(
         resume_secret: random_token(),
         connected_at: now,
         kind: crate::types::ClientKind::Web,
+        bridge_device: None,
     }
 }
 

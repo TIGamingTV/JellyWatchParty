@@ -80,7 +80,8 @@ C# plugin targeting the Jellyfin plugin ABI. Key files:
   - serves the rest of the client JS files from **embedded resources only**
     (no disk fallback) — see `Web/` folder produced at build time, resource
     name pattern `JellyWatchParty.Plugin.Web.<path-with-dots-for-slashes>`
-  - `/JellyWatchParty/Bridge/*` (any logged-in user — see below) — lists
+  - `/JellyWatchParty/Bridge/*` (logged-in users, own sessions only unless
+    admin; only with panel bridging enabled — see below) — lists
     bridgeable/active sessions and starts/stops a host bridge, or attaches a
     session to a room as a receiver (`Bridge/{sessionId}/Follow`)
 - `ScriptInjectionMiddleware.cs` — intercepts requests for
@@ -141,13 +142,18 @@ themselves from their own Jellyfin Web room list exactly as before —
 nothing is pushed to guests, and this only makes the *host* side work for
 native clients. `Services/SessionServerAuth.cs` holds the shared
 JWT-minting logic used by both this bridge and the `/JellyWatchParty/Token`
-endpoint. The `/JellyWatchParty/Bridge/*` endpoints are gated with plain
-`[Authorize]` (not an admin-only policy) — session info (username, device,
-now-playing title) is deliberately not treated as private within a server,
-and any user can start/stop a bridge from the same panel where they'd
-create or join a room. Driven from `src/clients/jellyfin-web/ui/bridge.js`,
-rendered inside the existing lobby panel (`ui/render.js`'s `renderLobby`) —
-not the Jellyfin admin config page.
+endpoint. Since plugin 2.1 this is **off unless an admin opts in**
+(`EnablePanelBridging`, meant for small trusted servers), and the
+`/JellyWatchParty/Bridge/*` endpoints only let users bridge, list and stop
+their **own** sessions (administrators: any). Driven from
+`src/clients/jellyfin-web/ui/bridge.js`, rendered inside the existing lobby
+panel (`ui/render.js`'s `renderLobby`) — not the Jellyfin admin config page.
+
+The admin-facing replacement lives in the **session server**, not the
+plugin: its admin panel (`src/server/src/admin/`, own port) puts any
+Jellyfin device into any room by driving it over the Jellyfin REST API
+with an API key (`src/server/src/jellyfin/`). See
+[Admin Panel]({{ '/admin-panel/' | relative_url }}).
 
 ## 3. Injected JS client — `src/clients/jellyfin-web/`
 

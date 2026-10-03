@@ -22,9 +22,14 @@ As the host, you control playback for everyone. When you play, pause, or seek, a
 ### Watching on a TV App
 
 If you're watching on a native/TV client that can't run the Watch Party
-UI at all (e.g. the official Android TV app or Fladder), someone with
-browser access to the same server can bridge your session into a room —
-see [Host Bridge]({{ '/technical/host-bridge/' | relative_url }}) — in one of two ways:
+UI at all (e.g. the official Android TV app or Fladder), ask an admin:
+they can put your device into a room from the session server's
+[admin panel]({{ '/admin-panel/' | relative_url }}#jellyfin-devices), as host or receiver. A receiver TV
+is started on the room's item automatically.
+
+On servers where the admin allows it, you can also bridge your own
+device yourself from a browser signed in to your account — see
+[Host Bridge]({{ '/technical/host-bridge/' | relative_url }}) — in one of two ways:
 
 - **Host**: your TV session becomes the room's host. Guests join normally
   from their own room list; nothing changes on their end.
@@ -33,11 +38,13 @@ see [Host Bridge]({{ '/technical/host-bridge/' | relative_url }}) — in one of 
   follow the room's play, pause, and seek. (Works for rooms without a
   password.)
 
-> **Both roles are opt-in.** An administrator must enable them from the
-> plugin configuration page (**Client Bridging** section): *Allow
-> third-party clients to host* enables the Host role, and *Allow supported
-> clients as receivers* enables the Receiver role. Until enabled, the
-> corresponding picker does not appear in the Watch Party panel.
+> **Both roles are opt-in, for trusted servers.** An administrator must
+> turn on *Let users bridge their devices from the Watch Party panel* in
+> the plugin configuration page (**Watch Party Panel Bridging** section),
+> then *Allow third-party clients to host* for the Host role and *Allow
+> supported clients as receivers* for the Receiver role. Until enabled,
+> the corresponding picker does not appear in the Watch Party panel. Only
+> your own devices are listed.
 
 ## Joining a Watch Party
 

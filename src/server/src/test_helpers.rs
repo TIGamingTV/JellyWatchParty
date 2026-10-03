@@ -30,6 +30,7 @@ pub fn create_client_with_rx(
         resume_secret: crate::utils::random_token(),
         connected_at: now,
         kind: crate::types::ClientKind::Web,
+        bridge_device: None,
     };
     (client, rx)
 }

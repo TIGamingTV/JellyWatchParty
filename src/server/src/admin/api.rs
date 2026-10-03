@@ -141,10 +141,12 @@ fn member_json(
     bridges: Option<&Bridges>,
 ) -> serde_json::Value {
     let client = clients.get(id);
+    let plugin_bridge =
+        client.is_some_and(|c| c.kind == ClientKind::Web && c.bridge_device.is_some());
     let mut m = serde_json::json!({
         "id": id,
         "name": client.map(|c| c.user_name.as_str()).unwrap_or("Someone"),
-        "kind": "web",
+        "kind": if plugin_bridge { "plugin_bridge" } else { "web" },
         "is_host": room.host_id == id,
         "status": room.client_status.get(id).map(String::as_str).unwrap_or("unknown"),
         "ready": room.ready_clients.contains(id),
@@ -513,12 +515,32 @@ pub async fn jellyfin_sessions(State(state): State<AdminState>) -> Response {
     };
     let snap = bridges.snapshot_for_admin().await;
     let now = now_ms();
+    let bridged: Vec<(String, String, String, bool)> = state
+        .clients
+        .read()
+        .await
+        .iter()
+        .filter_map(|(id, c)| {
+            c.bridge_device.as_ref().map(|d| {
+                (
+                    id.clone(),
+                    d.clone(),
+                    c.user_id.clone(),
+                    c.kind == ClientKind::Web,
+                )
+            })
+        })
+        .collect();
     let mut sessions: Vec<_> = snap
         .sessions
         .iter()
         .filter(|s| !s.is_own() && !s.runs_web_client())
         .map(|s| {
             let view = device_view(s, now);
+            let user_id = s.user_id();
+            let bridge = bridged
+                .iter()
+                .find(|(_, d, u, _)| d == s.device_id() && *u == user_id);
             serde_json::json!({
                 "id": s.id,
                 "user_name": s.user_name(),
@@ -531,7 +553,8 @@ pub async fn jellyfin_sessions(State(state): State<AdminState>) -> Response {
                 })),
                 "position": view.position,
                 "paused": view.paused,
-                "bridged_as": bridges.bridged_device(s.device_id(), &s.user_id()),
+                "bridged_as": bridge.map(|b| &b.0),
+                "bridged_by_plugin": bridge.is_some_and(|b| b.3),
             })
         })
         .collect();

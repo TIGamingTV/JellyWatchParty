@@ -2458,3 +2458,51 @@ stayed within ±1.2 s. **Not yet run against a real Jellyfin server.**
 **Docs updated**: `admin-panel.md` (Jellyfin devices), `server.md`
 (`jellyfin/` module), `host-bridge.md` (pointer), `features.md`,
 `configuration.md`, `security.md`, `.env.example`, compose files.
+
+---
+
+## Round 37 — Admin panel, part 3 of 3: plugin panel bridging becomes opt-in for trusted servers
+
+**Trigger**: with admins bridging devices from the session server's admin
+panel (Round 36), the plugin's in-player bridges should no longer be on for
+everyone. They also had no ownership checks: any user could bridge or stop
+**any** user's session and attach any session to any room as a receiver
+(the empty controlling-session id bypassed Jellyfin's
+`EnableRemoteControlOfOtherUsers`).
+
+**Changes (plugin 2.1.0.0)**:
+
+- New master switch `PluginConfiguration.EnablePanelBridging` (off). As a
+  new field it is also off on upgraded installs, so the existing
+  `AllowThirdPartyClientHost` / `AllowSupportedClientReceiver` flags stop
+  having any effect until an admin opts in again. `PanelHostAllowed` /
+  `PanelReceiverAllowed` combine them; `/Token` sends the combined values.
+- Ownership: `Bridge/Sessions` and `Bridge/Status` list only the caller's
+  own sessions; `Start`/`Follow`/`Stop` return 403 for someone else's.
+  Callers in the `Administrator` role (Jellyfin's `ClaimTypes.Role`) may do
+  any. Stop stays available with the switch off.
+- Turning the switch or a role off stops the matching running bridges
+  (`HostBridgeManager.ApplyConfigurationAsync` on
+  `Plugin.ConfigurationChanged`).
+- Both bridges send `bridge_device_id` (the session's `DeviceId`) in
+  `create_room`/`join_room`. The session server stores it
+  (`Client.bridge_device`), labels the client *Plugin bridge* in the admin
+  panel, and its own bridge refuses a device that is already bridged
+  either way.
+- Config page: section renamed "Watch Party Panel Bridging (trusted
+  servers only)" with an explanation and a pointer to the admin panel;
+  per-role checkboxes are disabled while the switch is off.
+
+**Docs fixed on the way**: `plugin.md` claimed the JWT secret is never sent
+back to the config page; it is (admin-only plugin configuration API), and
+the docs now say so.
+
+**Tests**: C# 146 (new `PanelBridgingTests`: switch gating, upgraded-XML
+default, XML round-trip, `MayControl`, owner filtering, payload tag). Rust
+207 (join records `bridge_device_id`, plugin-bridge label, refused double
+bridge). JS 180.
+
+**Docs updated**: `configuration.md`, `host-bridge.md`, `features.md`,
+`user-guide.md`, `troubleshooting.md`, `plugin.md` (REST table, config
+page), `ARCHITECTURE.md`, `protocol.md` (`bridge_device_id`),
+`admin-panel.md`, `implem.md` §2.5.

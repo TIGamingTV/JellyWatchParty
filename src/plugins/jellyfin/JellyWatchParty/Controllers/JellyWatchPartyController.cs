@@ -263,8 +263,8 @@ public class JellyWatchPartyController : ControllerBase
                 user_name = userName,
                 session_server_url = config.SessionServerUrl ?? string.Empty,
                 hide_native_sync_button = config.HideNativeSyncButton,
-                allow_third_party_host = config.AllowThirdPartyClientHost,
-                allow_supported_receiver = config.AllowSupportedClientReceiver
+                allow_third_party_host = config.PanelHostAllowed,
+                allow_supported_receiver = config.PanelReceiverAllowed
             });
         }
 
@@ -279,8 +279,8 @@ public class JellyWatchPartyController : ControllerBase
             user_name = userName,
             session_server_url = config.SessionServerUrl ?? string.Empty,
             hide_native_sync_button = config.HideNativeSyncButton,
-            allow_third_party_host = config.AllowThirdPartyClientHost,
-            allow_supported_receiver = config.AllowSupportedClientReceiver
+            allow_third_party_host = config.PanelHostAllowed,
+            allow_supported_receiver = config.PanelReceiverAllowed
         });
     }
 
@@ -289,25 +289,53 @@ public class JellyWatchPartyController : ControllerBase
         return SessionServerAuth.CreateToken(userId, userName, config);
     }
 
+    private const string PanelBridgingOffMessage =
+        "Bridging devices from the Watch Party panel is turned off on this server. "
+        + "An administrator can add your device to a room from the session server's admin panel.";
+
+    private const string NotYourSessionMessage = "You can only bridge your own devices.";
+
     /// <summary>
-    /// Lists Jellyfin sessions eligible to be bridged in as an JellyWatchParty
-    /// room host (i.e. sessions currently playing something), for the
-    /// in-player JellyWatchParty widget's host picker. Any logged-in user can
-    /// see this list and start/stop a bridge — session info (username,
-    /// device, now-playing title) is not treated as private within a server.
+    /// The calling user's id, or null if the claims don't carry one.
+    /// </summary>
+    private Guid? CallerUserId()
+    {
+        var raw = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+               ?? User.FindFirst("Jellyfin-UserId")?.Value;
+        return Guid.TryParse(raw, out var id) ? id : null;
+    }
+
+    private bool CallerIsAdmin() => User.IsInRole("Administrator");
+
+    /// <summary>
+    /// Whether the caller may bridge (or stop the bridge of) a session owned
+    /// by <paramref name="ownerUserId"/>: their own sessions, or any session
+    /// for an administrator.
+    /// </summary>
+    internal static bool MayControl(Guid? callerUserId, bool callerIsAdmin, Guid? ownerUserId) =>
+        callerIsAdmin || (callerUserId.HasValue && ownerUserId.HasValue && callerUserId.Value == ownerUserId.Value);
+
+    /// <summary>
+    /// Lists the caller's own Jellyfin sessions that can be bridged
+    /// (administrators see everyone's), for the in-player Watch Party
+    /// panel's device pickers. Empty unless panel bridging is enabled.
     /// </summary>
     [HttpGet("Bridge/Sessions")]
     [Authorize]
     [Produces("application/json")]
     public ActionResult GetBridgeableSessions()
     {
-        // Both bridge roles are opt-in (see PluginConfiguration). When an admin
-        // has enabled neither, there is nothing a user could do with the list,
-        // so return it empty rather than advertising sessions that can't be
-        // bridged.
+        // Panel bridging is opt-in (see PluginConfiguration). When it's off,
+        // or neither role is allowed, there is nothing a user could do with
+        // the list, so return it empty.
         var config = Plugin.Instance?.Configuration;
-        if (config == null
-            || (!config.AllowThirdPartyClientHost && !config.AllowSupportedClientReceiver))
+        if (config == null || (!config.PanelHostAllowed && !config.PanelReceiverAllowed))
+        {
+            return Ok(Array.Empty<object>());
+        }
+
+        var caller = CallerUserId();
+        if (caller == null && !CallerIsAdmin())
         {
             return Ok(Array.Empty<object>());
         }
@@ -317,7 +345,7 @@ public class JellyWatchPartyController : ControllerBase
         // literally) — project onto anonymous objects with the exact keys
         // the injected JS (ui/bridge.js) expects, rather than relying on a
         // naming policy that isn't actually applied.
-        var sessions = _hostBridgeManager.GetEligibleSessions().Select(s => new
+        var sessions = _hostBridgeManager.GetEligibleSessions(CallerIsAdmin() ? null : caller).Select(s => new
         {
             sessionId = s.SessionId,
             userName = s.UserName,
@@ -329,15 +357,27 @@ public class JellyWatchPartyController : ControllerBase
     }
 
     /// <summary>
-    /// Lists currently active host bridges, for the in-player widget's
-    /// status display.
+    /// Lists the caller's active bridges (administrators: all), for the
+    /// in-player widget's status display.
     /// </summary>
     [HttpGet("Bridge/Status")]
     [Authorize]
     [Produces("application/json")]
     public ActionResult GetBridgeStatus()
     {
-        var bridges = _hostBridgeManager.GetActiveBridges().Select(ToBridgeStatusJson);
+        string? onlyUser = null;
+        if (!CallerIsAdmin())
+        {
+            var caller = CallerUserId();
+            if (caller == null)
+            {
+                return Ok(Array.Empty<object>());
+            }
+
+            onlyUser = caller.Value.ToString("N");
+        }
+
+        var bridges = _hostBridgeManager.GetActiveBridges(onlyUser).Select(ToBridgeStatusJson);
         return Ok(bridges);
     }
 
@@ -351,9 +391,14 @@ public class JellyWatchPartyController : ControllerBase
     [Produces("application/json")]
     public async Task<ActionResult> StartBridge([FromRoute] string sessionId)
     {
-        if (Plugin.Instance?.Configuration.AllowThirdPartyClientHost != true)
+        if (Plugin.Instance?.Configuration.PanelHostAllowed != true)
         {
-            return BadRequest(new { error = "Hosting from a third-party client is disabled. An administrator can enable it in the JellyWatchParty plugin settings." });
+            return BadRequest(new { error = PanelBridgingOffMessage });
+        }
+
+        if (!MayControl(CallerUserId(), CallerIsAdmin(), _hostBridgeManager.GetSessionUserId(sessionId)))
+        {
+            return StatusCode(403, new { error = NotYourSessionMessage });
         }
 
         try
@@ -379,9 +424,14 @@ public class JellyWatchPartyController : ControllerBase
     [Produces("application/json")]
     public async Task<ActionResult> StartFollower([FromRoute] string sessionId, [FromQuery] string roomId)
     {
-        if (Plugin.Instance?.Configuration.AllowSupportedClientReceiver != true)
+        if (Plugin.Instance?.Configuration.PanelReceiverAllowed != true)
         {
-            return BadRequest(new { error = "Attaching a supported client as a receiver is disabled. An administrator can enable it in the JellyWatchParty plugin settings." });
+            return BadRequest(new { error = PanelBridgingOffMessage });
+        }
+
+        if (!MayControl(CallerUserId(), CallerIsAdmin(), _hostBridgeManager.GetSessionUserId(sessionId)))
+        {
+            return StatusCode(403, new { error = NotYourSessionMessage });
         }
 
         try
@@ -414,6 +464,19 @@ public class JellyWatchPartyController : ControllerBase
     [Produces("application/json")]
     public async Task<ActionResult> StopBridge([FromRoute] string sessionId)
     {
+        // Stopping stays possible with panel bridging off (it can only reduce
+        // what's running), but only for the bridge's owner or an admin.
+        var owner = _hostBridgeManager.GetBridgeOwner(sessionId);
+        if (owner == null)
+        {
+            return Ok();
+        }
+
+        if (!MayControl(CallerUserId(), CallerIsAdmin(), Guid.TryParse(owner, out var ownerId) ? ownerId : null))
+        {
+            return StatusCode(403, new { error = NotYourSessionMessage });
+        }
+
         await _hostBridgeManager.StopBridgeAsync(sessionId);
         return Ok();
     }

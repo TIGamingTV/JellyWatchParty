@@ -122,6 +122,8 @@
     for (const r of ov.rooms) {
       if (r.id === roomId) continue;
       for (const m of r.members) {
+        // A plugin bridge belongs to the room its user picked in the panel.
+        if (m.kind === 'plugin_bridge') continue;
         out.push({
           value: `c:${m.id}`,
           label: `${m.name} (in ${r.name})`,
@@ -339,7 +341,8 @@
       const where = d.bridged_as ? findMember(ov, d.bridged_as) : null;
       const actions = el('td', { className: 'actions' });
       if (where) {
-        actions.append(el('span', { className: 'muted small', text: `${where.member.is_host ? 'Host' : 'Receiver'} in ${where.room.name} ` }),
+        const via = d.bridged_by_plugin ? ' (from the Watch Party panel)' : '';
+        actions.append(el('span', { className: 'muted small', text: `${where.member.is_host ? 'Host' : 'Receiver'} in ${where.room.name}${via} ` }),
           el('button', {
             className: 'btn btn-danger btn-small', type: 'button', text: 'Remove',
             onclick: () => act('Device removed', () => api('DELETE', `api/rooms/${enc(where.room.id)}/members/${enc(where.member.id)}`))

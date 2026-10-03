@@ -8,10 +8,13 @@ nav_order: 6
 
 {: .note }
 This page describes the **plugin's** bridge, used from the in-player
-Watch Party panel. The session server's [admin panel]({{ '/admin-panel/' | relative_url }}#jellyfin-devices)
-has its own bridge for admins: it drives devices over the Jellyfin API,
-can put any device into any room as host or receiver, and starts
-playback on receivers itself.
+Watch Party panel. Since plugin 2.1 it is off unless an admin turns on
+**Let users bridge their devices from the Watch Party panel** (meant for
+small servers with trusted users), and users can only bridge their own
+sessions. The normal way is the session server's
+[admin panel]({{ '/admin-panel/' | relative_url }}#jellyfin-devices): it drives devices over the
+Jellyfin API, can put any device into any room as host or receiver, and
+starts playback on receivers itself.
 
 ## Overview
 
@@ -21,8 +24,8 @@ problem for native/TV clients that can't run injected JavaScript at
 all (e.g. [Fladder](https://github.com/jyc-oss/fladder) on Android TV,
 Swiftfin, Infuse, official mobile/TV apps). **Host Bridge** solves this
 on the *host* side only: any logged-in user with browser access to the
-same Jellyfin server can bridge a currently-playing native session in
-as a room host. Guests are completely unaffected — they still join the
+same Jellyfin server can bridge one of their own currently-playing
+native sessions in as a room host (administrators: anyone's). Guests are completely unaffected — they still join the
 resulting room from their own room list exactly as they would any
 other room, and the room is indistinguishable from a browser-hosted one
 to them.
@@ -36,16 +39,32 @@ that can't run the injected UI can still *follow* a party. The session
 must already be playing the room's item; the receiver keeps play/pause
 and position aligned but does not start playback remotely.
 
-Both directions are **opt-in** and off by default. The host role is
-gated by `PluginConfiguration.AllowThirdPartyClientHost` and the receiver
-role by `PluginConfiguration.AllowSupportedClientReceiver` (admins toggle
-these in the plugin config page's **Client Bridging** section). The two
-flags ride along on the `/JellyWatchParty/Token` response
-(`allow_third_party_host` / `allow_supported_receiver`) so the injected
-client can hide the matching picker, and are enforced server-side:
-`Bridge/{sessionId}/Start` rejects when hosting is disabled,
-`Bridge/{sessionId}/Follow` when the receiver role is disabled, and
-`Bridge/Sessions` returns an empty list when neither is enabled.
+Both directions are **opt-in** and off by default, behind a master
+switch, `PluginConfiguration.EnablePanelBridging`. With it on, the host
+role is gated by `AllowThirdPartyClientHost` and the receiver role by
+`AllowSupportedClientReceiver` (admins toggle these in the plugin config
+page's **Watch Party Panel Bridging** section; `PanelHostAllowed` /
+`PanelReceiverAllowed` combine them). The combined values ride along on
+the `/JellyWatchParty/Token` response (`allow_third_party_host` /
+`allow_supported_receiver`) so the injected client can hide the matching
+picker, and are enforced server-side: `Bridge/{sessionId}/Start` rejects
+when hosting is disabled, `Bridge/{sessionId}/Follow` when the receiver
+role is disabled, and `Bridge/Sessions` returns an empty list when
+neither is enabled. Turning the switch (or a role) off stops the
+matching running bridges (`HostBridgeManager.ApplyConfigurationAsync`,
+on `Plugin.ConfigurationChanged`).
+
+**Ownership**: Sessions, Status, Start, Follow and Stop only cover the
+caller's own sessions (session `UserId` == the caller's
+`Jellyfin-UserId` claim). Callers in the `Administrator` role may
+bridge and stop any session. Before 2.1 any user could bridge or stop
+anyone's session, and attach any session to any room as a receiver,
+bypassing Jellyfin's `EnableRemoteControlOfOtherUsers` permission.
+
+Both bridges send the bridged session's `DeviceId` as `bridge_device_id`
+in `create_room` / `join_room`. The session server records it, shows the
+connection as a *Plugin bridge* in its admin panel, and refuses to
+bridge the same device a second time from there.
 
 So a native client can still participate as a guest via the receiver
 role. Running the injected UI directly (a browser, or Jellyfin Desktop

@@ -52,6 +52,20 @@ pub struct Client {
     /// When this entry was first registered (ms since epoch).
     pub connected_at: u64,
     pub kind: ClientKind,
+    /// The Jellyfin device this client stands in for, if any: the plugin's
+    /// in-panel bridges send its DeviceId as `bridge_device_id` in
+    /// `create_room`/`join_room`, and admin-panel bridges set it directly.
+    /// Used to show plugin bridges in the admin panel and to never bridge
+    /// one device twice.
+    pub bridge_device: Option<String>,
+}
+
+impl Client {
+    /// True if this client stands in for Jellyfin device `device_id` of
+    /// user `user_id` (lowercase hex, no dashes).
+    pub fn bridges_device(&self, device_id: &str, user_id: &str) -> bool {
+        self.bridge_device.as_deref() == Some(device_id) && self.user_id == user_id
+    }
 }
 
 /// What sits behind a client entry.

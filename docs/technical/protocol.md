@@ -113,6 +113,7 @@ Create a new watch party room.
 | `media_id` | string | Jellyfin media ID (optional) |
 | `password` | string | Optional room password. If set, `join_room` must supply a matching `password` (see below). Never echoed back to any client. |
 | `started` | boolean | Optional. `false` asks for the [start countdown](#start-countdown): the host is not playing yet and holds its first play. `true` means the host is already playing. **Leaving it out means the room has already started** (no countdown), so hosts that don't hold their first play, like the native Host Bridge or older web clients, never leave guests waiting. |
+| `bridge_device_id` | string | Optional. Sent by the plugin's in-panel bridges: the Jellyfin `DeviceId` of the session this connection stands in for (1-200 printable ASCII characters, else ignored). The admin panel shows such clients as *Plugin bridge* and won't bridge that device again. |
 
 **Response:** `room_state`
 
@@ -138,6 +139,7 @@ Join an existing room.
 | Payload Field | Type | Description |
 |---------------|------|-------------|
 | `password` | string | Required only if the room was created with a password. Not checked for a client that's already a member of the room (e.g. a re-sent join after a panel refresh). |
+| `bridge_device_id` | string | Optional; as for `create_room`. |
 
 **Response:** `room_state`, or `error` with `payload.reason: "wrong_password"` if the password is missing/incorrect.
 

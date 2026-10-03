@@ -1,6 +1,6 @@
 use super::super::constants::{FAILED_JOIN_WINDOW_MS, MAX_FAILED_JOINS};
 use super::super::dispatch::{is_authenticated, send_error};
-use super::super::validation::sanitize_name;
+use super::super::validation::{bridge_device_id, sanitize_name};
 use crate::messaging::{broadcast_room_list, send_to_client};
 use crate::password::verify_password;
 use crate::room::ops::{add_member, AddOptions, MAX_CLIENTS_PER_ROOM};
@@ -152,8 +152,13 @@ pub(in crate::ws) async fn handle_join_room(
         room.failed_joins.remove(&user_id);
     }
 
-    if let (Some(name), Some(client)) = (payload_name, locked_clients.get_mut(client_id)) {
-        client.user_name = name;
+    if let Some(client) = locked_clients.get_mut(client_id) {
+        if let Some(name) = payload_name {
+            client.user_name = name;
+        }
+        if let Some(device) = bridge_device_id(parsed.payload.as_ref()) {
+            client.bridge_device = Some(device);
+        }
     }
     let opts = AddOptions {
         by_admin: false,
@@ -492,5 +497,18 @@ mod tests {
         );
         handle_join_room("guest", &join_msg("guest", "secret"), &clients, &rooms).await;
         assert!(!rooms.read().await["room-1"].failed_joins.contains_key("ug"));
+    }
+
+    #[tokio::test]
+    async fn handle_join_room_records_the_bridged_device() {
+        let (clients, rooms, _rxs) = setup_password_room(&[("bridge", "ub")]).await;
+        let mut msg = join_msg("bridge", "secret");
+        msg.payload.as_mut().unwrap()["bridge_device_id"] = "tv-123".into();
+        handle_join_room("bridge", &msg, &clients, &rooms).await;
+        assert_eq!(
+            clients.read().await["bridge"].bridge_device.as_deref(),
+            Some("tv-123")
+        );
+        assert!(clients.read().await["bridge"].bridges_device("tv-123", "ub"));
     }
 }
