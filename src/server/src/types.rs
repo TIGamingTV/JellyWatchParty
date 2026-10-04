@@ -45,6 +45,51 @@ pub struct Client {
     pub message_count: u32,
     pub last_reset: u64,
     pub last_seen: u64, // For zombie connection detection
+    /// Random secret handed to this client only (in `client_hello`). A new
+    /// connection may only reattach to this entry - and inherit its auth,
+    /// room membership and host role - by presenting it as `?resume=`.
+    pub resume_secret: String,
+    /// When this entry was first registered (ms since epoch).
+    pub connected_at: u64,
+    /// Id of the websocket connection currently attached to this entry. A
+    /// connection that ends only schedules a disconnect if it is still the
+    /// attached one, so a half-dead old socket can never evict the session
+    /// that replaced it.
+    pub conn_id: u64,
+    /// False once the attached connection has ended (the entry is then in
+    /// its reconnect grace period).
+    pub connected: bool,
+    pub kind: ClientKind,
+    /// The Jellyfin device this client stands in for, if any: the plugin's
+    /// in-panel bridges send its DeviceId as `bridge_device_id` in
+    /// `create_room`/`join_room`, and admin-panel bridges set it directly.
+    /// Used to show plugin bridges in the admin panel and to never drive
+    /// one device from two places.
+    pub bridge_device: Option<String>,
+}
+
+impl Client {
+    /// True if this client currently drives Jellyfin device `device_id`:
+    /// it carries that device's tag and is in a room. (A tag left on a
+    /// client that was removed from its room doesn't count.) Matched on
+    /// the device alone: two bridges for one physical device would fight
+    /// over it whichever Jellyfin user each belongs to.
+    pub fn bridges_device(&self, device_id: &str) -> bool {
+        self.room_id.is_some() && self.bridge_device.as_deref() == Some(device_id)
+    }
+}
+
+/// What sits behind a client entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ClientKind {
+    /// A websocket connection (the Jellyfin web client, the plugin's
+    /// bridges, third-party clients).
+    #[default]
+    Web,
+    /// A Jellyfin session this server drives itself over the Jellyfin API
+    /// (admin panel device bridge). Its "socket" is an in-process task, so
+    /// it is never reaped as a zombie and can't be reattached to.
+    Bridge,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -84,6 +129,23 @@ pub struct Room {
     /// everyone to be ready and starts with a countdown (see `pending_play`).
     #[serde(skip)]
     pub started: bool,
+    /// Created from the admin panel rather than by a client. Such a group
+    /// may sit empty (and hostless) until its first member arrives; see
+    /// `tasks::spawn_empty_group_reaper`.
+    #[serde(skip)]
+    pub admin_created: bool,
+    /// When the room was created (ms since epoch).
+    #[serde(skip)]
+    pub created_at: u64,
+}
+
+impl Room {
+    /// True when nobody holds the host role (an admin-created group that
+    /// nobody has joined yet). Host-only messages are ignored until a host
+    /// is set, because no client id ever equals the empty string.
+    pub fn is_hostless(&self) -> bool {
+        self.host_id.is_empty()
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]

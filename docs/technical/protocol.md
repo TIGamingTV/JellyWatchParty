@@ -10,21 +10,32 @@ nav_order: 1
 
 JellyWatchParty uses a JSON-over-WebSocket protocol for real-time communication between clients and the session server.
 
-**Endpoint:** `ws(s)://<host>:3000/ws?client_id=<persistent-client-id>`
+**Endpoint:** `ws(s)://<host>:3000/ws?client_id=<persistent-client-id>&resume=<resume-secret>`
 
-### `client_id` Query Parameter
+### `client_id` and `resume` Query Parameters
 
-The client generates a UUID once, persists it in `localStorage`, and
-sends it as `?client_id=` on every connection attempt (including
-reconnects). This is a *different* identifier from the per-connection
-`client` field used elsewhere in this protocol and from the
-`client_hello.payload.client_id` below — this query param is what lets
-the server recognize "this is the same client as before" across a
-dropped connection, so it can reattach the client to its existing room
-membership (and resend `room_state`) instead of treating it as brand
-new. Only values that look like a real UUIDv4 are trusted; anything
-else is ignored and the server mints a fresh ID instead. See
-[Server: Persistent Client ID]({{ '/technical/server/' | relative_url }}#persistent-client-id) for the
+The client generates a UUID once per browser tab, keeps it in
+`sessionStorage` (it survives reloads of that tab; other tabs get their
+own), and sends it as `?client_id=` on every connection attempt
+(including reconnects). This query param is what lets the server recognize "this is
+the same client as before" across a dropped connection, so it can
+reattach the client to its existing room membership (and resend
+`room_state`) instead of treating it as brand new. Only values that look
+like a real UUIDv4 are trusted; anything else is ignored and the server
+mints a fresh ID instead.
+
+Client ids are not secret (every room member sees them in
+`participants`), so knowing one is not enough to take a session over.
+Each new client entry gets a random **resume secret**, sent only to that
+client in `client_hello`. A connection reattaches only if it also sends
+that secret as `&resume=`. If the id is already in use and the secret is
+missing or wrong, the server ignores the requested id and issues a new
+one in `client_hello`; the client should then store the new id and
+secret. The secret is replaced on every successful reattach, so always
+store the one from the latest `client_hello`. Clients from before this change (no `resume`) still connect, but
+lose their room on reconnect while the old entry is still held.
+
+See [Server: Persistent Client ID]({{ '/technical/server/' | relative_url }}#persistent-client-id) for the
 reattachment mechanics.
 
 ## Message Format
@@ -104,6 +115,7 @@ Create a new watch party room.
 | `media_id` | string | Jellyfin media ID (optional) |
 | `password` | string | Optional room password. If set, `join_room` must supply a matching `password` (see below). Never echoed back to any client. |
 | `started` | boolean | Optional. `false` asks for the [start countdown](#start-countdown): the host is not playing yet and holds its first play. `true` means the host is already playing. **Leaving it out means the room has already started** (no countdown), so hosts that don't hold their first play, like the native Host Bridge or older web clients, never leave guests waiting. |
+| `bridge_device_id` | string | Optional. Sent by the plugin's in-panel bridges: the Jellyfin `DeviceId` of the session this connection stands in for (1-200 printable ASCII characters, else ignored). The admin panel shows such clients as *Plugin bridge*. Refused with `error` `reason: "device_already_bridged"` if another client in a room already drives that device. |
 
 **Response:** `room_state`
 
@@ -129,8 +141,9 @@ Join an existing room.
 | Payload Field | Type | Description |
 |---------------|------|-------------|
 | `password` | string | Required only if the room was created with a password. Not checked for a client that's already a member of the room (e.g. a re-sent join after a panel refresh). |
+| `bridge_device_id` | string | Optional; as for `create_room`. |
 
-**Response:** `room_state`, or `error` with `payload.reason: "wrong_password"` if the password is missing/incorrect.
+**Response:** `room_state`, or `error` with `payload.reason: "wrong_password"` if the password is missing/incorrect, or `"room_not_found"` (followed by a fresh `room_list`) if the room no longer exists.
 
 After 5 wrong passwords within 60 s, the same user (keyed by `user_id`, i.e. the JWT `sub`, not the client id) is refused for the rest of that 60 s window with `payload.reason: "too_many_attempts"` and `payload.retry_after_ms`, without the password being checked. The throttle is per room and per user, so one user guessing can't lock others out. A successful join clears the user's count.
 
@@ -353,14 +366,23 @@ A participant reports its own playback status, for the room's participant list. 
 
 ### `client_hello`
 
-Sent immediately after WebSocket connection.
+Sent immediately after WebSocket connection. `client_id` may differ from
+the requested `?client_id=` (see [above](#client_id-and-resume-query-parameters));
+`resume_secret` is needed to reattach to this id later and is never sent to
+anyone else. `room_id` is the room the server has this client in, or
+`null`: a reattaching client that thinks it is in a room but gets `null`
+was removed (or the room closed) while it was offline and should go back
+to the lobby; if it is in a different room, `room_state` for that room
+follows.
 
 ```json
 {
   "type": "client_hello",
   "client": "uuid-client-id",
   "payload": {
-    "client_id": "uuid-client-id"
+    "client_id": "uuid-client-id",
+    "resume_secret": "64-hex-chars",
+    "room_id": null
   },
   "ts": 1678900000000,
   "server_ts": 1678900000000
@@ -424,8 +446,10 @@ Full room state. Sent after `create_room` or `join_room`.
 |---------------|------|-------------|
 | `started` | boolean | `false` until the room's first play has gone out (see [Start countdown](#start-countdown)). Clients treat a missing value as `true`. |
 | `chat_history` | array | Up to the last 50 chat messages sent in this room, oldest first — empty for a freshly created room. Replayed on both initial join and reconnect-reattach so late joiners and reconnecting clients aren't missing context. |
+| `admin_moved` | boolean | Only present (`true`) when an admin put this client into the room from the [admin panel]({{ '/admin-panel/' | relative_url }}). The client may have been in another room a moment ago; the server already took it out of that one (that room sees a normal leave). The web client drops its old room state and shows a toast. |
 
-Sent after `create_room`, `join_room`, and on reattachment after a
+Sent after `create_room`, `join_room`, when an admin adds the client to a
+room, and on reattachment after a
 dropped-connection reconnect (see
 [Server: Reconnect and Room Lifecycle]({{ '/technical/server/' | relative_url }}#reconnect-and-room-lifecycle)).
 
@@ -540,14 +564,20 @@ Periodic state update relayed from host.
 
 ### `room_closed`
 
-Room was closed (host disconnected or room empty).
+The room was closed (host started a new room, room empty, or an admin
+closed it), or an admin removed this client from it.
 
 ```json
 {
   "type": "room_closed",
+  "room": "uuid-room-id",
+  "payload": { "reason": "An admin removed you from the room", "removed": true },
   "ts": 1678900000000
 }
 ```
+
+`reason` is shown to the user. `removed` is `true` when only this client
+was taken out and the room itself goes on.
 
 ### `client_left`
 
@@ -572,10 +602,10 @@ A participant left the room.
 
 ### `host_changed`
 
-The host left (or disconnected past the reconnect grace period) while
-other participants remained, so the earliest-joined remaining
-participant was promoted to host in place — the room stays open rather
-than closing.
+Someone else is host now. Sent when the host left (or disconnected past
+the reconnect grace period) while other participants remained — the
+earliest-joined remaining participant is promoted in place and the room
+stays open — and when an admin hands the host role to another member.
 
 ```json
 {
@@ -690,7 +720,7 @@ Error response.
 | Payload Field | Type | Description |
 |---------------|------|-------------|
 | `message` | string | Human-readable error description |
-| `reason` | string | Optional machine-readable code for errors a client may want to special-case. Currently `"wrong_password"` and `"too_many_attempts"`, both from `join_room` |
+| `reason` | string | Optional machine-readable code for errors a client may want to special-case. Currently `"wrong_password"`, `"too_many_attempts"` and `"room_not_found"` from `join_room`, and `"device_already_bridged"` from `create_room` / `join_room` |
 | `retry_after_ms` | number | Only with `reason: "too_many_attempts"`: milliseconds until the user may try the room's password again |
 
 ## Sequence Diagram: Complete Session

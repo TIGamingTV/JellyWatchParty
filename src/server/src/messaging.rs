@@ -253,6 +253,8 @@ mod tests {
                 client_status: HashMap::new(),
                 failed_joins: HashMap::new(),
                 started: true,
+                admin_created: false,
+                created_at: 0,
             },
         );
         rooms.insert(
@@ -276,6 +278,8 @@ mod tests {
                 client_status: HashMap::new(),
                 failed_joins: HashMap::new(),
                 started: true,
+                admin_created: false,
+                created_at: 0,
             },
         );
         let msg = build_room_list_msg(&rooms);

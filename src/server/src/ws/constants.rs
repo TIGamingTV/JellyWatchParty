@@ -19,8 +19,7 @@ pub(super) const RATE_LIMIT_WINDOW_MS: u64 = 1000; // Window size in ms
 pub(super) const MAX_FAILED_JOINS: u32 = 5; // Wrong passwords allowed per window
 pub(super) const FAILED_JOIN_WINDOW_MS: u64 = 60_000; // Window / lockout length in ms
 
-// Resource limits
-pub(super) const MAX_CLIENTS_PER_ROOM: usize = 20; // Max clients in a room
+// Max clients per room: see `room::ops::MAX_CLIENTS_PER_ROOM`.
 
 // Payload validation
 pub(super) const MAX_POSITION_SECONDS: f64 = 86400.0; // 24 hours max

@@ -9,6 +9,16 @@ pub fn now_ms() -> u64 {
         .as_millis() as u64
 }
 
+/// 64 hex chars (244 random bits) from the OS CSPRNG, via two UUIDv4s.
+/// Used for resume secrets and admin session tokens.
+pub fn random_token() -> String {
+    format!(
+        "{}{}",
+        uuid::Uuid::new_v4().simple(),
+        uuid::Uuid::new_v4().simple()
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -20,6 +30,14 @@ mod tests {
         assert!(ts > 1577836800000, "Timestamp should be after 2020");
         // Should be before 2100-01-01 (4102444800000 ms)
         assert!(ts < 4102444800000, "Timestamp should be before 2100");
+    }
+
+    #[test]
+    fn random_token_is_long_and_unique() {
+        let a = random_token();
+        assert_eq!(a.len(), 64);
+        assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_ne!(a, random_token());
     }
 
     #[test]

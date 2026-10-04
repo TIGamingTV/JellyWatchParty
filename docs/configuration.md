@@ -18,8 +18,9 @@ Access the plugin configuration page at **Dashboard** > **Plugins** > **JellyWat
 | Invite TTL | `3600` | Invite link lifetime in seconds (reserved for future use) |
 | Session Server URL | (empty) | Custom WebSocket server URL. If empty, uses `ws(s)://[host]:3000/ws`. Invalid or suspicious values (wrong scheme, malformed URL, bare internal hostname) show a non-blocking warning in the config page and browser console/toast — the value is still saved and used as entered. |
 | Hide native SyncPlay button | `false` | Hides Jellyfin's built-in SyncPlay button in the web client, since JellyWatchParty replaces that feature. |
-| Allow third-party clients to host | `false` | Opt-in. Lets a native/third-party client that can't run the injected script (Fladder, Swiftfin, Infuse, official mobile apps, …) be bridged in as a room **host**. While off, the "Host From Another Device" picker is hidden and the server rejects host-bridge requests. See [Host Bridge]({{ '/technical/host-bridge/' | relative_url }}). |
-| Allow supported clients as receivers | `false` | Opt-in. Lets a supported native client (such as the official Jellyfin Android TV app) be attached to a room as a **receiver** that follows the host via remote-control commands. While off, the "Add a Device to This Room" picker is hidden and the server rejects receiver requests. See [Host Bridge]({{ '/technical/host-bridge/' | relative_url }}). |
+| Let users bridge their devices from the Watch Party panel | `false` | Master switch for the two options below, **for small servers with trusted users only**. Admins put devices into rooms from the session server's [admin panel]({{ '/admin-panel/' | relative_url }}#jellyfin-devices) instead. Even when on, users can only bridge their own sessions (administrators: any). Turning it off stops bridges started from the panel. New in 2.1: installs upgraded from earlier versions start with it off. |
+| Allow third-party clients to host | `false` | Only with the master switch on. Lets a native/third-party client that can't run the injected script (Fladder, Swiftfin, Infuse, official mobile apps, …) be bridged in as a room **host**. While off, the "Host From Another Device" picker is hidden and the server rejects host-bridge requests. See [Host Bridge]({{ '/technical/host-bridge/' | relative_url }}). |
+| Allow supported clients as receivers | `false` | Only with the master switch on. Lets a supported native client (such as the official Jellyfin Android TV app) be attached to a room as a **receiver** that follows the host via remote-control commands. While off, the "Add a Device to This Room" picker is hidden and the server rejects receiver requests. See [Host Bridge]({{ '/technical/host-bridge/' | relative_url }}). |
 
 ### JWT Secret Guidelines
 
@@ -51,7 +52,13 @@ hit that symptom on an older version, check your Jellyfin server logs for
 | `HOST` | `0.0.0.0` | Address to bind to |
 | `ALLOWED_ORIGINS` | `http://localhost:8096,https://localhost:8096` | CORS allowed origins (comma-separated) |
 | `JWT_SECRET` | (empty) | Secret for validating tokens |
-| `LOG_LEVEL` | `info` | Log level: `error`, `warn`, `info`, `debug`, `trace` |
+| `JWT_AUDIENCE` | `JellyWatchParty` | Expected `aud` claim; must match the plugin's JWT Audience |
+| `JWT_ISSUER` | `Jellyfin` | Expected `iss` claim; must match the plugin's JWT Issuer |
+| `RUST_LOG` | `info` | Log level: `error`, `warn`, `info`, `debug`, `trace` |
+
+The admin panel has its own `ADMIN_*` variables (port, login, cookie
+options), and `JELLYFIN_URL` / `JELLYFIN_API_KEY` for putting Jellyfin
+devices into rooms. See [Admin Panel]({{ '/admin-panel/' | relative_url }}#environment-variables).
 
 ```yaml
 services:
@@ -62,7 +69,7 @@ services:
     environment:
       - ALLOWED_ORIGINS=https://jellyfin.example.com
       - JWT_SECRET=${JWT_SECRET}
-      - LOG_LEVEL=info
+      - RUST_LOG=info
     restart: unless-stopped
 ```
 
@@ -134,7 +141,7 @@ services:
     environment:
       - ALLOWED_ORIGINS=https://jellyfin.example.com
       - JWT_SECRET=${JWT_SECRET}
-      - LOG_LEVEL=warn
+      - RUST_LOG=warn
     restart: unless-stopped
 ```
 

@@ -20,7 +20,21 @@ src/
 ├── tasks.rs          # Background tasks (zombie cleanup, shutdown)
 ├── messaging.rs      # Message sending functions
 ├── auth.rs           # JWT authentication (optional)
-├── utils.rs          # Utilities (timestamp)
+├── utils.rs          # Utilities (timestamp, random tokens)
+├── password.rs       # Room password hashing, constant-time compare
+├── admin/            # Admin panel (second listener, own port)
+│   ├── mod.rs            # Router, session/CSRF middleware, security headers
+│   ├── config.rs         # ADMIN_* environment variables
+│   ├── auth.rs           # Login, sessions, failed-login throttle
+│   ├── api.rs            # JSON API (overview, rooms, members, host)
+│   ├── ui.rs             # Serves the embedded UI
+│   └── ui/               # index.html, app.js, app.css (no build step)
+├── jellyfin/         # Admin panel device bridge (Jellyfin REST API)
+│   ├── mod.rs            # JELLYFIN_* configuration
+│   ├── api.rs            # /Sessions, Playing/{cmd}, PlayNow (reqwest)
+│   ├── logic.rs          # Pure host/receiver decisions + position estimate
+│   ├── bridge.rs         # Poller, one task per bridged device, add/remove
+│   └── time.rs           # ISO-8601 timestamp parsing
 ├── ws/
 │   ├── mod.rs
 │   ├── connection.rs     # WebSocket connection lifecycle
@@ -41,6 +55,7 @@ src/
     ├── mod.rs
     ├── leave.rs          # Client leave / disconnect
     ├── close.rs          # Room closure
+    ├── ops.rs            # Shared room operations (add/move, kick, set host, close, groups)
     └── reconnect.rs      # Grace-period disconnect + reattachment
 ```
 
@@ -288,7 +303,24 @@ Responds with `pong` for latency measurement.
 ## Module: `room/`
 
 ### Description
-Manages room lifecycle and client disconnection. Split into `leave.rs` (client leave/disconnect), `close.rs` (room closure), and `reconnect.rs` (grace-period disconnect + reattachment).
+Manages room lifecycle and client disconnection. Split into `leave.rs` (client leave/disconnect), `close.rs` (room closure), `reconnect.rs` (grace-period disconnect + reattachment) and `ops.rs`.
+
+`ops.rs` holds the operations that both the websocket handlers and the
+admin API use, all on already-locked maps (rooms first, then clients):
+
+| Function | Used by | What it does |
+|----------|---------|--------------|
+| `add_member` | `join_room`, admin "add" | Moves a client into a room. If it is in another room it leaves that one first (normal leave notifications there). Makes it host if the room has none. Sends `room_state` (with `admin_moved` when an admin did it), `participants_update` and `participants`. No password check. |
+| `kick_member` | admin "remove" | A normal leave for the room, plus `room_closed` with a reason to the removed client. |
+| `set_host` | admin "make host" | Hands over the host role, drops a pending play, sends `host_changed` and `participants`. |
+| `close_room` | host starting a new room, admin "close" | Removes the room and tells its members why. |
+| `create_group` / `update_room` | admin | Creates an empty, hostless group (password optional); renames it or sets/clears its password. |
+
+A room may be **hostless** (`host_id` empty) only while it is an empty
+admin-created group. Host-only messages are ignored then (no client id
+is empty), and the first member to arrive becomes host. Groups nobody
+joins are removed after `ADMIN_EMPTY_GROUP_TTL_SECS`
+(`tasks::spawn_empty_group_reaper`).
 
 ### Function `schedule_disconnect` (`room/reconnect.rs`)
 
@@ -376,6 +408,77 @@ pub fn handle_leave(client_id: &str, clients: &mut HashMap, rooms: &mut HashMap)
 }
 ```
 
+## Module: `jellyfin/`
+
+### Description
+Lets the admin panel put Jellyfin sessions that can't run the web client
+(TV apps, Fladder, ...) into rooms. Only started with the admin panel and
+`JELLYFIN_URL` + `JELLYFIN_API_KEY`.
+
+- A bridged device is an ordinary client entry with
+  `kind: ClientKind::Bridge`, added through `ops::add_member`. Its
+  outbound channel is read by a task in `bridge.rs` instead of a socket.
+  Bridge entries are skipped by the zombie reaper and can never be
+  reattached to over `/ws`.
+- **Host or receiver is not stored**: on every tick the task checks
+  whether it is `room.host_id`. As host it turns the device's state into
+  `set_media` / `player_event` / `state_update`; as receiver it sends the
+  device `PlayNow` / `Pause` / `Unpause` / `Seek`. Both go through
+  `ws::dispatch_internal`, i.e. the same handlers (host checks, ready gate,
+  scheduling) as websocket traffic, including `ready` and `client_status`.
+- One poller reads `GET /Sessions` every `BRIDGE_POLL_INTERVAL_MS`, only
+  while a bridge exists or the panel looked within 30 s, and publishes a
+  snapshot on a `watch` channel that wakes every bridge task.
+- Positions: Jellyfin only updates `PlayState.PositionTicks` when the
+  device reports progress, so `logic::device_view` extrapolates from
+  `LastPlaybackCheckIn` (capped at three report intervals, 30-120 s).
+  Jellyfin timestamps are shifted by an estimated clock offset
+  (`ClockEstimator`: the smallest recent `fetched_at - check-in` over
+  changed check-ins). After sending a seek or pause, the receiver assumes
+  it took effect until a newer check-in arrives, for at most 10 s
+  (`FollowerMemory`), so stale reports don't cause repeat seeks.
+- Scheduled plays: the task notes each `player_event` play's
+  `target_server_ts` and position. Until the room reports a newer state
+  it measures the room position from that target, keeps receivers'
+  play/pause untouched before it (a `hold`), and wakes up 300 ms before
+  the target to unpause them.
+- Remote-control commands run in their own task, so the bridge keeps
+  reading room messages while Jellyfin answers.
+- Receivers: a device that was on the room's item and left it was
+  stopped on purpose and is left alone until the room changes item;
+  `PlayNow` is tried at most 3 times per item.
+- A bridge that becomes host marks the room started (no start countdown).
+- Receiver thresholds: seek beyond 2 s drift (4 s cooldown, 1 s lead while
+  playing), pause/unpause 2.5 s cooldown, `PlayNow` 15 s cooldown.
+- `/Sessions` is fetched without `activeWithinSeconds` (an idle TV makes
+  no requests and would drop out); the admin list filters by
+  `LastActivityDate` (16 min) instead, always keeping bridged devices.
+  Each session is parsed on its own, so one odd entry can't hide the rest.
+- Authenticates with `Authorization: MediaBrowser ... DeviceId=
+  "jellywatchparty-session-server", Token="<api key>"`. Jellyfin treats
+  API-key callers as privileged for remote control
+  (`SessionManager.AssertCanControl`). Its own session is hidden.
+- A device missing from `/Sessions` for 90 s leaves its room; a room
+  closing stops its bridges. `add` reserves the device under one lock, so
+  concurrent adds can't bridge it twice; `remove` detaches in its own
+  task, so a dropped HTTP request can't leave an orphan.
+
+### Jellyfin API used (checked against Jellyfin 12, `release-12.z`)
+
+| Call | Jellyfin side | Notes |
+|------|---------------|-------|
+| `GET /Sessions` | `SessionController.GetSessions` | With an API key, every session is returned (`isApiKey`). Fields read: `Id`, `UserId` (GUID, "N" format), `UserName`, `Client`, `DeviceName`, `DeviceId`, `SupportsRemoteControl`, `NowPlayingItem.{Id,Name,SeriesName}`, `PlayState.{PositionTicks,IsPaused}`, `LastPlaybackCheckIn`, `LastActivityDate` (UTC, ends in `Z`). |
+| `POST /Sessions/{id}/Playing/{Pause,Unpause,Seek}?seekPositionTicks=` | `SendPlaystateCommand` | 204 on success. |
+| `POST /Sessions/{id}/Playing?playCommand=PlayNow&itemIds=&startPositionTicks=` | `Play` | Single episode + "next episode autoplay" makes Jellyfin queue the rest of the series. |
+
+Auth header: `Authorization: MediaBrowser Client="...", Device="...",
+DeviceId="jellywatchparty-session-server", Version="...", Token="<API key>"`.
+Jellyfin needs Client/Version/DeviceId to build the calling session; for an
+API key it replaces Client with the key's name and treats the caller as
+privileged in `SessionManager.AssertCanControl`, so other users' sessions
+can be controlled. The server's own session is recognised by its DeviceId
+and hidden.
+
 ## Module: `messaging.rs`
 
 ### Description
@@ -429,7 +532,8 @@ pub fn validate_token(token: &str, secret: &str) -> Result<Claims, Error> {
 ### Design Considerations
 
 1. **RwLock**: Read-heavy workload; multiple readers, exclusive writer
-2. **No deadlock**: Only one lock acquired at a time per handler
+2. **No deadlock**: Handlers that need both maps always take `rooms`
+   before `clients` (including leave/disconnect and every admin action)
 3. **Message cloning**: one `OutboundMessage` is serialized once and cloned per
    recipient for efficient broadcasting
 4. **Bounded channels**: Backpressure via bounded `mpsc::Sender` per client
@@ -439,7 +543,7 @@ pub fn validate_token(token: &str, secret: &str) -> Result<Claims, Error> {
 ### Persistent Client ID
 
 Reconnection is matched by identity, not by luck: the client generates a
-UUID once and stores it in `localStorage`
+UUID once per browser tab and stores it in `sessionStorage`
 (`getPersistentClientId()`/`withClientId()` in
 `src/clients/jellyfin-web/ws/connection.js`), then sends it as
 `?client_id=<uuid>` on every WebSocket connection attempt (see
@@ -449,6 +553,23 @@ transport and keeps the existing room/host state (`ws/connection.rs`)
 instead of registering a new client. A client-supplied ID is only trusted
 if it looks like a real UUIDv4 — anything else falls back to a freshly
 minted server-side ID.
+
+Client ids are visible to everyone in a room, so reattaching also needs
+the entry's **resume secret**: a random 64-hex-char value created with the
+entry and sent only to its owner in `client_hello`. The client stores it
+next to its id and sends it as `&resume=`. Without the right secret
+(`decide_attach` in `ws/connection.rs`, constant-time compare), a
+connection asking for an id that is in use gets a fresh id instead of
+taking over the entry's room membership and host role. The secret is
+replaced on every reattach.
+
+Each websocket connection also gets a `conn_id`. When a connection ends,
+it marks the entry disconnected and schedules the grace-period check only
+if it is still the entry's current connection; after the grace period the
+entry is removed only if that same connection is still attached and
+either ended or stayed silent for 60 s (`reconnect::should_evict`). This
+keeps a half-dead old socket, noticed long after the client reconnected,
+from evicting the live session.
 
 ### Reconnection Behavior
 

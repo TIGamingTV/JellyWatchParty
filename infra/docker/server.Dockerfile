@@ -52,7 +52,8 @@ RUN chown appuser:appuser /usr/local/bin/session-server
 # Switch to non-root user
 USER appuser
 
-EXPOSE 3000
+# 3000: websocket server; 3001: admin panel (only with ADMIN_PASSWORD set)
+EXPOSE 3000 3001
 
 # Graceful shutdown
 STOPSIGNAL SIGTERM

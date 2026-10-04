@@ -57,6 +57,8 @@ session server, web client) work together to make this happen.
 - **Room list** - See all active rooms on the server
 - **Participant list with status** - See who is in the room, who hosts, and whether each person is in sync, catching up, buffering, loading or not watching
 - **Automatic host transfer** - If the host leaves with others still in the room, the earliest-joined remaining participant is promoted to host instead of the room closing
+- **Admin panel** - A separate web UI on the session server where admins see every room, its members and their sync status, create password-protected groups, add or move people between rooms, change the host, and remove people or close rooms (see [Admin Panel]({{ '/admin-panel/' | relative_url }}))
+- **Jellyfin devices in rooms (admin)** - From the admin panel, put TV apps and other Jellyfin clients that can't show the Watch Party panel into any room as host or receiver; the session server drives them over the Jellyfin API and starts playback on receivers itself (see [Admin Panel: Jellyfin devices]({{ '/admin-panel/' | relative_url }}#jellyfin-devices))
 
 ### Playback Synchronization
 - **Start countdown** - The room's first play waits (up to 10 s) until everyone's video is loaded, then everyone, host included, sees 3, 2, 1 and starts at the same moment
@@ -100,9 +102,11 @@ See [Security]({{ '/security/' | relative_url }}) for the full security model.
 
 ### Native Client Bridge
 
-Any logged-in user with browser access to the server can bridge a currently
-playing native/TV session (e.g. the official Android TV app or Fladder, which
-can't run the injected UI) into a room — in either role — see
+Admins put native/TV sessions (e.g. the official Android TV app or Fladder,
+which can't run the injected UI) into rooms from the session server's
+[admin panel]({{ '/admin-panel/' | relative_url }}#jellyfin-devices). On small servers with trusted
+users, an admin can also let users bridge **their own** currently playing
+sessions from the Watch Party panel — in either role — see
 [Host Bridge]({{ '/technical/host-bridge/' | relative_url }}):
 
 - **Host**: bring the native session in as the room's host. Guests still join
@@ -111,12 +115,13 @@ can't run the injected UI) into a room — in either role — see
   playing the same item so it follows the room's play/pause/seek. (Rooms
   without a password only.)
 
-Both roles are **opt-in** and disabled by default. An administrator enables
-them independently from the plugin configuration page (**Client Bridging**
-section): *Allow third-party clients to host* for the Host role and *Allow
-supported clients as receivers* for the Receiver role. While a role is
-disabled its picker is hidden in the Watch Party panel and the server rejects
-the corresponding bridge request.
+Both roles are **opt-in** and disabled by default. An administrator turns on
+*Let users bridge their devices from the Watch Party panel* in the plugin
+configuration page (**Watch Party Panel Bridging** section), then enables the
+roles independently: *Allow third-party clients to host* for the Host role
+and *Allow supported clients as receivers* for the Receiver role. While a
+role is disabled its picker is hidden in the Watch Party panel and the server
+rejects the corresponding bridge request.
 
 ## Compatibility
 

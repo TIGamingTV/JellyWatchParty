@@ -6,3 +6,4 @@ mod pending_play;
 mod validation;
 
 pub use connection::client_connection;
+pub use dispatch::dispatch_internal;

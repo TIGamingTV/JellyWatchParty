@@ -237,9 +237,14 @@ jobs:
                  `$env:PORT = "3000"
                  `$env:ALLOWED_ORIGINS = "http://your-jellyfin:8096"
                  `$env:JWT_SECRET = "<32+ char secret, must match the Jellyfin plugin config>"
+                 `$env:ADMIN_PASSWORD = "<long random password for the admin panel>"
           2. Run session-server.exe (double-click, or from a terminal).
           3. Allow it through Windows Firewall when prompted so Jellyfin/clients
              can reach it on the configured port (default 3000).
+          4. With ADMIN_PASSWORD set, the admin panel is at http://localhost:3001/
+             (ADMIN_PORT to change it, ADMIN_ENABLED=false to turn it off).
+             Add JELLYFIN_URL and JELLYFIN_API_KEY to put TV apps and other
+             Jellyfin clients into rooms from there.
 
           To run it in the background as a Windows service, use a wrapper such
           as NSSM (https://nssm.cc/) pointed at session-server.exe.

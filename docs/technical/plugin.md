@@ -297,15 +297,20 @@ Admin configuration page rendered in Jellyfin dashboard.
 
 ### Features
 
-- **JWT Secret** - Password input field (never exposed in GET response)
+- **JWT Secret** - Password input field, with a show/hide toggle
 - **JWT Audience** - Configurable audience claim
 - **JWT Issuer** - Configurable issuer claim
 - **Session Server URL** - Live warning indicator (updates on input/blur) that flags suspicious values without blocking save
+- **Watch Party Panel Bridging (trusted servers only)** - Master switch `EnablePanelBridging` plus the two per-role options, which are disabled while the switch is off
 - **Save button** - Persists configuration
 
 ### Security Considerations
 
-- JWT secret is never sent back to the client
+- The page loads the whole plugin configuration through Jellyfin's plugin
+  configuration API, JWT secret included, so admins can see and edit it.
+  That API is admin-only; the secret is never sent to non-admin users or
+  to the injected web client (`/Token` returns a signed token, not the
+  secret).
 - Password field prevents shoulder surfing
 - Only admins can access the plugin configuration page
 
@@ -364,15 +369,18 @@ The built DLL and dependencies are placed in `bin/Debug/net10.0/`.
 | `GET` | `/JellyWatchParty/ClientScript` | None | Client JS loader (`plugin.js`), ETag-cached |
 | `GET` | `/JellyWatchParty/Client/{*path}` | None | Individual client module by path, e.g. `Client/playback/sync.js` |
 | `GET` | `/JellyWatchParty/Token` | Jellyfin auth | Issues a JWT (or no-auth response) for the current user |
-| `GET` | `/JellyWatchParty/Bridge/Sessions` | Jellyfin auth (any user) | Sessions eligible to bridge in as a room host — see [Host Bridge]({{ '/technical/host-bridge/' | relative_url }}) |
-| `GET` | `/JellyWatchParty/Bridge/Status` | Jellyfin auth (any user) | Active bridges |
-| `POST` | `/JellyWatchParty/Bridge/{sessionId}/Start` | Jellyfin auth (any user) | Start bridging a session in as host |
-| `POST` | `/JellyWatchParty/Bridge/{sessionId}/Follow?roomId=…` | Jellyfin auth (any user) | Attach a session to a room as a receiver (follower) |
-| `POST` | `/JellyWatchParty/Bridge/{sessionId}/Stop` | Jellyfin auth (any user) | Stop an active bridge |
+| `GET` | `/JellyWatchParty/Bridge/Sessions` | Jellyfin auth | The caller's own sessions that can be bridged (admins: all); empty unless panel bridging is on — see [Host Bridge]({{ '/technical/host-bridge/' | relative_url }}) |
+| `GET` | `/JellyWatchParty/Bridge/Status` | Jellyfin auth | The caller's active bridges (admins: all) |
+| `POST` | `/JellyWatchParty/Bridge/{sessionId}/Start` | Jellyfin auth, session owner or admin | Start bridging a session in as host |
+| `POST` | `/JellyWatchParty/Bridge/{sessionId}/Follow?roomId=…` | Jellyfin auth, session owner or admin | Attach a session to a room as a receiver (follower) |
+| `POST` | `/JellyWatchParty/Bridge/{sessionId}/Stop` | Jellyfin auth, bridge owner or admin | Stop an active bridge |
 
-The Bridge endpoints are gated with plain `[Authorize]` — **not** admin-only
-— since session info (username, device, now-playing title) is deliberately
-not treated as private within a server.
+Start and Follow answer `400` while `EnablePanelBridging` (or the role's
+own option) is off, and `403` for someone else's session. Ownership
+compares the session's `UserId` with the caller's `Jellyfin-UserId`
+claim; callers with the `Administrator` role may bridge any session.
+Stop works with panel bridging off, so leftover bridges can always be
+stopped.
 
 ### GET /JellyWatchParty/Token
 

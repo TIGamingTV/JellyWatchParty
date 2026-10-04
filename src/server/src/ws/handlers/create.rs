@@ -1,10 +1,12 @@
 use super::super::dispatch::{is_authenticated, send_error};
-use super::super::validation::{is_valid_media_id, is_valid_position, sanitize_name};
+use super::super::validation::{
+    bridge_device_id, is_valid_media_id, is_valid_position, sanitize_name,
+};
 use crate::messaging::{
     broadcast_participants, broadcast_room_list, build_room_state_payload, send_to_client,
 };
 use crate::password::hash_password;
-use crate::room::close_room;
+use crate::room::{close_room, handle_leave};
 use crate::types::{Clients, IncomingMessage, PlaybackState, Room, Rooms, WsMessage};
 use crate::utils::now_ms;
 use log::info;
@@ -88,6 +90,8 @@ fn build_room(client_id: &str, host_name: &str, payload: Option<&serde_json::Val
         client_status: HashMap::new(),
         failed_joins: HashMap::new(),
         started,
+        admin_created: false,
+        created_at: now_ms(),
     }
 }
 
@@ -95,6 +99,7 @@ fn insert_and_notify(
     client_id: &str,
     room: Room,
     payload_name: &Option<String>,
+    bridge_device: Option<String>,
     locked_clients: &mut std::collections::HashMap<String, crate::types::Client>,
     locked_rooms: &mut std::collections::HashMap<String, Room>,
 ) {
@@ -104,6 +109,9 @@ fn insert_and_notify(
         client.room_id = Some(room_id.clone());
         if let Some(ref name) = payload_name {
             client.user_name = name.clone();
+        }
+        if let Some(device) = bridge_device {
+            client.bridge_device = Some(device);
         }
     }
     send_to_client(
@@ -132,6 +140,27 @@ pub(in crate::ws) async fn handle_create_room(
         return;
     }
 
+    let taken = {
+        let locked_clients = clients.read().await;
+        super::join::device_taken_error(client_id, parsed.payload.as_ref(), &locked_clients)
+    };
+    if let Some(err) = taken {
+        let locked_clients = clients.read().await;
+        send_to_client(
+            client_id,
+            &locked_clients,
+            &WsMessage {
+                msg_type: "error".to_string(),
+                room: None,
+                client: Some(client_id.to_string()),
+                payload: Some(err),
+                ts: now_ms(),
+                server_ts: Some(now_ms()),
+            },
+        );
+        return;
+    }
+
     let existing_room_id = {
         let locked_rooms = rooms.read().await;
         locked_rooms
@@ -140,7 +169,7 @@ pub(in crate::ws) async fn handle_create_room(
             .map(|r| r.room_id.clone())
     };
     if let Some(room_id) = existing_room_id {
-        close_room(&room_id, clients, rooms).await;
+        close_room(&room_id, "Host started a new room", clients, rooms).await;
     }
 
     let payload_ref = parsed.payload.as_ref();
@@ -153,10 +182,19 @@ pub(in crate::ws) async fn handle_create_room(
     {
         let mut locked_rooms = rooms.write().await;
         let mut locked_clients = clients.write().await;
+        // Still a guest somewhere else: leave that room properly first rather
+        // than lingering in its member list.
+        if locked_clients
+            .get(client_id)
+            .is_some_and(|c| c.room_id.is_some())
+        {
+            handle_leave(client_id, &mut locked_clients, &mut locked_rooms);
+        }
         insert_and_notify(
             client_id,
             room,
             &payload_name,
+            bridge_device_id(payload_ref),
             &mut locked_clients,
             &mut locked_rooms,
         );

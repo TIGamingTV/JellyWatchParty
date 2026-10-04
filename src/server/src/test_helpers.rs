@@ -27,6 +27,12 @@ pub fn create_client_with_rx(
         message_count: 0,
         last_reset: now,
         last_seen: now,
+        resume_secret: crate::utils::random_token(),
+        connected_at: now,
+        conn_id: 0,
+        connected: true,
+        kind: crate::types::ClientKind::Web,
+        bridge_device: None,
     };
     (client, rx)
 }
@@ -51,6 +57,8 @@ pub fn create_room(room_id: &str, host_id: &str) -> Room {
         client_status: HashMap::new(),
         failed_joins: HashMap::new(),
         started: true,
+        admin_created: false,
+        created_at: 0,
     }
 }
 

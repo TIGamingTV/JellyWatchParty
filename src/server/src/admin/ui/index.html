@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="color-scheme" content="dark">
+  <title>JellyWatchParty Admin</title>
+  <link rel="stylesheet" href="app.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <h1>JellyWatchParty <span class="brand-sub">Admin</span></h1>
+    </div>
+    <div id="server-info" class="chips" aria-label="Server status"></div>
+    <button id="logout" class="btn btn-ghost hidden" type="button">Log out</button>
+  </header>
+
+  <main>
+    <section id="login-view" class="card login hidden">
+      <span class="brand-mark brand-mark-lg" aria-hidden="true"></span>
+      <h2>Sign in</h2>
+      <p class="muted small">Use the admin account from the session server's environment (ADMIN_USERNAME / ADMIN_PASSWORD).</p>
+      <form id="login-form" autocomplete="on">
+        <label>Username <input id="login-user" name="username" autocomplete="username" required></label>
+        <label>Password <input id="login-pass" name="password" type="password" autocomplete="current-password" required></label>
+        <button class="btn" type="submit">Sign in</button>
+        <p id="login-error" class="error" role="alert"></p>
+      </form>
+    </section>
+
+    <section id="app-view" class="hidden">
+      <details id="help" class="card help">
+        <summary>
+          <span class="help-icon" aria-hidden="true">?</span>
+          <span>Help: what the buttons do, and which devices can be host or receiver</span>
+        </summary>
+        <div class="help-body">
+          <section>
+            <h3>Buttons</h3>
+            <dl class="guide">
+              <dt>Create</dt>
+              <dd>Makes a new group. People join it from the room list in their Watch Party panel, with the password if you set one. <b>Generate</b> fills in a random password. A group nobody joins disappears after a few minutes.</dd>
+              <dt>Add</dt>
+              <dd>Puts a person or device into the room, without the password. Someone in another room is moved. <b>As host</b> makes them the one everybody follows; <b>as receiver</b> makes them follow the host. The first one in an empty group always becomes host.</dd>
+              <dt>Make host</dt>
+              <dd>Hands control to that member. The old host becomes a receiver.</dd>
+              <dt>Remove</dt>
+              <dd>Takes the member out of the room. People land back in their lobby; devices stop being controlled.</dd>
+              <dt>Rename, passwords</dt>
+              <dd>Edit the room. A new or removed password only matters for people joining from now on.</dd>
+              <dt>Close</dt>
+              <dd>Ends the room for everyone in it.</dd>
+            </dl>
+            <h3>Sync column</h3>
+            <dl class="guide guide-compact">
+              <dt><span class="pill pill-good">In sync</span></dt><dd>Within a couple of seconds of the host.</dd>
+              <dt><span class="pill pill-warn">Catching up</span></dt><dd>Being moved to the host's position, or loading / buffering.</dd>
+              <dt><span class="pill pill-muted">Not watching</span></dt><dd>In the room but not playing anything.</dd>
+              <dt><span class="pill pill-bad">Offline</span></dt><dd>Lost connection. Kept in the room for 90 seconds in case it comes back.</dd>
+            </dl>
+          </section>
+          <section>
+            <h3>Who can be host or receiver</h3>
+            <div class="table-wrap">
+              <table class="compat">
+                <thead>
+                  <tr><th>Client</th><th>Host</th><th>Receiver</th><th>How</th></tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Jellyfin in a browser, Jellyfin Desktop / Media Player</td>
+                    <td><span class="pill pill-good">Yes</span></td>
+                    <td><span class="pill pill-good">Yes</span></td>
+                    <td>Shows the Watch Party panel. Joins rooms itself; listed under <i>Not in a room</i>.</td>
+                  </tr>
+                  <tr>
+                    <td>Jellyfin Android / iOS app</td>
+                    <td><span class="pill pill-good">Yes</span></td>
+                    <td><span class="pill pill-good">Yes</span></td>
+                    <td>Built on the web client, so it shows the panel too. If its native player is turned on, add it as a Jellyfin device instead.</td>
+                  </tr>
+                  <tr>
+                    <td>Official Jellyfin Android TV app</td>
+                    <td><span class="pill pill-good">Yes</span></td>
+                    <td><span class="pill pill-good">Yes</span></td>
+                    <td>No panel. Add it under <i>Jellyfin devices</i>; as receiver it is started and kept in sync by remote control.</td>
+                  </tr>
+                  <tr>
+                    <td>Fladder</td>
+                    <td><span class="pill pill-good">Yes</span></td>
+                    <td><span class="pill pill-bad">No</span></td>
+                    <td>Doesn't accept remote control, so it can only lead.</td>
+                  </tr>
+                  <tr>
+                    <td>Other apps (Swiftfin, Infuse, Kodi, ...)</td>
+                    <td><span class="pill pill-good">Yes</span></td>
+                    <td><span class="pill pill-muted">Depends</span></td>
+                    <td>Receiver only if the app accepts remote control. The <i>Can be</i> column in Jellyfin devices tells you for each device.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="muted small">A device only shows up under Jellyfin devices while its app is open and signed in. Receivers stay within about 2 seconds of the host; browsers are closer.</p>
+          </section>
+        </div>
+      </details>
+
+      <section class="card">
+        <h2>Create a group</h2>
+        <form id="create-form" class="row" autocomplete="off">
+          <label class="grow">Name <input id="create-name" maxlength="100" required placeholder="Friday movie night"></label>
+          <label class="grow">Password <span class="input-with-button"><input id="create-pass" maxlength="200" placeholder="Empty: anyone may join"><button id="create-gen" class="btn btn-ghost" type="button">Generate</button></span></label>
+          <button class="btn" type="submit">Create</button>
+        </form>
+      </section>
+
+      <section class="section">
+        <div class="section-head">
+          <h2>Rooms <span id="room-count" class="count"></span></h2>
+        </div>
+        <div id="rooms" class="rooms"></div>
+      </section>
+
+      <section class="card">
+        <div class="section-head">
+          <h2>Not in a room <span id="unassigned-count" class="count"></span></h2>
+          <span class="muted small">People with the Watch Party panel open</span>
+        </div>
+        <div id="unassigned"></div>
+      </section>
+
+      <section id="devices-section" class="card hidden">
+        <div class="section-head">
+          <h2>Jellyfin devices <span id="devices-count" class="count"></span></h2>
+          <span class="muted small">Apps without the Watch Party panel (TVs, Fladder, ...)</span>
+        </div>
+        <div id="devices"></div>
+      </section>
+    </section>
+  </main>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+
+  <dialog id="dialog" class="dialog">
+    <form method="dialog" id="dialog-form">
+      <h3 id="dialog-title"></h3>
+      <p id="dialog-message" class="muted"></p>
+      <label id="dialog-field" class="hidden"><span id="dialog-label"></span>
+        <span class="input-with-button"><input id="dialog-input" maxlength="200" autocomplete="off"><button id="dialog-gen" class="btn btn-ghost hidden" type="button">Generate</button></span>
+      </label>
+      <div class="dialog-buttons">
+        <button value="cancel" class="btn btn-ghost" type="submit" formnovalidate>Cancel</button>
+        <button value="ok" id="dialog-ok" class="btn" type="submit">OK</button>
+      </div>
+    </form>
+  </dialog>
+</body>
+</html>

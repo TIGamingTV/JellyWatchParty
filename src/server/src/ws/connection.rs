@@ -2,13 +2,21 @@ use super::constants::CLIENT_CHANNEL_BUFFER;
 use super::dispatch::client_msg;
 use crate::auth::JwtConfig;
 use crate::messaging::{send_room_list, send_to_client};
+use crate::password::ct_eq;
 use crate::types::{ClientReceiver, ClientSender, Clients, OutboundMessage, Rooms, WsMessage};
-use crate::utils::now_ms;
+use crate::utils::{now_ms, random_token};
 use axum::extract::ws::{Message, WebSocket};
 use futures::StreamExt;
-use log::info;
+use log::{info, warn};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::mpsc;
+
+static NEXT_CONN_ID: AtomicU64 = AtomicU64::new(1);
+
+fn next_conn_id() -> u64 {
+    NEXT_CONN_ID.fetch_add(1, Ordering::Relaxed)
+}
 use tokio_stream::wrappers::ReceiverStream;
 
 fn register_client(
@@ -32,13 +40,28 @@ fn register_client(
         message_count: 0,
         last_reset: now,
         last_seen: now,
+        resume_secret: random_token(),
+        connected_at: now,
+        conn_id: next_conn_id(),
+        connected: true,
+        kind: crate::types::ClientKind::Web,
+        bridge_device: None,
     }
 }
 
+/// Greets a client with its id and resume secret. Only this client ever
+/// sees the secret; other members only learn its id (via `participants`).
+/// `room_id` is the room the server has this client in (`null` for none),
+/// so a client that reattaches after being moved or removed while it was
+/// offline can drop a room it is no longer in.
 fn send_client_hello(
     client_id: &str,
     locked_clients: &std::collections::HashMap<String, crate::types::Client>,
 ) {
+    let (resume_secret, room_id) = locked_clients
+        .get(client_id)
+        .map(|c| (c.resume_secret.clone(), c.room_id.clone()))
+        .unwrap_or_default();
     send_to_client(
         client_id,
         locked_clients,
@@ -46,11 +69,40 @@ fn send_client_hello(
             msg_type: "client_hello".to_string(),
             room: None,
             client: Some(client_id.to_string()),
-            payload: Some(serde_json::json!({ "client_id": client_id })),
+            payload: Some(serde_json::json!({
+                "client_id": client_id,
+                "resume_secret": resume_secret,
+                "room_id": room_id,
+            })),
             ts: now_ms(),
             server_ts: Some(now_ms()),
         },
     );
+}
+
+/// How a new connection relates to an existing client entry.
+#[derive(Debug, PartialEq, Eq)]
+enum Attach {
+    /// Same id and the right secret: take over the entry.
+    Reattach,
+    /// No entry under this id: register a fresh one with it.
+    Register,
+    /// The id is in use and the secret doesn't match: refuse the takeover
+    /// and hand out a different id instead.
+    Refuse,
+}
+
+fn decide_attach(existing: Option<&crate::types::Client>, resume: Option<&str>) -> Attach {
+    match existing {
+        None => Attach::Register,
+        // A bridged Jellyfin device is driven in-process; no socket may
+        // ever take its place.
+        Some(c) if c.kind == crate::types::ClientKind::Bridge => Attach::Refuse,
+        Some(c) => match resume {
+            Some(r) if ct_eq(r.as_bytes(), c.resume_secret.as_bytes()) => Attach::Reattach,
+            _ => Attach::Refuse,
+        },
+    }
 }
 
 /// A client-supplied ID is only trusted if it actually looks like a UUIDv4
@@ -68,6 +120,7 @@ pub async fn client_connection(
     rooms: Rooms,
     jwt_config: Arc<JwtConfig>,
     requested_client_id: Option<String>,
+    resume_secret: Option<String>,
 ) {
     let (client_ws_sender, mut client_ws_rcv) = ws.split();
     let (client_sender, client_rcv): (ClientSender, ClientReceiver) =
@@ -85,29 +138,55 @@ pub async fn client_connection(
         let _ = outbound.forward(client_ws_sender).await;
     });
 
-    let client_id = requested_client_id
+    let mut client_id = requested_client_id
         .filter(|id| is_plausible_client_id(id))
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
     // If this ID already has an entry (a prior connection that's within its
     // reconnect grace period, or a stale one the zombie reaper hasn't gotten
-    // to yet), reattach to it: swap in the new transport and keep whatever
-    // room membership it already had. Otherwise register a brand-new client.
+    // to yet) and the caller proves it owns it with the resume secret,
+    // reattach: swap in the new transport and keep whatever room membership
+    // and role it had. A known id without the right secret is someone else's
+    // session (ids are visible to everyone in a room), so that connection
+    // gets a fresh id instead of taking the entry over.
+    let my_conn_id;
     let rejoined_room_id = {
         let mut locked_clients = clients.write().await;
-        if let Some(existing) = locked_clients.get_mut(&client_id) {
-            info!("Client {} reconnected (reattaching)", client_id);
-            existing.sender = client_sender;
-            existing.last_seen = now_ms();
-            existing.room_id.clone()
-        } else {
-            info!(
-                "Client connected: {} (auth_required: {})",
-                client_id, jwt_config.enabled
-            );
-            let client = register_client(client_sender, &jwt_config);
-            locked_clients.insert(client_id.clone(), client);
-            None
+        match decide_attach(locked_clients.get(&client_id), resume_secret.as_deref()) {
+            Attach::Reattach => {
+                info!("Client {} reconnected (reattaching)", client_id);
+                let existing = locked_clients
+                    .get_mut(&client_id)
+                    .expect("checked by decide_attach");
+                existing.sender = client_sender;
+                existing.last_seen = now_ms();
+                existing.conn_id = next_conn_id();
+                existing.connected = true;
+                // A fresh secret on every reattach: one that leaked (e.g. in
+                // a proxy access log, it travels in the URL) stops working
+                // as soon as the owner reconnects.
+                existing.resume_secret = random_token();
+                my_conn_id = existing.conn_id;
+                existing.room_id.clone()
+            }
+            attach => {
+                if attach == Attach::Refuse {
+                    warn!(
+                        "Client id {} is in use and no valid resume secret was given; \
+                         issuing a new id",
+                        client_id
+                    );
+                    client_id = uuid::Uuid::new_v4().to_string();
+                }
+                info!(
+                    "Client {} connected (auth_required: {})",
+                    client_id, jwt_config.enabled
+                );
+                let client = register_client(client_sender, &jwt_config);
+                my_conn_id = client.conn_id;
+                locked_clients.insert(client_id.clone(), client);
+                None
+            }
         }
     };
 
@@ -128,7 +207,15 @@ pub async fn client_connection(
         }
     }
 
-    crate::room::schedule_disconnect(client_id, clients, rooms).await;
+    {
+        let mut locked_clients = clients.write().await;
+        match locked_clients.get_mut(&client_id) {
+            Some(c) if c.conn_id == my_conn_id => c.connected = false,
+            // Another connection took this entry over; it isn't ours to end.
+            _ => return,
+        }
+    }
+    crate::room::schedule_disconnect(client_id, my_conn_id, clients, rooms).await;
 }
 
 #[cfg(test)]
@@ -170,6 +257,49 @@ mod tests {
         assert!(is_plausible_client_id(
             "550e8400-e29b-41d4-a716-446655440000"
         ));
+    }
+
+    #[test]
+    fn decide_attach_requires_the_resume_secret() {
+        let (tx, _rx) = mpsc::channel(10);
+        let jwt_config = Arc::new(JwtConfig {
+            secret: String::new(),
+            audience: "test".to_string(),
+            issuer: "test".to_string(),
+            enabled: false,
+        });
+        let existing = register_client(tx, &jwt_config);
+        let secret = existing.resume_secret.clone();
+
+        assert_eq!(decide_attach(None, None), Attach::Register);
+        assert_eq!(decide_attach(None, Some("whatever")), Attach::Register);
+        assert_eq!(
+            decide_attach(Some(&existing), Some(&secret)),
+            Attach::Reattach
+        );
+        // Knowing someone's client id (it's in every participants list) is
+        // not enough to take over their session.
+        assert_eq!(decide_attach(Some(&existing), None), Attach::Refuse);
+        assert_eq!(decide_attach(Some(&existing), Some("")), Attach::Refuse);
+        assert_eq!(
+            decide_attach(Some(&existing), Some(&"0".repeat(64))),
+            Attach::Refuse
+        );
+    }
+
+    #[test]
+    fn register_client_issues_a_resume_secret() {
+        let (tx, _rx) = mpsc::channel(10);
+        let jwt_config = Arc::new(JwtConfig {
+            secret: String::new(),
+            audience: "test".to_string(),
+            issuer: "test".to_string(),
+            enabled: false,
+        });
+        let a = register_client(tx.clone(), &jwt_config);
+        let b = register_client(tx, &jwt_config);
+        assert_eq!(a.resume_secret.len(), 64);
+        assert_ne!(a.resume_secret, b.resume_secret);
     }
 
     #[test]

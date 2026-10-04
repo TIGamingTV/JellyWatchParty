@@ -9,38 +9,47 @@ use std::time::Duration;
 /// room is actually torn down / the client is actually removed.
 const RECONNECT_GRACE_SECS: u64 = 90;
 
-/// Called whenever a client's WebSocket connection ends — whether it
-/// closed normally, errored, or was reaped as a zombie. Instead of
-/// immediately destroying the client's room (the old behavior), this
-/// waits `RECONNECT_GRACE_SECS` and only then checks whether the client
-/// actually came back.
+/// A client that hasn't sent anything for this long counts as gone even if
+/// its socket still looks open (matches the zombie reaper's timeout).
+pub const STALE_AFTER_MS: u64 = 60_000;
+
+/// Whether connection `conn_id` of `client` should be removed now that its
+/// grace period is over: it must still be the attached connection (nobody
+/// reconnected), and either it ended or it has been silent too long.
+pub(crate) fn should_evict(client: &crate::types::Client, conn_id: u64, now: u64) -> bool {
+    client.conn_id == conn_id
+        && (!client.connected || now.saturating_sub(client.last_seen) > STALE_AFTER_MS)
+}
+
+/// Called when connection `conn_id` of a client ends - closed normally,
+/// errored, or reaped as a zombie. Instead of destroying the client's room
+/// slot at once, waits `RECONNECT_GRACE_SECS` and only then checks whether
+/// the client came back.
 ///
-/// Detection works by comparing mpsc channel identity: if the client
-/// reconnects with the same client_id within the window, connection.rs
-/// swaps in a brand-new sender for that entry. If nobody reconnected,
-/// the entry still holds the original (now-dead) sender, which we
-/// captured before scheduling this check.
-pub async fn schedule_disconnect(client_id: String, clients: Clients, rooms: Rooms) {
-    let stale_sender = {
+/// Connections are told apart by `conn_id`: a reconnect (connection.rs)
+/// attaches a new id, so a timer for an older connection finds a different
+/// id and leaves the entry alone - even if that older socket only noticed
+/// it was dead long after the client had moved on.
+pub async fn schedule_disconnect(client_id: String, conn_id: u64, clients: Clients, rooms: Rooms) {
+    {
         let locked = clients.read().await;
         match locked.get(&client_id) {
-            Some(c) => c.sender.clone(),
-            None => return, // Already gone; nothing to schedule.
+            Some(c) if c.conn_id == conn_id => {}
+            _ => return, // Gone, or another connection owns it now.
         }
-    };
+    }
 
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_secs(RECONNECT_GRACE_SECS)).await;
 
-        let never_reconnected = {
+        let evict = {
             let locked = clients.read().await;
-            match locked.get(&client_id) {
-                Some(c) => c.sender.same_channel(&stale_sender),
-                None => false,
-            }
+            locked
+                .get(&client_id)
+                .is_some_and(|c| should_evict(c, conn_id, now_ms()))
         };
 
-        if never_reconnected {
+        if evict {
             info!(
                 "Client {} did not reconnect within {}s, disconnecting",
                 client_id, RECONNECT_GRACE_SECS
@@ -48,7 +57,7 @@ pub async fn schedule_disconnect(client_id: String, clients: Clients, rooms: Roo
             crate::room::handle_disconnect(&client_id, &clients, &rooms).await;
         } else {
             info!(
-                "Client {} reconnected within the grace period, keeping room state",
+                "Client {} reconnected or is active again, keeping room state",
                 client_id
             );
         }
@@ -97,7 +106,28 @@ mod tests {
     async fn schedule_disconnect_noop_when_client_missing() {
         let clients: Clients = Arc::new(RwLock::new(HashMap::new()));
         let rooms: Rooms = Arc::new(RwLock::new(HashMap::new()));
-        schedule_disconnect("ghost".to_string(), clients, rooms).await;
+        schedule_disconnect("ghost".to_string(), 1, clients, rooms).await;
+    }
+
+    #[test]
+    fn only_the_attached_ended_or_silent_connection_is_evicted() {
+        let (mut c, _rx) = test_helpers::create_client_with_rx("u", "U", true);
+        let now = now_ms();
+        c.conn_id = 7;
+        c.connected = true;
+        c.last_seen = now;
+        assert!(!should_evict(&c, 7, now), "alive and attached");
+        c.connected = false;
+        assert!(should_evict(&c, 7, now), "ended, nobody came back");
+        assert!(!should_evict(&c, 6, now), "an older connection's timer");
+        c.conn_id = 8;
+        c.connected = true;
+        assert!(
+            !should_evict(&c, 7, now),
+            "reconnected under a new connection"
+        );
+        c.last_seen = now - STALE_AFTER_MS - 1;
+        assert!(should_evict(&c, 8, now), "socket open but silent (zombie)");
     }
 
     #[tokio::test]
