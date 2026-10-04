@@ -211,14 +211,14 @@ curl http://localhost:3000/health
 | `HOST` | `0.0.0.0` | Bind address |
 | `ALLOWED_ORIGINS` | `*` | CORS allowed origins (comma-separated) |
 | `JWT_SECRET` | (none) | JWT secret for authentication |
-| `LOG_LEVEL` | `info` | Logging level |
+| `RUST_LOG` | `info` | Logging level |
 
 ```bash
 docker run -d \
   -p 3000:3000 \
   -e ALLOWED_ORIGINS="https://jellyfin.example.com" \
   -e JWT_SECRET="your-32-character-secret-key-here" \
-  -e LOG_LEVEL="debug" \
+  -e RUST_LOG="debug" \
   ghcr.io/tigamingtv/jwp-session-server:latest
 ```
 

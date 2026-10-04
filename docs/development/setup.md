@@ -297,10 +297,10 @@ Enable debug logging:
 ```yaml
 # docker-compose.yml
 environment:
-  - LOG_LEVEL=debug
+  - RUST_LOG=debug
 ```
 
-Or use RUST_LOG:
+Or when running the binary directly:
 ```bash
 RUST_LOG=debug cargo run
 ```
@@ -445,7 +445,7 @@ For local development, create `.env` file:
 # .env
 JWT_SECRET=dev-secret-at-least-32-characters-long
 ALLOWED_ORIGINS=http://localhost:8096
-LOG_LEVEL=debug
+RUST_LOG=debug
 ```
 
 ## Next Steps

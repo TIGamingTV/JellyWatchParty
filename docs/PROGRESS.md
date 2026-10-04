@@ -2343,3 +2343,68 @@ hash). `cargo fmt`, `cargo clippy --all-targets -D warnings`, `cargo test`
 
 **Docs updated**: `protocol.md` (`join_room` throttle, `error.reason`
 values, `retry_after_ms`), `features.md` (room password note).
+
+---
+
+## Round 35 — Admin panel on the session server (part 1 of 3: core)
+
+**Trigger**: move the 3rd-party bridging workarounds out of the Watch Party
+panel into an admin-only home, starting with a web UI on the session server
+for watching and managing rooms.
+
+**Prerequisites fixed first**:
+
+- **Lock order (high)**: `handle_leave_room` (`ws/handlers/misc.rs`) and
+  `handle_disconnect` (`room/leave.rs`) took `clients` then `rooms`, while
+  every other handler takes `rooms` then `clients` — a possible deadlock.
+  Both now take `rooms` first.
+- **Session takeover via a known `client_id` (high)**: a new connection
+  with an existing id took over that entry (auth, room, host role) with no
+  proof of ownership, and ids are in every `participants` list. Each entry
+  now gets a random `resume_secret` (`utils::random_token`), sent only to its
+  owner in `client_hello`; reattaching needs it as `?resume=`
+  (`decide_attach`, constant time). Without it the connection gets a fresh
+  id. The web client stores the secret next to its id and adopts a new id
+  when the server issues one. Old clients still connect but lose their room
+  on reconnect while the old entry is held.
+- **Stale membership (medium)**: `join_room`/`create_room` never removed a
+  guest from the room it was already in; it stayed listed there. Both now
+  leave the old room properly first.
+
+**What was built**:
+
+- `room/ops.rs`: `add_member` (move/join, host if hostless, `admin_moved`
+  flag), `kick_member`, `set_host`, `close_room` (with reason),
+  `create_group`, `update_room`. `join_room` now goes through `add_member`.
+- Hostless rooms: an admin group starts with `host_id == ""`; host-only
+  messages are ignored and the first member becomes host. Groups nobody
+  joins are removed after `ADMIN_EMPTY_GROUP_TTL_SECS`
+  (`tasks::spawn_empty_group_reaper`); once joined they behave like normal
+  rooms.
+- `admin/`: second axum listener on `ADMIN_PORT` (3001), started unless
+  `ADMIN_ENABLED=false`, and only when `ADMIN_PASSWORD`/`_FILE` is set.
+  One shared login (constant-time digest compare), in-memory sessions in an
+  `HttpOnly; SameSite=Strict` cookie, failed-login throttle (5/IP, 30 global
+  per minute), `x-jwp-admin` header + `Origin` check on every change, CSP /
+  `X-Frame-Options: DENY` / `no-store`, `admin:` audit log lines.
+- API: `GET /api/overview`, `POST /api/rooms`, `PATCH|DELETE
+  /api/rooms/{id}`, `POST /api/rooms/{id}/members`, `DELETE
+  /api/rooms/{id}/members/{member}`, `PUT /api/rooms/{id}/host`, plus
+  login/logout/me. Unauthenticated connections can't be added.
+- UI: `admin/ui/{index.html,app.js,app.css}`, embedded with `include_str!`,
+  no build step, DOM built with `textContent` only, relative URLs.
+- Web client: `admin_moved` in `room_state` resets the old room locally and
+  toasts; removal reuses `room_closed` with a reason.
+- Shutdown is now a `watch` channel so both listeners stop on SIGTERM.
+
+**Tests**: Rust 175 (ops, admin config/auth/API/CSRF/throttle, resume
+secret incl. a real-socket takeover test, empty-group reaper). JS 180 (new
+`admin-move.test.js`). `cargo fmt`, `cargo clippy --all-targets -D
+warnings` clean.
+
+**Docs updated**: new `admin-panel.md`; `protocol.md` (`resume`,
+`client_hello.resume_secret`, `admin_moved`, `room_closed.reason/removed`,
+`host_changed`), `server.md` (modules, `ops.rs`, resume secret, lock order),
+`configuration.md` (`RUST_LOG` instead of the never-read `LOG_LEVEL`,
+`JWT_AUDIENCE`/`JWT_ISSUER`), `security.md`, `deployment.md`,
+`features.md`, `.env.example`, both compose files, Dockerfile `EXPOSE`.

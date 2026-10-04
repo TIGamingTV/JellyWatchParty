@@ -49,8 +49,19 @@ fn detach_client_from_room(
 /// is insertion-ordered, so the new host is simply the first entry left
 /// after the departing host was removed.
 fn promote_new_host(room_id: &str, room: &mut Room, clients: &HashMap<String, Client>) {
-    let new_host_id = room.clients[0].clone();
-    room.host_id = new_host_id.clone();
+    room.host_id = room.clients[0].clone();
+    announce_host(room_id, room, clients, None);
+    broadcast_participants(room, clients);
+}
+
+/// Tells the room (minus `exclude`) who the host is now.
+pub(super) fn announce_host(
+    room_id: &str,
+    room: &Room,
+    clients: &HashMap<String, Client>,
+    exclude: Option<&str>,
+) {
+    let new_host_id = room.host_id.clone();
     let new_host_name = clients
         .get(&new_host_id)
         .map(|c| c.user_name.clone())
@@ -68,8 +79,7 @@ fn promote_new_host(room_id: &str, room: &mut Room, clients: &HashMap<String, Cl
         ts: now_ms(),
         server_ts: Some(now_ms()),
     };
-    broadcast_to_room(room, clients, &msg, None);
-    broadcast_participants(room, clients);
+    broadcast_to_room(room, clients, &msg, exclude);
 }
 
 fn close_and_notify(
@@ -110,8 +120,9 @@ pub fn handle_leave(
 pub async fn handle_disconnect(client_id: &str, clients: &Clients, rooms: &Rooms) {
     info!("Disconnecting client {}", client_id);
     {
-        let mut locked_clients = clients.write().await;
+        // rooms -> clients, the same order as every other handler.
         let mut locked_rooms = rooms.write().await;
+        let mut locked_clients = clients.write().await;
         handle_leave(client_id, &mut locked_clients, &mut locked_rooms);
         locked_clients.remove(client_id);
     }

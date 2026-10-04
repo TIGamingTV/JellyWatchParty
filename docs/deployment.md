@@ -50,7 +50,7 @@ services:
     environment:
       - ALLOWED_ORIGINS=https://jellyfin.example.com
       - JWT_SECRET=${JWT_SECRET}
-      - LOG_LEVEL=warn
+      - RUST_LOG=warn
     restart: unless-stopped
     networks:
       - internal
@@ -157,6 +157,7 @@ Set plugin **Session Server URL** to `wss://jwp.example.com/ws`. If `cloudflared
 
 - **Use internal networks** — don't expose the session server port externally; put it on the same Docker network as the reverse proxy and `expose` (not `ports`) it
 - **Set the Session Server URL** in plugin settings to the reverse-proxy hostname (e.g. `wss://jellyfin.example.com/ws`) — without this, the client defaults to `ws://<current-host>:3000/ws`, which isn't reachable through a proxy
+- **Keep the admin panel private** — it listens on its own port (3001) and only starts when `ADMIN_PASSWORD` is set. Don't route it through the public `/ws` proxy rule. Publish it on `127.0.0.1`, keep it on the LAN, or proxy it under HTTPS with `ADMIN_COOKIE_SECURE=true` (see [Admin Panel]({{ '/admin-panel/' | relative_url }}#behind-a-reverse-proxy)). Set `ADMIN_ENABLED=false` if you don't use it.
 - **Use read-only volumes** for the plugin DLL and media directory
 - **Drop capabilities:**
   ```yaml

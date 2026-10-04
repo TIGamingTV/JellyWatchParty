@@ -107,9 +107,24 @@ permissions, and payload structure on every incoming message.
 - [ ] CORS restricted to specific origins
 - [ ] HTTPS enabled (via reverse proxy)
 - [ ] Session server not directly exposed to the internet
+- [ ] Admin panel port (3001) firewalled or published on `127.0.0.1` only, or behind HTTPS with `ADMIN_COOKIE_SECURE=true`; `ADMIN_PASSWORD` long and random (or `ADMIN_ENABLED=false`)
 - [ ] Regular updates applied, logs monitored for suspicious activity
 
 **Secrets:** use environment variables and `.env` files (not committed to git), rotate periodically, never share across environments or hardcode in config files.
+
+## Admin Panel
+
+The [admin panel]({{ '/admin-panel/' | relative_url }}) runs on its own port and only starts when `ADMIN_PASSWORD` is set. Anyone with the admin login can see every room and move people between rooms without room passwords, so treat it like the Jellyfin admin account:
+
+- one shared account from the environment; compared in constant time;
+- failed logins throttled (5 per address and 30 overall per minute) and logged;
+- `HttpOnly`, `SameSite=Strict` session cookie held in memory (12 h by default); every change needs a custom header and a matching `Origin`, which blocks cross-site requests;
+- strict Content-Security-Policy and no framing;
+- every admin action logged as an `admin:` line.
+
+## Reconnect Takeover Protection
+
+Reconnecting with a known `client_id` used to be enough to take over that client's session, including its room and host role (client ids are visible to everyone in a room). Each client entry now has a random resume secret, sent only to its owner; reattaching requires it, and a connection without it gets a new id. See [Protocol]({{ '/technical/protocol/' | relative_url }}#client_id-and-resume-query-parameters).
 
 ## Threat Model
 
@@ -120,6 +135,8 @@ permissions, and payload structure on every incoming message.
 | Cross-site attacks | CORS validation, URL sanitization |
 | Denial of service | Rate limiting, message size limits |
 | Man-in-the-middle | HTTPS/WSS encryption |
+| Session takeover via a known client id | Resume secret required to reattach |
+| Admin password guessing | Login throttle, separate port, long random password |
 
 **Known, by-design limitations:**
 

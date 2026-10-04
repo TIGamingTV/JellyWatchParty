@@ -45,6 +45,20 @@ pub struct Client {
     pub message_count: u32,
     pub last_reset: u64,
     pub last_seen: u64, // For zombie connection detection
+    /// Random secret handed to this client only (in `client_hello`). A new
+    /// connection may only reattach to this entry - and inherit its auth,
+    /// room membership and host role - by presenting it as `?resume=`.
+    pub resume_secret: String,
+    /// When this entry was first registered (ms since epoch).
+    pub connected_at: u64,
+    /// Id of the websocket connection currently attached to this entry. A
+    /// connection that ends only schedules a disconnect if it is still the
+    /// attached one, so a half-dead old socket can never evict the session
+    /// that replaced it.
+    pub conn_id: u64,
+    /// False once the attached connection has ended (the entry is then in
+    /// its reconnect grace period).
+    pub connected: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -84,6 +98,23 @@ pub struct Room {
     /// everyone to be ready and starts with a countdown (see `pending_play`).
     #[serde(skip)]
     pub started: bool,
+    /// Created from the admin panel rather than by a client. Such a group
+    /// may sit empty (and hostless) until its first member arrives; see
+    /// `tasks::spawn_empty_group_reaper`.
+    #[serde(skip)]
+    pub admin_created: bool,
+    /// When the room was created (ms since epoch).
+    #[serde(skip)]
+    pub created_at: u64,
+}
+
+impl Room {
+    /// True when nobody holds the host role (an admin-created group that
+    /// nobody has joined yet). Host-only messages are ignored until a host
+    /// is set, because no client id ever equals the empty string.
+    pub fn is_hostless(&self) -> bool {
+        self.host_id.is_empty()
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]

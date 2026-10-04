@@ -57,6 +57,7 @@ session server, web client) work together to make this happen.
 - **Room list** - See all active rooms on the server
 - **Participant list with status** - See who is in the room, who hosts, and whether each person is in sync, catching up, buffering, loading or not watching
 - **Automatic host transfer** - If the host leaves with others still in the room, the earliest-joined remaining participant is promoted to host instead of the room closing
+- **Admin panel** - A separate web UI on the session server where admins see every room, its members and their sync status, create password-protected groups, add or move people between rooms, change the host, and remove people or close rooms (see [Admin Panel]({{ '/admin-panel/' | relative_url }}))
 
 ### Playback Synchronization
 - **Start countdown** - The room's first play waits (up to 10 s) until everyone's video is loaded, then everyone, host included, sees 3, 2, 1 and starts at the same moment

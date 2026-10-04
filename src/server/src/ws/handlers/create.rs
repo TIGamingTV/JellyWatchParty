@@ -4,7 +4,7 @@ use crate::messaging::{
     broadcast_participants, broadcast_room_list, build_room_state_payload, send_to_client,
 };
 use crate::password::hash_password;
-use crate::room::close_room;
+use crate::room::{close_room, handle_leave};
 use crate::types::{Clients, IncomingMessage, PlaybackState, Room, Rooms, WsMessage};
 use crate::utils::now_ms;
 use log::info;
@@ -88,6 +88,8 @@ fn build_room(client_id: &str, host_name: &str, payload: Option<&serde_json::Val
         client_status: HashMap::new(),
         failed_joins: HashMap::new(),
         started,
+        admin_created: false,
+        created_at: now_ms(),
     }
 }
 
@@ -140,7 +142,7 @@ pub(in crate::ws) async fn handle_create_room(
             .map(|r| r.room_id.clone())
     };
     if let Some(room_id) = existing_room_id {
-        close_room(&room_id, clients, rooms).await;
+        close_room(&room_id, "Host started a new room", clients, rooms).await;
     }
 
     let payload_ref = parsed.payload.as_ref();
@@ -153,6 +155,14 @@ pub(in crate::ws) async fn handle_create_room(
     {
         let mut locked_rooms = rooms.write().await;
         let mut locked_clients = clients.write().await;
+        // Still a guest somewhere else: leave that room properly first rather
+        // than lingering in its member list.
+        if locked_clients
+            .get(client_id)
+            .is_some_and(|c| c.room_id.is_some())
+        {
+            handle_leave(client_id, &mut locked_clients, &mut locked_rooms);
+        }
         insert_and_notify(
             client_id,
             room,
