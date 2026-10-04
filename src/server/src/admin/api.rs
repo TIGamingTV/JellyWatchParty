@@ -4,8 +4,10 @@
 //! lobby's room list afterwards.
 
 use super::{auth, error_response, AdminState, ClientIp, JellyfinStatus};
+use crate::jellyfin::api::{JfSession, LISTED_ACTIVE_WITHIN_MS};
 use crate::jellyfin::bridge::{AddError, Role, Snapshot};
-use crate::jellyfin::logic::device_view;
+use crate::jellyfin::logic::{device_view, MAX_EXTRAPOLATION_SECS};
+use crate::jellyfin::time::parse_utc_ms;
 use crate::jellyfin::Bridges;
 use crate::messaging::broadcast_room_list;
 use crate::room::ops::{self, AddOptions, OpError};
@@ -150,7 +152,7 @@ fn member_json(
         "is_host": room.host_id == id,
         "status": room.client_status.get(id).map(String::as_str).unwrap_or("unknown"),
         "ready": room.ready_clients.contains(id),
-        "connected": client.is_some_and(|c| !c.sender.is_closed()),
+        "connected": client.is_some_and(|c| c.connected),
     });
     if client.is_some_and(|c| c.kind == ClientKind::Bridge) {
         m["kind"] = "jellyfin".into();
@@ -220,7 +222,7 @@ pub fn build_overview(
                 "name": if c.user_name.is_empty() { "(not signed in)" } else { &c.user_name },
                 "kind": "web",
                 "authenticated": c.authenticated,
-                "connected": !c.sender.is_closed(),
+                "connected": c.connected,
                 "connected_at": c.connected_at,
             })
         })
@@ -409,6 +411,18 @@ pub async fn add_member(
         let client = locked_clients
             .get(&client_id)
             .ok_or_else(|| op_error(OpError::ClientNotFound))?;
+        if client.kind == ClientKind::Web
+            && client.bridge_device.is_some()
+            && client.room_id.is_some()
+        {
+            // A plugin bridge only knows the room its user picked; moving
+            // it would leave it driving (or following) the wrong room.
+            return Err(ApiError(
+                StatusCode::CONFLICT,
+                "This device was bridged from the Watch Party panel; remove it and add it here instead"
+                    .into(),
+            ));
+        }
         if !client.authenticated {
             // Adding it would let a connection that never proved who it is
             // skip authentication entirely.
@@ -498,6 +512,18 @@ pub async fn set_host(
 
 // --- Jellyfin devices ------------------------------------------------------
 
+/// Active within `LISTED_ACTIVE_WITHIN_MS`. A session without a usable
+/// `LastActivityDate` is listed rather than hidden.
+pub(super) fn recently_active(s: &JfSession, clock_offset_ms: i64, now: u64) -> bool {
+    match s.last_activity_date.as_deref().and_then(parse_utc_ms) {
+        None => true,
+        Some(t) => {
+            let local = (t as i64).saturating_add(clock_offset_ms).max(0) as u64;
+            now.saturating_sub(local) < LISTED_ACTIVE_WITHIN_MS
+        }
+    }
+}
+
 /// Jellyfin sessions an admin can put into a room: everything active except
 /// clients that run the Watch Party panel themselves (they join as web
 /// clients) and this server's own API session.
@@ -515,20 +541,18 @@ pub async fn jellyfin_sessions(State(state): State<AdminState>) -> Response {
     };
     let snap = bridges.snapshot_for_admin().await;
     let now = now_ms();
-    let bridged: Vec<(String, String, String, bool)> = state
+    // Who stands in for which device right now: our own bridges, and the
+    // plugin's in-panel bridges (tagged with `bridge_device_id`).
+    let bridged: Vec<(String, String, bool)> = state
         .clients
         .read()
         .await
         .iter()
+        .filter(|(_, c)| c.room_id.is_some())
         .filter_map(|(id, c)| {
-            c.bridge_device.as_ref().map(|d| {
-                (
-                    id.clone(),
-                    d.clone(),
-                    c.user_id.clone(),
-                    c.kind == ClientKind::Web,
-                )
-            })
+            c.bridge_device
+                .as_ref()
+                .map(|d| (id.clone(), d.clone(), c.kind == ClientKind::Web))
         })
         .collect();
     let mut sessions: Vec<_> = snap
@@ -536,11 +560,13 @@ pub async fn jellyfin_sessions(State(state): State<AdminState>) -> Response {
         .iter()
         .filter(|s| !s.is_own() && !s.runs_web_client())
         .map(|s| {
-            let view = device_view(s, now);
-            let user_id = s.user_id();
-            let bridge = bridged
-                .iter()
-                .find(|(_, d, u, _)| d == s.device_id() && *u == user_id);
+            let bridge = bridged.iter().find(|(_, d, _)| d == s.device_id());
+            (s, bridge)
+        })
+        // Recently active ones, plus anything already bridged.
+        .filter(|(s, bridge)| bridge.is_some() || recently_active(s, snap.clock_offset_ms, now))
+        .map(|(s, bridge)| {
+            let view = device_view(s, now, snap.clock_offset_ms, MAX_EXTRAPOLATION_SECS);
             serde_json::json!({
                 "id": s.id,
                 "user_name": s.user_name(),
@@ -554,7 +580,7 @@ pub async fn jellyfin_sessions(State(state): State<AdminState>) -> Response {
                 "position": view.position,
                 "paused": view.paused,
                 "bridged_as": bridge.map(|b| &b.0),
-                "bridged_by_plugin": bridge.is_some_and(|b| b.3),
+                "bridged_by_plugin": bridge.is_some_and(|b| b.2),
             })
         })
         .collect();

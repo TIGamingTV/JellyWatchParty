@@ -51,6 +51,27 @@ fn send_join_error(
     );
 }
 
+/// If this create/join stands in for a Jellyfin device (`bridge_device_id`)
+/// that some other client already drives in a room, the error to send.
+/// One device must not be driven from two places (e.g. the admin panel and
+/// a user's panel bridge) at once.
+pub(in crate::ws) fn device_taken_error(
+    client_id: &str,
+    payload: Option<&serde_json::Value>,
+    clients: &HashMap<String, Client>,
+) -> Option<serde_json::Value> {
+    let device = bridge_device_id(payload)?;
+    let taken = clients
+        .iter()
+        .any(|(id, c)| id != client_id && c.bridges_device(&device));
+    taken.then(|| {
+        serde_json::json!({
+            "message": "This device is already in a watch party",
+            "reason": "device_already_bridged"
+        })
+    })
+}
+
 pub(in crate::ws) async fn handle_join_room(
     client_id: &str,
     parsed: &IncomingMessage,
@@ -76,8 +97,27 @@ pub(in crate::ws) async fn handle_join_room(
     let mut locked_clients = clients.write().await;
 
     let Some(room) = locked_rooms.get_mut(room_id) else {
+        // Closed or removed (e.g. an empty admin group) since the client's
+        // room list was sent: say so, and send it a fresh list.
+        send_join_error(
+            client_id,
+            room_id,
+            &locked_clients,
+            serde_json::json!({
+                "message": "This room no longer exists",
+                "reason": "room_not_found"
+            }),
+        );
+        drop(locked_clients);
+        drop(locked_rooms);
+        crate::messaging::send_room_list(client_id, clients, rooms).await;
         return;
     };
+
+    if let Some(err) = device_taken_error(client_id, parsed.payload.as_ref(), &locked_clients) {
+        send_join_error(client_id, room_id, &locked_clients, err);
+        return;
+    }
 
     let is_existing_member = room.clients.contains(&client_id.to_string());
 
@@ -500,6 +540,45 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn handle_join_room_reports_a_missing_room() {
+        let clients = test_helpers::create_clients();
+        let rooms = test_helpers::create_rooms();
+        let (guest, mut rx) = test_helpers::create_client_with_rx("ug", "Guest", true);
+        clients.write().await.insert("guest".to_string(), guest);
+        handle_join_room("guest", &join_msg("guest", ""), &clients, &rooms).await;
+        let msgs = drain(&mut rx);
+        assert_eq!(msgs[0].msg_type, "error");
+        assert_eq!(
+            msgs[0].payload.as_ref().unwrap()["reason"],
+            "room_not_found"
+        );
+        assert_eq!(msgs[1].msg_type, "room_list");
+        assert!(clients.read().await["guest"].room_id.is_none());
+    }
+
+    #[tokio::test]
+    async fn handle_join_room_refuses_a_device_driven_elsewhere() {
+        let (clients, rooms, mut rxs) =
+            setup_password_room(&[("bridge", "ub"), ("admin-bridge", "ub")]).await;
+        {
+            let mut lc = clients.write().await;
+            let other = lc.get_mut("admin-bridge").unwrap();
+            other.bridge_device = Some("tv-123".into());
+            other.room_id = Some("room-2".into());
+        }
+        let mut msg = join_msg("bridge", "secret");
+        msg.payload.as_mut().unwrap()["bridge_device_id"] = "tv-123".into();
+        handle_join_room("bridge", &msg, &clients, &rooms).await;
+        assert_eq!(
+            last_reason(rxs.get_mut("bridge").unwrap()).as_deref(),
+            Some("device_already_bridged")
+        );
+        assert!(!rooms.read().await["room-1"]
+            .clients
+            .contains(&"bridge".to_string()));
+    }
+
+    #[tokio::test]
     async fn handle_join_room_records_the_bridged_device() {
         let (clients, rooms, _rxs) = setup_password_room(&[("bridge", "ub")]).await;
         let mut msg = join_msg("bridge", "secret");
@@ -509,6 +588,6 @@ mod tests {
             clients.read().await["bridge"].bridge_device.as_deref(),
             Some("tv-123")
         );
-        assert!(clients.read().await["bridge"].bridges_device("tv-123", "ub"));
+        assert!(clients.read().await["bridge"].bridges_device("tv-123"));
     }
 }

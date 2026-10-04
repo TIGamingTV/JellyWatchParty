@@ -2,7 +2,7 @@
 //! bridge task feeds in what it saw (room + device) and carries out what
 //! comes back, which keeps all of the timing rules unit-testable.
 
-use super::api::JfSession;
+use super::api::{normalize_id, JfSession};
 use super::time::parse_utc_ms;
 
 pub const TICKS_PER_SEC: f64 = 10_000_000.0;
@@ -17,7 +17,13 @@ pub const SEEK_LEAD_SECS: f64 = 1.0;
 pub const PLAYPAUSE_COOLDOWN_MS: u64 = 2_500;
 /// Minimum time between "play this item" commands to one device.
 pub const PLAY_NOW_COOLDOWN_MS: u64 = 15_000;
-/// Never extrapolate a playing device's position further than this past
+/// "Play this item" is tried this many times per item, then the bridge
+/// stops insisting (the device may not be able to play it).
+pub const MAX_PLAY_NOW_TRIES: u32 = 3;
+/// A command the bridge sent is assumed to have taken effect until the
+/// device reports again, but for no longer than this.
+pub const COMMAND_TRUST_MS: u64 = 10_000;
+/// Default cap on how far a playing device's position is extrapolated past
 /// its last progress report (the device may have stalled).
 pub const MAX_EXTRAPOLATION_SECS: f64 = 30.0;
 
@@ -28,24 +34,38 @@ pub struct DeviceView {
     /// Estimated current position (seconds).
     pub position: f64,
     pub paused: bool,
-    /// When the device last reported progress (ms since epoch, 0 if never).
+    /// When the device last reported progress, on this server's clock (ms
+    /// since epoch, 0 if never).
     pub checkin_ms: u64,
 }
 
-/// Jellyfin only learns a device's position when the device reports
-/// progress (every few seconds). Extrapolate from that report.
-pub fn device_view(s: &JfSession, now_ms: u64) -> DeviceView {
-    let ps = s.play_state.clone().unwrap_or_default();
-    let reported = ps.position_ticks.unwrap_or(0).max(0) as f64 / TICKS_PER_SEC;
-    let checkin_ms = s
-        .last_playback_check_in
+/// When `s` last reported progress, on this server's clock:
+/// `LastPlaybackCheckIn` is Jellyfin's clock, shifted by `clock_offset_ms`
+/// (our clock minus Jellyfin's).
+pub fn local_checkin_ms(s: &JfSession, clock_offset_ms: i64) -> u64 {
+    s.last_playback_check_in
         .as_deref()
         .and_then(parse_utc_ms)
-        .unwrap_or(0);
+        .map(|t| (t as i64).saturating_add(clock_offset_ms).max(0) as u64)
+        .unwrap_or(0)
+}
+
+/// Jellyfin only learns a device's position when the device reports
+/// progress (every few seconds). Extrapolate from that report, at most
+/// `max_extrapolation_secs`.
+pub fn device_view(
+    s: &JfSession,
+    now_ms: u64,
+    clock_offset_ms: i64,
+    max_extrapolation_secs: f64,
+) -> DeviceView {
+    let ps = s.play_state.clone().unwrap_or_default();
+    let reported = ps.position_ticks.unwrap_or(0).max(0) as f64 / TICKS_PER_SEC;
+    let checkin_ms = local_checkin_ms(s, clock_offset_ms);
     let item_id = s.item_id();
     let position = if !ps.is_paused && item_id.is_some() && checkin_ms > 0 {
         let elapsed = now_ms.saturating_sub(checkin_ms) as f64 / 1000.0;
-        reported + elapsed.min(MAX_EXTRAPOLATION_SECS)
+        reported + elapsed.min(max_extrapolation_secs)
     } else {
         reported
     };
@@ -60,10 +80,25 @@ pub fn device_view(s: &JfSession, now_ms: u64) -> DeviceView {
 /// What the room wants, from the bridge's point of view.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RoomView {
+    /// Normalized (lowercase, no dashes).
     pub media_id: Option<String>,
     pub playing: bool,
     /// Where the room is right now (seconds).
     pub expected: f64,
+    /// A play is scheduled but hasn't started yet (countdown / scheduled
+    /// play): keep the device as it is, only line up its position.
+    pub hold: bool,
+}
+
+impl RoomView {
+    pub fn new(media_id: Option<&str>, playing: bool, expected: f64, hold: bool) -> Self {
+        Self {
+            media_id: media_id.map(normalize_id).filter(|m| !m.is_empty()),
+            playing,
+            expected,
+            hold,
+        }
+    }
 }
 
 // --- receiver --------------------------------------------------------------
@@ -77,8 +112,9 @@ pub enum Command {
 }
 
 /// What a receiver bridge sent recently. Until the device reports progress
-/// again, the bridge assumes its last command took effect, so it doesn't
-/// repeat a seek just because Jellyfin still shows the old position.
+/// again (but at most `COMMAND_TRUST_MS`), the bridge assumes its last
+/// command took effect, so it doesn't repeat a seek just because Jellyfin
+/// still shows the old position.
 #[derive(Debug, Clone, Default)]
 pub struct FollowerMemory {
     pub seek_at: u64,
@@ -87,6 +123,11 @@ pub struct FollowerMemory {
     pub pp_paused: bool,
     pub play_now_at: u64,
     pub play_now_item: Option<String>,
+    pub play_now_tries: u32,
+    /// The room item the device was last seen playing. If it was on the
+    /// room's item and then left it, someone stopped it on the device: the
+    /// bridge doesn't restart it until the room moves to another item.
+    pub seen_on: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -100,6 +141,13 @@ pub struct Step {
     /// True when the device is on the room's item (or the room has none),
     /// i.e. it can count as `ready`.
     pub on_item: bool,
+    /// Explanation for the admin panel, when the bridge is waiting on
+    /// someone.
+    pub note: Option<&'static str>,
+}
+
+fn trusted(sent_at: u64, checkin_ms: u64, now: u64) -> bool {
+    sent_at > checkin_ms && now.saturating_sub(sent_at) < COMMAND_TRUST_MS
 }
 
 pub fn follower_step(
@@ -109,52 +157,68 @@ pub fn follower_step(
     now: u64,
 ) -> Step {
     let mut commands = Vec::new();
+    let step = |commands, status, drift, on_item, note| Step {
+        commands,
+        status,
+        drift,
+        on_item,
+        note,
+    };
     let Some(d) = device else {
-        return Step {
-            commands,
-            status: "offline",
-            drift: None,
-            on_item: false,
-        };
+        return step(commands, "offline", None, false, None);
     };
     let Some(media) = room.media_id.as_ref() else {
-        return Step {
-            commands,
-            status: "idle",
-            drift: None,
-            on_item: true,
-        };
+        return step(commands, "idle", None, true, None);
     };
 
     if d.item_id.as_ref() != Some(media) {
-        let retry = mem.play_now_item.as_ref() != Some(media)
-            || now.saturating_sub(mem.play_now_at) >= PLAY_NOW_COOLDOWN_MS;
-        if retry {
+        if mem.seen_on.as_ref() == Some(media) {
+            // Was following this item and left it: stopped on the device.
+            return step(
+                commands,
+                "idle",
+                None,
+                false,
+                Some("Stopped on the device. Start the room's item there to follow again."),
+            );
+        }
+        if mem.play_now_item.as_ref() != Some(media) {
+            mem.play_now_item = Some(media.clone());
+            mem.play_now_tries = 0;
+            mem.play_now_at = 0;
+        }
+        if mem.play_now_tries >= MAX_PLAY_NOW_TRIES {
+            return step(
+                commands,
+                "idle",
+                None,
+                false,
+                Some("The device didn't start the room's item. Start it on the device."),
+            );
+        }
+        if mem.play_now_at == 0 || now.saturating_sub(mem.play_now_at) >= PLAY_NOW_COOLDOWN_MS {
             commands.push(Command::PlayNow {
                 item_id: media.clone(),
                 start_secs: room.expected.max(0.0),
             });
             mem.play_now_at = now;
-            mem.play_now_item = Some(media.clone());
+            mem.play_now_tries += 1;
             // Playback starts playing; a paused room gets a pause once the
             // device is on the item.
             mem.pp_at = now;
             mem.pp_paused = false;
         }
-        return Step {
-            commands,
-            status: "loading",
-            drift: None,
-            on_item: false,
-        };
+        return step(commands, "loading", None, false, None);
     }
+    mem.seen_on = Some(media.clone());
+    mem.play_now_tries = 0;
 
-    let paused = if mem.pp_at > d.checkin_ms {
+    let paused = if trusted(mem.pp_at, d.checkin_ms, now) {
         mem.pp_paused
     } else {
         d.paused
     };
-    let position = if mem.seek_at > d.checkin_ms {
+    let position = if trusted(mem.seek_at, d.checkin_ms, now) {
         let since = if paused {
             0.0
         } else {
@@ -165,9 +229,11 @@ pub fn follower_step(
         d.position
     };
 
-    let want_paused = !room.playing;
-    let state_ok = paused == want_paused;
+    // While a play is scheduled, leave play/pause alone: the device is
+    // unpaused when the play actually starts.
+    let state_ok = room.hold || paused == !room.playing;
     if !state_ok && now.saturating_sub(mem.pp_at) >= PLAYPAUSE_COOLDOWN_MS {
+        let want_paused = !room.playing;
         commands.push(if want_paused {
             Command::Pause
         } else {
@@ -180,22 +246,28 @@ pub fn follower_step(
     let drift = position - room.expected;
     let in_sync = drift.abs() <= DRIFT_THRESHOLD_SECS;
     if !in_sync && now.saturating_sub(mem.seek_at) >= SEEK_COOLDOWN_MS {
-        let target = (room.expected + if room.playing { SEEK_LEAD_SECS } else { 0.0 }).max(0.0);
+        let lead = if room.playing && !room.hold {
+            SEEK_LEAD_SECS
+        } else {
+            0.0
+        };
+        let target = (room.expected + lead).max(0.0);
         commands.push(Command::Seek { to_secs: target });
         mem.seek_at = now;
         mem.seek_target = target;
     }
 
-    Step {
+    step(
         commands,
-        status: if in_sync && state_ok {
+        if in_sync && state_ok {
             "synced"
         } else {
             "syncing"
         },
-        drift: Some(drift),
-        on_item: true,
-    }
+        Some(drift),
+        true,
+        None,
+    )
 }
 
 // --- host ------------------------------------------------------------------
@@ -276,11 +348,7 @@ mod tests {
     const OTHER: &str = "ffffffffffffffffffffffffffffffff";
 
     fn room(playing: bool, expected: f64) -> RoomView {
-        RoomView {
-            media_id: Some(ITEM.into()),
-            playing,
-            expected,
-        }
+        RoomView::new(Some(ITEM), playing, expected, false)
     }
 
     fn dev(item: Option<&str>, position: f64, paused: bool, checkin_ms: u64) -> DeviceView {
@@ -306,16 +374,20 @@ mod tests {
             last_playback_check_in: Some("1970-01-01T00:00:10Z".into()),
             ..Default::default()
         };
-        let v = device_view(&s, 13_000);
+        let v = device_view(&s, 13_000, 0, MAX_EXTRAPOLATION_SECS);
         assert_eq!(v.item_id.as_deref(), Some(ITEM));
         assert!((v.position - 103.0).abs() < 1e-9);
         assert_eq!(v.checkin_ms, 10_000);
         // Capped for a device that stopped reporting.
-        assert!((device_view(&s, 1_000_000).position - 130.0).abs() < 1e-9);
+        assert!(
+            (device_view(&s, 1_000_000, 0, MAX_EXTRAPOLATION_SECS).position - 130.0).abs() < 1e-9
+        );
         // Paused: no extrapolation.
         let mut paused = s.clone();
         paused.play_state.as_mut().unwrap().is_paused = true;
-        assert!((device_view(&paused, 13_000).position - 100.0).abs() < 1e-9);
+        assert!(
+            (device_view(&paused, 13_000, 0, MAX_EXTRAPOLATION_SECS).position - 100.0).abs() < 1e-9
+        );
     }
 
     #[test]
@@ -325,11 +397,7 @@ mod tests {
             follower_step(&room(true, 5.0), None, &mut m, 0).status,
             "offline"
         );
-        let no_media = RoomView {
-            media_id: None,
-            playing: false,
-            expected: 0.0,
-        };
+        let no_media = RoomView::new(None, false, 0.0, false);
         let s = follower_step(&no_media, Some(&dev(None, 0.0, true, 0)), &mut m, 0);
         assert_eq!(s.status, "idle");
         assert!(s.on_item && s.commands.is_empty());
@@ -524,5 +592,117 @@ mod tests {
         let (ev, st) = host_step(&room(false, 50.0), None, &mut m);
         assert!(ev.is_empty());
         assert_eq!(st, "offline");
+    }
+
+    #[test]
+    fn stopping_on_the_device_opts_out_until_the_room_changes_item() {
+        let mut m = FollowerMemory::default();
+        // Following.
+        follower_step(
+            &room(true, 50.0),
+            Some(&dev(Some(ITEM), 50.0, false, 1)),
+            &mut m,
+            1_000,
+        );
+        // Someone pressed stop on the TV: no PlayNow, explained.
+        let s = follower_step(
+            &room(true, 60.0),
+            Some(&dev(None, 0.0, true, 2)),
+            &mut m,
+            20_000,
+        );
+        assert!(s.commands.is_empty());
+        assert_eq!(s.status, "idle");
+        assert!(s.note.is_some());
+        // The host moves on to another item: follow it.
+        let next = RoomView::new(Some(OTHER), true, 0.0, false);
+        let s = follower_step(&next, Some(&dev(None, 0.0, true, 2)), &mut m, 21_000);
+        assert!(matches!(s.commands[0], Command::PlayNow { .. }));
+    }
+
+    #[test]
+    fn play_now_gives_up_after_a_few_tries() {
+        let mut m = FollowerMemory::default();
+        let d = dev(None, 0.0, true, 0);
+        let mut sent = 0;
+        for i in 0..10u64 {
+            let s = follower_step(
+                &room(true, 0.0),
+                Some(&d),
+                &mut m,
+                1 + i * PLAY_NOW_COOLDOWN_MS,
+            );
+            sent += s.commands.len();
+        }
+        assert_eq!(sent, MAX_PLAY_NOW_TRIES as usize);
+        let s = follower_step(&room(true, 0.0), Some(&d), &mut m, 1_000_000);
+        assert!(s.note.is_some());
+    }
+
+    #[test]
+    fn room_media_ids_are_compared_case_insensitively() {
+        let mut m = FollowerMemory::default();
+        let upper = RoomView::new(Some(&ITEM.to_uppercase()), true, 10.0, false);
+        let s = follower_step(
+            &upper,
+            Some(&dev(Some(ITEM), 10.0, false, 1)),
+            &mut m,
+            5_000,
+        );
+        assert!(s.commands.is_empty(), "{:?}", s.commands);
+        assert!(s.on_item);
+    }
+
+    #[test]
+    fn a_sent_command_is_only_trusted_for_a_while() {
+        let mut m = FollowerMemory::default();
+        // The device never reports (no check-in): after the seek is sent,
+        // it is trusted, but not forever.
+        let stale = dev(Some(ITEM), 0.0, true, 0);
+        let s = follower_step(&room(false, 100.0), Some(&stale), &mut m, 10_000);
+        assert_eq!(s.commands, vec![Command::Seek { to_secs: 100.0 }]);
+        let s = follower_step(&room(false, 100.0), Some(&stale), &mut m, 15_000);
+        assert!(s.commands.is_empty());
+        let s = follower_step(
+            &room(false, 100.0),
+            Some(&stale),
+            &mut m,
+            10_000 + COMMAND_TRUST_MS + 1,
+        );
+        assert_eq!(s.commands, vec![Command::Seek { to_secs: 100.0 }]);
+    }
+
+    #[test]
+    fn a_hold_leaves_play_pause_alone_and_seeks_without_lead() {
+        let mut m = FollowerMemory::default();
+        let hold = RoomView::new(Some(ITEM), true, 30.0, true);
+        let s = follower_step(&hold, Some(&dev(Some(ITEM), 30.5, true, 1)), &mut m, 10_000);
+        assert!(
+            s.commands.is_empty(),
+            "paused device stays paused until the start"
+        );
+        assert_eq!(s.status, "synced");
+        let s = follower_step(&hold, Some(&dev(Some(ITEM), 0.0, true, 1)), &mut m, 20_000);
+        assert_eq!(s.commands, vec![Command::Seek { to_secs: 30.0 }]);
+    }
+
+    #[test]
+    fn clock_offset_shifts_check_ins() {
+        let s = JfSession {
+            now_playing_item: Some(JfItem {
+                id: Some(ITEM.into()),
+                ..Default::default()
+            }),
+            play_state: Some(JfPlayState {
+                position_ticks: Some(100 * 10_000_000),
+                is_paused: false,
+            }),
+            last_playback_check_in: Some("1970-01-01T00:00:10Z".into()),
+            ..Default::default()
+        };
+        // Jellyfin's clock is 5 s behind: the report was at 15 s our time.
+        let v = device_view(&s, 18_000, 5_000, MAX_EXTRAPOLATION_SECS);
+        assert_eq!(v.checkin_ms, 15_000);
+        assert!((v.position - 103.0).abs() < 1e-9);
     }
 }

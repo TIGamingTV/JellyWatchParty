@@ -6,30 +6,34 @@ use std::time::Duration;
 use tokio::sync::watch;
 
 const ZOMBIE_CHECK_INTERVAL_SECS: u64 = 30;
-const ZOMBIE_TIMEOUT_MS: u64 = 60_000;
+const ZOMBIE_TIMEOUT_MS: u64 = crate::room::STALE_AFTER_MS;
 
 pub fn spawn_zombie_cleanup(clients: Clients, rooms: Rooms) {
     tokio::spawn(async move {
         loop {
             tokio::time::sleep(Duration::from_secs(ZOMBIE_CHECK_INTERVAL_SECS)).await;
             let now = now_ms();
-            let zombies: Vec<String> = {
+            let zombies: Vec<(String, u64)> = {
                 let locked_clients = clients.read().await;
                 locked_clients
                     .iter()
+                    // Ended connections already have a disconnect scheduled.
+                    .filter(|(_, c)| c.connected)
                     // Bridged devices have no socket to go quiet; their own
                     // task watches the Jellyfin session instead.
                     .filter(|(_, c)| c.kind == ClientKind::Web)
+                    // last_seen can be a hair newer than `now` (taken before
+                    // the lock), or the clock may step back: never wrap.
                     .filter(|(_, c)| now.saturating_sub(c.last_seen) > ZOMBIE_TIMEOUT_MS)
-                    .map(|(id, _)| id.clone())
+                    .map(|(id, c)| (id.clone(), c.conn_id))
                     .collect()
             };
-            for id in zombies {
+            for (id, conn_id) in zombies {
                 warn!(
                     "Zombie connection detected, starting reconnect grace period: {}",
                     id
                 );
-                crate::room::schedule_disconnect(id, clients.clone(), rooms.clone()).await;
+                crate::room::schedule_disconnect(id, conn_id, clients.clone(), rooms.clone()).await;
             }
         }
     });

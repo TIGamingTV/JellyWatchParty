@@ -55,13 +55,17 @@
   const leaveRoom = () => {
     send('leave_room');
     resetRoomState();
+    const panel = document.getElementById(JWP.constants.PANEL_ID);
+    if (panel) panel.classList.add('hide');
   };
 
   // Forgets everything about the current room locally. Used when leaving,
   // and when an admin moves this client straight into another room (the
-  // server already took it out of the old one).
+  // server already took it out of the old one), was removed, or the room
+  // closed.
   const resetRoomState = () => {
     state.inRoom = false;
+    state.isHost = false;
     state.roomId = '';
     state.roomMediaId = '';
     state.mediaSwitchPending = false;
@@ -89,8 +93,6 @@
       state.pendingActionTimer = null;
     }
     if (JWP.chat) JWP.chat.clear();
-    const panel = document.getElementById(JWP.constants.PANEL_ID);
-    if (panel) panel.classList.add('hide');
   };
 
   Object.assign(actions, { send, createRoom, joinRoom, leaveRoom, resetRoomState });

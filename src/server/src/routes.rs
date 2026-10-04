@@ -393,6 +393,28 @@ mod tests {
         .unwrap();
         let owner_hello = hello(&mut owner).await;
         assert_eq!(owner_hello["client_id"], client_id);
-        assert_eq!(owner_hello["resume_secret"], secret.as_str());
+        // Rotated on reattach, so a leaked secret only works once.
+        let rotated = owner_hello["resume_secret"].as_str().unwrap().to_string();
+        assert_eq!(rotated.len(), 64);
+        assert_ne!(rotated, secret);
+        assert!(owner_hello["room_id"].is_null());
+
+        // The old secret no longer works; the new one does.
+        let mut late = connect_ws(
+            addr,
+            &format!("?client_id={}&resume={}", client_id, secret),
+            origin,
+        )
+        .await
+        .unwrap();
+        assert_ne!(hello(&mut late).await["client_id"], client_id);
+        let mut again = connect_ws(
+            addr,
+            &format!("?client_id={}&resume={}", client_id, rotated),
+            origin,
+        )
+        .await
+        .unwrap();
+        assert_eq!(hello(&mut again).await["client_id"], client_id);
     }
 }

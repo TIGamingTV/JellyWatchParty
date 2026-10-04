@@ -140,6 +140,27 @@ pub(in crate::ws) async fn handle_create_room(
         return;
     }
 
+    let taken = {
+        let locked_clients = clients.read().await;
+        super::join::device_taken_error(client_id, parsed.payload.as_ref(), &locked_clients)
+    };
+    if let Some(err) = taken {
+        let locked_clients = clients.read().await;
+        send_to_client(
+            client_id,
+            &locked_clients,
+            &WsMessage {
+                msg_type: "error".to_string(),
+                room: None,
+                client: Some(client_id.to_string()),
+                payload: Some(err),
+                ts: now_ms(),
+                server_ts: Some(now_ms()),
+            },
+        );
+        return;
+    }
+
     let existing_room_id = {
         let locked_rooms = rooms.read().await;
         locked_rooms

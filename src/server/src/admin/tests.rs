@@ -263,6 +263,42 @@ fn csrf_accepts_proxied_origin() {
 }
 
 #[test]
+fn csrf_ignores_ports_and_case() {
+    let mut h = HeaderMap::new();
+    h.insert(CSRF_HEADER, HeaderValue::from_static("1"));
+    h.insert(header::HOST, HeaderValue::from_static("Example.com"));
+    h.insert(
+        header::ORIGIN,
+        HeaderValue::from_static("https://example.com:8920"),
+    );
+    assert!(csrf_ok(&Method::POST, &h));
+    h.insert(
+        header::ORIGIN,
+        HeaderValue::from_static("https://example.com.evil.net"),
+    );
+    assert!(!csrf_ok(&Method::POST, &h));
+    h.insert(header::HOST, HeaderValue::from_static("[::1]:3001"));
+    h.insert(
+        header::ORIGIN,
+        HeaderValue::from_static("http://[::1]:3001"),
+    );
+    assert!(csrf_ok(&Method::POST, &h));
+    h.insert(header::ORIGIN, HeaderValue::from_static("null"));
+    assert!(!csrf_ok(&Method::POST, &h));
+}
+
+#[test]
+fn throttle_groups_ipv6_by_64() {
+    let a: IpAddr = "2001:db8:1:2:aaaa::1".parse().unwrap();
+    let b: IpAddr = "2001:db8:1:2:bbbb::9".parse().unwrap();
+    let c: IpAddr = "2001:db8:1:3::1".parse().unwrap();
+    assert_eq!(throttle_key(a), throttle_key(b));
+    assert_ne!(throttle_key(a), throttle_key(c));
+    let mapped: IpAddr = "::ffff:10.0.0.1".parse().unwrap();
+    assert_eq!(throttle_key(mapped), "10.0.0.1".parse::<IpAddr>().unwrap());
+}
+
+#[test]
 fn forwarded_ip_uses_the_last_hop() {
     let mut h = HeaderMap::new();
     h.insert(
@@ -270,6 +306,9 @@ fn forwarded_ip_uses_the_last_hop() {
         HeaderValue::from_static("6.6.6.6, 10.1.2.3"),
     );
     assert_eq!(forwarded_ip(&h), Some("10.1.2.3".parse().unwrap()));
+    // A client-supplied first line is not trusted over the proxy's line.
+    h.append("x-forwarded-for", HeaderValue::from_static("192.168.5.5"));
+    assert_eq!(forwarded_ip(&h), Some("192.168.5.5".parse().unwrap()));
     assert_eq!(forwarded_ip(&HeaderMap::new()), None);
 }
 
@@ -449,6 +488,23 @@ async fn jellyfin_devices_report_why_they_are_off() {
     assert_eq!(r.status, StatusCode::BAD_REQUEST);
 }
 
+#[test]
+fn device_list_hides_long_idle_sessions_only() {
+    use crate::jellyfin::api::JfSession;
+    let now = crate::utils::now_ms();
+    let mut s = JfSession::default();
+    assert!(api::recently_active(&s, 0, now), "no date: listed");
+    s.last_activity_date = Some("2020-01-01T00:00:00.0000000Z".into());
+    assert!(!api::recently_active(&s, 0, now));
+    s.last_activity_date = Some("2020-01-01T00:00:00.0000000Z".into());
+    // Clock offset applies.
+    assert!(api::recently_active(
+        &s,
+        now as i64 - 1_577_836_800_000,
+        now
+    ));
+}
+
 #[tokio::test]
 async fn plugin_bridges_are_labelled_in_the_overview() {
     let s = state();
@@ -462,4 +518,38 @@ async fn plugin_bridges_are_labelled_in_the_overview() {
     }
     let ov = call(&s, "GET", "/api/overview", t, None).await.json;
     assert_eq!(ov["rooms"][0]["members"][0]["kind"], "plugin_bridge");
+}
+
+#[tokio::test]
+async fn plugin_bridges_cannot_be_moved() {
+    let s = state();
+    let token = login(&s).await;
+    let t = Some(token.as_str());
+    {
+        let mut lr = s.rooms.write().await;
+        let mut lc = s.clients.write().await;
+        let _rx = test_helpers::setup_room_with_host(&mut lc, &mut lr, "fladder-bridge");
+        lc.get_mut("fladder-bridge").unwrap().bridge_device = Some("dev-1".into());
+    }
+    let other = call(
+        &s,
+        "POST",
+        "/api/rooms",
+        t,
+        Some(serde_json::json!({ "name": "B" })),
+    )
+    .await
+    .json["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let r = call(
+        &s,
+        "POST",
+        &format!("/api/rooms/{}/members", other),
+        t,
+        Some(serde_json::json!({ "client_id": "fladder-bridge" })),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::CONFLICT);
 }

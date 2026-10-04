@@ -51,20 +51,31 @@ pub struct Client {
     pub resume_secret: String,
     /// When this entry was first registered (ms since epoch).
     pub connected_at: u64,
+    /// Id of the websocket connection currently attached to this entry. A
+    /// connection that ends only schedules a disconnect if it is still the
+    /// attached one, so a half-dead old socket can never evict the session
+    /// that replaced it.
+    pub conn_id: u64,
+    /// False once the attached connection has ended (the entry is then in
+    /// its reconnect grace period).
+    pub connected: bool,
     pub kind: ClientKind,
     /// The Jellyfin device this client stands in for, if any: the plugin's
     /// in-panel bridges send its DeviceId as `bridge_device_id` in
     /// `create_room`/`join_room`, and admin-panel bridges set it directly.
-    /// Used to show plugin bridges in the admin panel and to never bridge
-    /// one device twice.
+    /// Used to show plugin bridges in the admin panel and to never drive
+    /// one device from two places.
     pub bridge_device: Option<String>,
 }
 
 impl Client {
-    /// True if this client stands in for Jellyfin device `device_id` of
-    /// user `user_id` (lowercase hex, no dashes).
-    pub fn bridges_device(&self, device_id: &str, user_id: &str) -> bool {
-        self.bridge_device.as_deref() == Some(device_id) && self.user_id == user_id
+    /// True if this client currently drives Jellyfin device `device_id`:
+    /// it carries that device's tag and is in a room. (A tag left on a
+    /// client that was removed from its room doesn't count.) Matched on
+    /// the device alone: two bridges for one physical device would fight
+    /// over it whichever Jellyfin user each belongs to.
+    pub fn bridges_device(&self, device_id: &str) -> bool {
+        self.room_id.is_some() && self.bridge_device.as_deref() == Some(device_id)
     }
 }
 

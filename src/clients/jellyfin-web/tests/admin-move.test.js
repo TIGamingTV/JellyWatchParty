@@ -11,14 +11,19 @@ JWP.ui = {
   hideCountdown: () => {}
 };
 
-// In-memory localStorage stand-in.
+// In-memory storage stand-ins: the id + secret live in sessionStorage (per
+// tab); the old shared localStorage copies are removed on load.
+const makeStore = (map) => ({
+  getItem: (k) => (map.has(k) ? map.get(k) : null),
+  setItem: (k, v) => map.set(k, String(v)),
+  removeItem: (k) => map.delete(k)
+});
 const store = new Map();
-globalThis.localStorage = {
-  getItem: (k) => (store.has(k) ? store.get(k) : null),
-  setItem: (k, v) => store.set(k, String(v)),
-  removeItem: (k) => store.delete(k)
-};
-document.getElementById = () => null;
+const shared = new Map([['owp_persistent_client_id', 'shared-id'], ['owp_resume_secret', 'shared']]);
+globalThis.sessionStorage = makeStore(store);
+globalThis.localStorage = makeStore(shared);
+const panel = { classList: { hidden: false, add(c) { if (c === 'hide') this.hidden = true; } } };
+document.getElementById = (id) => (id === JWP.constants.PANEL_ID ? panel : null);
 
 require('../utils/video.js');
 require('../utils/log.js');
@@ -32,6 +37,7 @@ const h = JWP._wsHandlers;
 beforeEach(() => {
   toasts.length = 0;
   store.clear();
+  panel.classList.hidden = false;
   Object.assign(JWP.state, {
     inRoom: false,
     roomId: '',
@@ -64,6 +70,29 @@ describe('admin moves', () => {
     assert.equal(JWP.state.readyRoomId, '', 'old ready state is gone');
     assert.deepEqual(JWP.state.participants, []);
     assert.deepEqual(toasts, ['An admin added you to "Movie night"']);
+    assert.equal(panel.classList.hidden, false, 'an admin move keeps the panel open');
+  });
+
+  it('drops a stale room even without the admin flag (moved while offline)', () => {
+    Object.assign(JWP.state, { inRoom: true, roomId: 'old', isHost: true, readyRoomId: 'old' });
+    h.handleRoomState(roomState('new'), null);
+    assert.equal(JWP.state.roomId, 'new');
+    assert.equal(JWP.state.readyRoomId, '');
+    assert.equal(JWP.state.isHost, false);
+  });
+
+  it('leaves the room when client_hello says the server has us in none', () => {
+    Object.assign(JWP.state, { inRoom: true, roomId: 'r1', isHost: true });
+    h.handleClientHello({ type: 'client_hello', payload: { client_id: 'me', resume_secret: 's', room_id: null } });
+    assert.equal(JWP.state.inRoom, false);
+    assert.equal(JWP.state.isHost, false);
+    assert.deepEqual(toasts, ['You are no longer in the watch party']);
+  });
+
+  it('keeps the room on client_hello from an older server (no room_id field)', () => {
+    Object.assign(JWP.state, { inRoom: true, roomId: 'r1' });
+    h.handleClientHello({ type: 'client_hello', payload: { client_id: 'me' } });
+    assert.equal(JWP.state.inRoom, true);
   });
 
   it('works from the lobby too, and makes us host when the server says so', () => {
@@ -81,13 +110,19 @@ describe('admin moves', () => {
 
   it('shows the reason when an admin removes us', () => {
     Object.assign(JWP.state, { inRoom: true, roomId: 'r1' });
+    JWP.state.isHost = true;
     h.handleRoomClosed({ type: 'room_closed', room: 'r1', payload: { reason: 'An admin removed you from the room', removed: true } });
     assert.equal(JWP.state.inRoom, false);
+    assert.equal(JWP.state.isHost, false, 'a removed host is not host in the lobby');
     assert.deepEqual(toasts, ['An admin removed you from the room']);
   });
 });
 
 describe('resume secret', () => {
+  it('removed the shared copies older versions kept in localStorage', () => {
+    assert.equal(shared.size, 0);
+  });
+
   it('stores the id and secret from client_hello', () => {
     h.handleClientHello({ type: 'client_hello', payload: { client_id: 'id-1', resume_secret: 's1' } });
     assert.equal(JWP.state.clientId, 'id-1');

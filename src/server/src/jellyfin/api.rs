@@ -9,8 +9,11 @@ use std::time::Duration;
 /// Jellyfin creates for remote-control calls) is hidden from device lists.
 pub const OWN_DEVICE_ID: &str = "jellywatchparty-session-server";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
-/// Sessions that showed activity this recently are listed.
-const ACTIVE_WITHIN_SECS: u32 = 960;
+/// The admin panel lists sessions that showed activity this recently (plus
+/// any bridged one). The poll itself fetches every session: a TV idling on
+/// its home screen makes no requests, and a bridged device must not drop
+/// out of the list just because nothing happened for a while.
+pub const LISTED_ACTIVE_WITHIN_MS: u64 = 960_000;
 
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "PascalCase", default)]
@@ -42,10 +45,11 @@ pub struct JfSession {
     pub now_playing_item: Option<JfItem>,
     pub play_state: Option<JfPlayState>,
     pub last_playback_check_in: Option<String>,
+    pub last_activity_date: Option<String>,
 }
 
-/// Jellyfin writes GUIDs without dashes in most places but not all; compare
-/// them in one canonical form (lowercase hex, no dashes).
+/// Jellyfin writes GUIDs as 32 lowercase hex chars ("N" format); compare
+/// them in that one canonical form whatever a client sent.
 pub fn normalize_id(id: &str) -> String {
     id.chars()
         .filter(|c| *c != '-')
@@ -170,16 +174,16 @@ impl JellyfinApi {
         let res = self
             .http
             .get(format!("{}/Sessions", self.base))
-            .query(&[("activeWithinSeconds", ACTIVE_WITHIN_SECS)])
             .header(reqwest::header::AUTHORIZATION, &self.auth)
             .send()
             .await
             .map_err(Self::err)?;
-        Self::check(res)
+        let raw = Self::check(res)
             .await?
-            .json::<Vec<JfSession>>()
+            .json::<Vec<serde_json::Value>>()
             .await
-            .map_err(|e| format!("Unexpected /Sessions response: {}", e))
+            .map_err(|e| format!("Unexpected /Sessions response: {}", e))?;
+        Ok(parse_sessions(raw))
     }
 
     /// `Pause`, `Unpause` or `Seek` (with `seek_ticks`).
@@ -232,6 +236,21 @@ impl JellyfinApi {
     }
 }
 
+/// Parses each session on its own, so one odd entry (a plugin's or a newer
+/// Jellyfin's) can't hide every other device.
+pub fn parse_sessions(raw: Vec<serde_json::Value>) -> Vec<JfSession> {
+    raw.into_iter()
+        .filter_map(|v| match serde_json::from_value::<JfSession>(v) {
+            Ok(s) if !s.id.is_empty() => Some(s),
+            Ok(_) => None,
+            Err(e) => {
+                log::debug!("Skipping a Jellyfin session that didn't parse: {}", e);
+                None
+            }
+        })
+        .collect()
+}
+
 /// Percent-encodes a path segment (session ids are hex, but be safe).
 fn urlencode(s: &str) -> String {
     s.bytes()
@@ -262,7 +281,7 @@ mod tests {
             "PlayState": { "PositionTicks": 600000000, "IsPaused": false, "CanSeek": true },
             "LastPlaybackCheckIn": "2026-10-03T19:52:36.1234567Z",
             "Unknown": 1
-        }, { "Id": "bare", "UserId": null, "Client": "Jellyfin Web 12.0.0" }]"#;
+        }, { "Id": "bare", "UserId": "00000000000000000000000000000000", "Client": "Jellyfin Web 12.0.0" }]"#;
         let sessions: Vec<JfSession> = serde_json::from_str(json).unwrap();
         let s = &sessions[0];
         assert_eq!(
@@ -276,9 +295,22 @@ mod tests {
         );
         assert!(s.supports_remote_control);
         assert!(!s.runs_web_client());
-        assert_eq!(sessions[1].user_id(), "");
+        assert_eq!(sessions[1].user_id(), "00000000000000000000000000000000");
         assert!(sessions[1].runs_web_client());
         assert_eq!(sessions[1].item_id(), None);
+    }
+
+    #[test]
+    fn one_bad_session_does_not_hide_the_others() {
+        let raw: Vec<serde_json::Value> = serde_json::from_str(
+            r#"[{"Id": "ok", "UserId": "00000000000000000000000000000000"},
+                {"Id": "bad", "SupportsRemoteControl": "yes"},
+                {"NoId": true}]"#,
+        )
+        .unwrap();
+        let sessions = parse_sessions(raw);
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].id, "ok");
     }
 
     #[test]

@@ -29,6 +29,8 @@ pub fn create_client_with_rx(
         last_seen: now,
         resume_secret: crate::utils::random_token(),
         connected_at: now,
+        conn_id: 0,
+        connected: true,
         kind: crate::types::ClientKind::Web,
         bridge_device: None,
     };

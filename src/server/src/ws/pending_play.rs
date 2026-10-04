@@ -30,6 +30,10 @@ pub(super) fn start_scheduled_play(
     room.pending_play = None;
     room.state.position = position;
     room.state.play_state = "playing".to_string();
+    // The state is from now (the wait for everyone may have been long), not
+    // from when the host first pressed play. `target_server_ts` in the
+    // message says when playback actually starts.
+    room.last_state_ts = current_ts;
     let msg = WsMessage {
         msg_type: "player_event".to_string(),
         room: Some(room.room_id.clone()),
@@ -134,6 +138,7 @@ mod tests {
 
         assert!(room.started);
         assert_eq!(room.state.play_state, "playing");
+        assert_eq!(room.last_state_ts, 1_000);
         for rx in [&mut host_rx, &mut g_rx] {
             let msg = test_helpers::recv_msg(rx).expect("host and guest get the play");
             let p = msg.payload.unwrap();

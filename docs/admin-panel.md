@@ -65,8 +65,8 @@ account set in the environment.
 | `ADMIN_USERNAME` | `admin` | Login name. |
 | `ADMIN_PASSWORD` | (empty) | Login password. **Required**; the panel doesn't start without it. Use a long random value (`openssl rand -base64 18`); shorter than 12 characters logs a warning. |
 | `ADMIN_PASSWORD_FILE` | (empty) | Read the password from this file instead (Docker secrets). Used only when `ADMIN_PASSWORD` is empty. |
-| `ADMIN_HOST` | `0.0.0.0` | Address the panel listens on. |
-| `ADMIN_PORT` | `3001` | Port the panel listens on. In the compose files, `ADMIN_PANEL_PORT` sets the published host port. |
+| `ADMIN_HOST` | `0.0.0.0` | IP address the panel listens on (`0.0.0.0` all IPv4, `::` all IPv6, `127.0.0.1` local only). |
+| `ADMIN_PORT` | `3001` | Port the panel listens on; must differ from `PORT`. In the compose files, `ADMIN_PANEL_PORT` sets the published host port. |
 | `ADMIN_SESSION_TTL_SECS` | `43200` | How long a login stays valid (12 hours). |
 | `ADMIN_COOKIE_SECURE` | `false` | Set to `true` when the panel is served over HTTPS, so the login cookie is never sent over plain HTTP. |
 | `ADMIN_TRUST_X_FORWARDED_FOR` | `false` | Behind a reverse proxy, set to `true` so failed-login throttling uses each visitor's address (the last `X-Forwarded-For` entry) instead of the proxy's. Only enable it if the panel can't be reached without the proxy. |
@@ -147,10 +147,16 @@ to be installed on the device.
   playing the room's item, it is told to play it from the room's
   position (so an idle TV on its home screen just starts). After that it
   is paused, unpaused and seeked to stay within 2 seconds of the host.
-  When the host switches to another item, the device follows.
+  When the host switches to another item, the device follows. A play
+  that is scheduled (the start countdown, or the short delay every play
+  has) starts on the device at the same moment as everyone else.
+  If someone stops the movie on the device itself, the bridge leaves it
+  alone until the host moves on to another item. If the device doesn't
+  start the item after three tries, the bridge stops asking and says so.
 - **As host**: the room follows the device. Play, pause, seeks and
   switching to another item on the device go to everyone in the room.
-  If playback stops on the device, the room pauses.
+  If playback stops on the device, the room pauses. A device host has no
+  start countdown: it is already playing, so the room starts with it.
 
 Each device can be in one room at a time. **Make host** works for devices
 too: the role is simply whether the device is the room's host right now.
@@ -164,14 +170,25 @@ show an error until you make them host or remove them.
 ### Status and limits
 
 The room shows each device's status and drift from the room (for
-example `synced +0.4s`). `loading` means the device was told to play the
-room's item and hasn't started yet; `offline` means Jellyfin no longer
-lists it (after 90 seconds it leaves the room).
+example *In sync -0.4s*). *Loading* means the device was told to play the
+room's item and hasn't started yet; *Offline* means Jellyfin no longer
+lists it (after 90 seconds it leaves the room). Problems (a command
+Jellyfin refused, an app that can't be a receiver) show in red under the
+device's name.
 
 - Jellyfin only learns a device's position when the device reports
   progress, every few seconds. The session server estimates the position
   in between, so receivers are kept within about 2 seconds, not frame
   accurate like the web client.
+- The clocks of the Jellyfin server and the session server don't need to
+  agree: the difference is measured from the devices' progress reports
+  and taken into account.
+- The devices list shows apps active in the last 16 minutes. A device in
+  a room stays as long as Jellyfin knows it, even if it sits idle.
+- For an `https://` `JELLYFIN_URL` with a certificate from your own
+  certificate authority, install that CA in the session server container
+  (the system store is trusted, as well as the usual public CAs).
+  `HTTPS_PROXY` / `NO_PROXY` are honoured.
 - A device starts following when it is added; it doesn't remember its
   room after a session server restart.
 
@@ -212,25 +229,34 @@ in case they come back.
 
 ### Behind a reverse proxy
 
-The UI uses relative URLs, so it also works under a path. Example for
-Caddy, serving the panel at `https://jellyfin.example.com/jwp-admin/`:
+Give the panel **its own host name** (e.g. `jwp-admin.example.com`)
+rather than a path on your Jellyfin site. On the same host, any script
+running on the Jellyfin pages (a malicious plugin, an XSS bug) could use a
+signed-in admin's panel session. The UI uses relative URLs, so a path
+under its own host works too.
+
+Caddy:
 
 ```caddy
-jellyfin.example.com {
-    handle_path /jwp-admin/* {
-        reverse_proxy session-server:3001
-    }
+jwp-admin.example.com {
+    reverse_proxy session-server:3001
 }
 ```
 
 nginx:
 
 ```nginx
-location /jwp-admin/ {
-    proxy_pass http://session-server:3001/;
-    proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-Host $host;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+server {
+    listen 443 ssl;
+    server_name jwp-admin.example.com;
+    # ssl_certificate ...;
+
+    location / {
+        proxy_pass http://session-server:3001;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-Host $http_host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
 }
 ```
 

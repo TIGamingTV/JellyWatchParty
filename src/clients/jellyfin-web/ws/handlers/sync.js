@@ -75,10 +75,12 @@
 
   h.handleRoomState = (msg, video) => {
     const adminMoved = !!(msg.payload && msg.payload.admin_moved);
-    if (adminMoved && state.inRoom && state.roomId && state.roomId !== msg.room
+    if (state.inRoom && state.roomId && state.roomId !== msg.room
         && JWP.actions && JWP.actions.resetRoomState) {
-      // The server already took us out of the old room; drop its local state
-      // (countdown, chat, sync timers) before taking on the new one.
+      // A different room than the one we think we're in (an admin moved us,
+      // possibly while we were offline): the server already took us out of
+      // the old one, so drop its local state (countdown, chat, sync timers)
+      // before taking on the new one.
       JWP.actions.resetRoomState();
     }
     applyRoomState(msg);

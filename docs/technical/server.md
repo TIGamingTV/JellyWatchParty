@@ -431,17 +431,53 @@ Lets the admin panel put Jellyfin sessions that can't run the web client
   snapshot on a `watch` channel that wakes every bridge task.
 - Positions: Jellyfin only updates `PlayState.PositionTicks` when the
   device reports progress, so `logic::device_view` extrapolates from
-  `LastPlaybackCheckIn` (capped at 30 s). After sending a seek or
-  pause, the receiver assumes it took effect until a newer check-in
-  arrives (`FollowerMemory`), so stale reports don't cause repeat seeks.
+  `LastPlaybackCheckIn` (capped at three report intervals, 30-120 s).
+  Jellyfin timestamps are shifted by an estimated clock offset
+  (`ClockEstimator`: the smallest recent `fetched_at - check-in` over
+  changed check-ins). After sending a seek or pause, the receiver assumes
+  it took effect until a newer check-in arrives, for at most 10 s
+  (`FollowerMemory`), so stale reports don't cause repeat seeks.
+- Scheduled plays: the task notes each `player_event` play's
+  `target_server_ts` and position. Until the room reports a newer state
+  it measures the room position from that target, keeps receivers'
+  play/pause untouched before it (a `hold`), and wakes up 300 ms before
+  the target to unpause them.
+- Remote-control commands run in their own task, so the bridge keeps
+  reading room messages while Jellyfin answers.
+- Receivers: a device that was on the room's item and left it was
+  stopped on purpose and is left alone until the room changes item;
+  `PlayNow` is tried at most 3 times per item.
+- A bridge that becomes host marks the room started (no start countdown).
 - Receiver thresholds: seek beyond 2 s drift (4 s cooldown, 1 s lead while
   playing), pause/unpause 2.5 s cooldown, `PlayNow` 15 s cooldown.
+- `/Sessions` is fetched without `activeWithinSeconds` (an idle TV makes
+  no requests and would drop out); the admin list filters by
+  `LastActivityDate` (16 min) instead, always keeping bridged devices.
+  Each session is parsed on its own, so one odd entry can't hide the rest.
 - Authenticates with `Authorization: MediaBrowser ... DeviceId=
   "jellywatchparty-session-server", Token="<api key>"`. Jellyfin treats
   API-key callers as privileged for remote control
   (`SessionManager.AssertCanControl`). Its own session is hidden.
 - A device missing from `/Sessions` for 90 s leaves its room; a room
-  closing stops its bridges.
+  closing stops its bridges. `add` reserves the device under one lock, so
+  concurrent adds can't bridge it twice; `remove` detaches in its own
+  task, so a dropped HTTP request can't leave an orphan.
+
+### Jellyfin API used (checked against Jellyfin 12, `release-12.z`)
+
+| Call | Jellyfin side | Notes |
+|------|---------------|-------|
+| `GET /Sessions` | `SessionController.GetSessions` | With an API key, every session is returned (`isApiKey`). Fields read: `Id`, `UserId` (GUID, "N" format), `UserName`, `Client`, `DeviceName`, `DeviceId`, `SupportsRemoteControl`, `NowPlayingItem.{Id,Name,SeriesName}`, `PlayState.{PositionTicks,IsPaused}`, `LastPlaybackCheckIn`, `LastActivityDate` (UTC, ends in `Z`). |
+| `POST /Sessions/{id}/Playing/{Pause,Unpause,Seek}?seekPositionTicks=` | `SendPlaystateCommand` | 204 on success. |
+| `POST /Sessions/{id}/Playing?playCommand=PlayNow&itemIds=&startPositionTicks=` | `Play` | Single episode + "next episode autoplay" makes Jellyfin queue the rest of the series. |
+
+Auth header: `Authorization: MediaBrowser Client="...", Device="...",
+DeviceId="jellywatchparty-session-server", Version="...", Token="<API key>"`.
+Jellyfin needs Client/Version/DeviceId to build the calling session; for an
+API key it replaces Client with the key's name and treats the caller as
+privileged in `SessionManager.AssertCanControl`, so other users' sessions
+can be controlled. The server's own session is recognised by its DeviceId
+and hidden.
 
 ## Module: `messaging.rs`
 
@@ -507,7 +543,7 @@ pub fn validate_token(token: &str, secret: &str) -> Result<Claims, Error> {
 ### Persistent Client ID
 
 Reconnection is matched by identity, not by luck: the client generates a
-UUID once and stores it in `localStorage`
+UUID once per browser tab and stores it in `sessionStorage`
 (`getPersistentClientId()`/`withClientId()` in
 `src/clients/jellyfin-web/ws/connection.js`), then sends it as
 `?client_id=<uuid>` on every WebSocket connection attempt (see
@@ -524,7 +560,16 @@ entry and sent only to its owner in `client_hello`. The client stores it
 next to its id and sends it as `&resume=`. Without the right secret
 (`decide_attach` in `ws/connection.rs`, constant-time compare), a
 connection asking for an id that is in use gets a fresh id instead of
-taking over the entry's room membership and host role.
+taking over the entry's room membership and host role. The secret is
+replaced on every reattach.
+
+Each websocket connection also gets a `conn_id`. When a connection ends,
+it marks the entry disconnected and schedules the grace-period check only
+if it is still the entry's current connection; after the grace period the
+entry is removed only if that same connection is still attached and
+either ended or stayed silent for 60 s (`reconnect::should_evict`). This
+keeps a half-dead old socket, noticed long after the client reconnected,
+from evicting the live session.
 
 ### Reconnection Behavior
 
