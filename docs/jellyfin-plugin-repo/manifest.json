@@ -8,6 +8,54 @@
     "category": "General",
     "versions": [
       {
+        "version": "2.0.8.0",
+        "changelog": "## What's Changed\r\n* feat(protocol,web,server): room media follows the host (set_media) by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/73\r\n* fix(web): stale item id from the hidden player OSD, and guest ready after media_changed (#71 follow-up) by @francotosqui in https://github.com/TIGamingTV/JellyWatchParty/pull/77\r\n* feat(web): close the panel from an X button, Escape, or a click outside by @francotosqui in https://github.com/TIGamingTV/JellyWatchParty/pull/78\r\n* feat: show each participant's name and playback status by @francotosqui in https://github.com/TIGamingTV/JellyWatchParty/pull/79\r\n* fix(server): stop logging room passwords and throttle failed joins by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/83\r\n* feat: start the room's first play together after a countdown by @francotosqui in https://github.com/TIGamingTV/JellyWatchParty/pull/80\r\n* Develop by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/84\r\n\r\n## New Contributors\r\n* @francotosqui made their first contribution in https://github.com/TIGamingTV/JellyWatchParty/pull/77\r\n\r\n**Full Changelog**: https://github.com/TIGamingTV/JellyWatchParty/compare/v2.0.7.0...v2.0.8.0",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/TIGamingTV/JellyWatchParty/releases/download/v2.0.8.0/JellyWatchParty-v2.0.8.0.zip",
+        "checksum": "c18d792c6b0445b98acf6fed0d8bcc4d",
+        "timestamp": "2026-09-25T15:37:38Z"
+      },
+      {
+        "version": "2.0.7.0",
+        "changelog": "## What's Changed\r\n* fix(web): resolve item id and start playback without global playbackManager by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/68\r\n* fix(web): send Authorization header from apiFetch, not just X-Emby-Token by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/72\r\n* fix(web): send Authorization header from apiFetch, not just X-Emby-Token by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/74\r\n* fix(server): correct set_media tests for the room_list broadcast to host by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/75\r\n\r\n\r\n**Full Changelog**: https://github.com/TIGamingTV/JellyWatchParty/compare/v2.0.6.0...v2.0.7.0",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/TIGamingTV/JellyWatchParty/releases/download/v2.0.7.0/JellyWatchParty-v2.0.7.0.zip",
+        "checksum": "99186b664c4961e490e377fc690e7d6a",
+        "timestamp": "2026-09-24T09:12:54Z"
+      },
+      {
+        "version": "2.0.6.0",
+        "changelog": "**Full Changelog**: https://github.com/TIGamingTV/JellyWatchParty/compare/v2.0.5.0...v2.0.6.0",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/TIGamingTV/JellyWatchParty/releases/download/v2.0.6.0/JellyWatchParty-v2.0.6.0.zip",
+        "checksum": "f36d248db3318d5113b8e23a40d64efe",
+        "timestamp": "2026-09-24T08:58:28Z"
+      },
+      {
+        "version": "2.0.6.0",
+        "changelog": "**Full Changelog**: https://github.com/TIGamingTV/JellyWatchParty/compare/v2.0.5.0...v2.0.6.0",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/TIGamingTV/JellyWatchParty/releases/download/v2.0.6.0/JellyWatchParty-v2.0.6.0.zip",
+        "checksum": "8a8ece6a34898094b73967cb27b939a3",
+        "timestamp": "2026-09-24T08:56:08Z"
+      },
+      {
+        "version": "2.0.6.0",
+        "changelog": "**Full Changelog**: https://github.com/TIGamingTV/JellyWatchParty/compare/v2.0.5.0...v2.0.6.0",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/TIGamingTV/JellyWatchParty/releases/download/v2.0.6.0/JellyWatchParty-v2.0.6.0.zip",
+        "checksum": "8571d8c20467ddd703af8e222eeb1ba0",
+        "timestamp": "2026-09-24T08:49:28Z"
+      },
+      {
+        "version": "2.0.5.0",
+        "changelog": "## What's Changed\r\n* Update develop plugin manifest (build 127) by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/69\r\n* Merge remote-tracking branch 'origin/develop' into fix/jf-12.1-playback-manager by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/70\r\n\r\n\r\n**Full Changelog**: https://github.com/TIGamingTV/JellyWatchParty/compare/v2.0.4.0...v2.0.5.0",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/TIGamingTV/JellyWatchParty/releases/download/v2.0.5.0/JellyWatchParty-v2.0.5.0.zip",
+        "checksum": "80c633b81aee6e81911eac1fc9aaae1d",
+        "timestamp": "2026-09-23T22:03:10Z"
+      },
+      {
         "version": "2.0.4.0",
         "changelog": "## What's Changed\r\n* refactor: migrate session-server from warp to axum, resolving RUSTSEC-2026-0258 at the source by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/66\r\n\r\n\r\n**Full Changelog**: https://github.com/TIGamingTV/JellyWatchParty/compare/v2.0.3.0...v2.0.4.0",
         "targetAbi": "12.0.0.0",
