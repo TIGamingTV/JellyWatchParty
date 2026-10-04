@@ -91,25 +91,43 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool HideNativeSyncButton { get; set; }
 
     /// <summary>
-    /// When true, third-party / native Jellyfin clients that cannot run the
-    /// injected JellyWatchParty script (Fladder, Swiftfin, Infuse, official
-    /// mobile apps, ...) may be bridged in as a room <em>host</em>: the server
-    /// mirrors that session's playback into a brand-new room for others to
-    /// join. This is a server-side workaround, so it is opt-in - defaults to
-    /// false so it stays off until an admin deliberately enables it from the
-    /// plugin configuration page.
+    /// Master switch for bridging devices from the in-player Watch Party
+    /// panel, meant only for small servers with trusted users. Off by
+    /// default; because it is a new setting, upgraded installs also start
+    /// with it off, so the per-role flags below stop having any effect until
+    /// an admin opts in again. Admins put devices into rooms from the
+    /// session server's admin panel instead. Even when on, users can only
+    /// bridge their own sessions (administrators: any session).
+    /// </summary>
+    public bool EnablePanelBridging { get; set; }
+
+    /// <summary>
+    /// When true (and <see cref="EnablePanelBridging"/> is on), third-party /
+    /// native Jellyfin clients that cannot run the injected JellyWatchParty
+    /// script (Fladder, Swiftfin, Infuse, official mobile apps, ...) may be
+    /// bridged in as a room <em>host</em>: the server mirrors that session's
+    /// playback into a brand-new room for others to join.
     /// </summary>
     public bool AllowThirdPartyClientHost { get; set; }
 
     /// <summary>
-    /// When true, supported native clients (such as the official Jellyfin
-    /// Android TV app) may be attached to an existing room as a
-    /// <em>receiver</em>: the server drives that session to follow the room's
-    /// host via remote-control playstate commands. Opt-in - defaults to false
-    /// so it stays off until an admin deliberately enables it from the plugin
-    /// configuration page.
+    /// When true (and <see cref="EnablePanelBridging"/> is on), supported
+    /// native clients (such as the official Jellyfin Android TV app) may be
+    /// attached to an existing room as a <em>receiver</em>: the server drives
+    /// that session to follow the room's host via remote-control playstate
+    /// commands.
     /// </summary>
     public bool AllowSupportedClientReceiver { get; set; }
+
+    /// <summary>
+    /// Whether users may start a host bridge from the Watch Party panel.
+    /// </summary>
+    public bool PanelHostAllowed => EnablePanelBridging && AllowThirdPartyClientHost;
+
+    /// <summary>
+    /// Whether users may attach a receiver from the Watch Party panel.
+    /// </summary>
+    public bool PanelReceiverAllowed => EnablePanelBridging && AllowSupportedClientReceiver;
 
     /// <summary>
     /// Checks a Session Server URL for common misconfigurations and returns

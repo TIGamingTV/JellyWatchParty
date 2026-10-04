@@ -58,22 +58,36 @@
                         </div>
                     </div>
 
-                    <!-- Native / Third-Party Client Bridging -->
+                    <!-- Native / Third-Party Client Bridging from the Watch Party panel -->
                     <div class="verticalSection">
-                        <h2 class="sectionTitle">Client Bridging</h2>
+                        <h2 class="sectionTitle">Watch Party Panel Bridging (trusted servers only)</h2>
+                        <p class="fieldDescription">
+                            Admins put TV apps and other clients that can't show the Watch Party panel into rooms from the
+                            <strong>session server's admin panel</strong> (port 3001, see the JellyWatchParty docs, "Admin Panel").
+                            The options below additionally let <em>users</em> do it themselves from the in-player Watch Party panel.
+                            Only turn this on for a small server where you trust every user: the bridged device is driven by the
+                            Jellyfin server itself. Users can only bridge their own devices; administrators can bridge any.
+                        </p>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label>
+                                <input is="emby-checkbox" type="checkbox" id="EnablePanelBridging" />
+                                <span>Let users bridge their devices from the Watch Party panel</span>
+                            </label>
+                            <div class="fieldDescription checkboxFieldDescription">Master switch for the two options below. Off by default. Turning it off stops any device bridged from the panel.</div>
+                        </div>
                         <div class="checkboxContainer checkboxContainer-withDescription">
                             <label>
                                 <input is="emby-checkbox" type="checkbox" id="AllowThirdPartyClientHost" />
                                 <span>Allow third-party clients to host</span>
                             </label>
-                            <div class="fieldDescription checkboxFieldDescription">Lets third-party / native clients that can't run the JellyWatchParty script (Fladder, Swiftfin, Infuse, official mobile apps, …) be bridged in as a room host. The server mirrors that session's playback into a new room. Off by default.</div>
+                            <div class="fieldDescription checkboxFieldDescription">Lets third-party / native clients that can't run the JellyWatchParty script (Fladder, Swiftfin, Infuse, official mobile apps, …) be bridged in as a room host. The server mirrors that session's playback into a new room.</div>
                         </div>
                         <div class="checkboxContainer checkboxContainer-withDescription">
                             <label>
                                 <input is="emby-checkbox" type="checkbox" id="AllowSupportedClientReceiver" />
                                 <span>Allow supported clients as receivers</span>
                             </label>
-                            <div class="fieldDescription checkboxFieldDescription">Lets supported native clients (such as the official Jellyfin Android TV app) be attached to a room as a receiver, following the host via remote-control commands. Off by default.</div>
+                            <div class="fieldDescription checkboxFieldDescription">Lets supported native clients (such as the official Jellyfin Android TV app) be attached to a room as a receiver, following the host via remote-control commands.</div>
                         </div>
                     </div>
 
@@ -145,6 +159,16 @@
                 updateSessionServerUrlWarning($(this).parents('.pluginConfigurationPage')[0]);
             });
 
+            // The per-role options only apply with the master switch on.
+            function updateBridgingOptions(page) {
+                var on = $('#EnablePanelBridging', page).is(':checked');
+                $('#AllowThirdPartyClientHost, #AllowSupportedClientReceiver', page).prop('disabled', !on);
+            }
+
+            $('#EnablePanelBridging').on('change', function () {
+                updateBridgingOptions($(this).parents('.pluginConfigurationPage')[0]);
+            });
+
             $('#toggleJwtSecret').on('click', function () {
                 var input = document.getElementById('JwtSecret');
                 var icon = this.querySelector('.material-icons');
@@ -179,8 +203,10 @@
                     $('#HideNativeSyncButton', page).prop('checked', config.HideNativeSyncButton || false);
 
                     // Client bridging settings
+                    $('#EnablePanelBridging', page).prop('checked', config.EnablePanelBridging || false);
                     $('#AllowThirdPartyClientHost', page).prop('checked', config.AllowThirdPartyClientHost || false);
                     $('#AllowSupportedClientReceiver', page).prop('checked', config.AllowSupportedClientReceiver || false);
+                    updateBridgingOptions(page);
 
                     Dashboard.hideLoadingMsg();
                 }).catch(function (err) {
@@ -208,6 +234,7 @@
                     config.HideNativeSyncButton = $('#HideNativeSyncButton', page).is(':checked');
 
                     // Client bridging settings
+                    config.EnablePanelBridging = $('#EnablePanelBridging', page).is(':checked');
                     config.AllowThirdPartyClientHost = $('#AllowThirdPartyClientHost', page).is(':checked');
                     config.AllowSupportedClientReceiver = $('#AllowSupportedClientReceiver', page).is(':checked');
 

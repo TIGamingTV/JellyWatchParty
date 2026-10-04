@@ -27,8 +27,12 @@ Admins can use it to:
 
 This works for every room, including rooms that users created.
 
-This is the admin home of the third-party client workarounds; see also
-the plugin's [Host Bridge]({{ '/technical/host-bridge/' | relative_url }}).
+This is the home of the third-party client workarounds. The plugin's
+in-player "Host From Another Device" / "Add a Device to This Room"
+pickers are off unless an admin turns on panel bridging (meant for small
+servers with trusted users), and even then users can only bridge their
+own devices; see [Host Bridge]({{ '/technical/host-bridge/' | relative_url }}). Devices bridged that way
+show up here as *Plugin bridge* and can't be added a second time.
 
 ## Turning it on
 
