@@ -6,6 +6,13 @@ nav_order: 6
 
 # Host Bridge
 
+{: .note }
+This page describes the **plugin's** bridge, used from the in-player
+Watch Party panel. The session server's [admin panel]({{ '/admin-panel/' | relative_url }}#jellyfin-devices)
+has its own bridge for admins: it drives devices over the Jellyfin API,
+can put any device into any room as host or receiver, and starts
+playback on receivers itself.
+
 ## Overview
 
 Normally, hosting a watch party requires running the injected web

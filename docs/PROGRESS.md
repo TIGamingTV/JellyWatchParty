@@ -2408,3 +2408,53 @@ warnings` clean.
 `configuration.md` (`RUST_LOG` instead of the never-read `LOG_LEVEL`,
 `JWT_AUDIENCE`/`JWT_ISSUER`), `security.md`, `deployment.md`,
 `features.md`, `.env.example`, both compose files, Dockerfile `EXPOSE`.
+
+---
+
+## Round 36 — Admin panel, part 2 of 3: Jellyfin devices (session-server bridge)
+
+**Goal**: let admins put clients that can't run the injected script (TV
+apps, Fladder, Swiftfin, ...) into any room as host or receiver, without
+the plugin's per-user in-panel bridges.
+
+**Design**:
+
+- New `jellyfin/` module, started with the admin panel when `JELLYFIN_URL`
+  + `JELLYFIN_API_KEY` (or `_FILE`) are set. `reqwest` 0.12, no default
+  features, `rustls-tls` (ring + webpki roots; no `h2`, no aws-lc).
+- A bridged device is a real room member (`ClientKind::Bridge`) driven by
+  an in-process task. Host vs receiver is just "am I `room.host_id`?" each
+  tick, so admin moves/kicks/host changes need no bridge-specific code.
+  Its messages go through the normal handlers via `ws::dispatch_internal`.
+- One `/Sessions` poller (`BRIDGE_POLL_INTERVAL_MS`, default 1 s; idle when
+  no bridges and no admin viewing) feeds a `watch` channel.
+- `logic.rs` holds pure `host_step` / `follower_step` (unit tested).
+  Device positions are extrapolated from `LastPlaybackCheckIn`; after a
+  seek/pause the bridge trusts its command until a newer check-in, which
+  fixes the C# follower's repeat-seek-on-stale-position behaviour.
+- Improvements over the plugin bridges: receivers start playback
+  themselves (`PlayNow`, incl. idle TVs) and follow `set_media`; hosts
+  report item switches as `set_media`; status/drift per device in the
+  panel; devices missing 90 s leave; a person is preferred over a device
+  when a host is auto-promoted.
+- Checked Jellyfin master: `SessionManager.AssertCanControl` explicitly
+  allows API-key callers ("a privileged context"), and `GetSession` builds
+  the controlling session from the `MediaBrowser` header's
+  Client/Version/DeviceId, which we send.
+
+**API/UI**: `GET /api/jellyfin/sessions`; `POST /api/rooms/{id}/members`
+accepts `{jellyfin_session_id, role}`; removing a device member stops its
+bridge. UI: "Jellyfin devices" section, devices in each room's add list
+with an as-receiver/as-host choice, device/drift/error per member.
+
+**Tests**: Rust 204, incl. `logic` (extrapolation, cooldowns, trusting
+commands, host transitions), bridge ticks, and an end-to-end receiver test
+against a fake Jellyfin (axum) checking the auth header, `PlayNow` and
+`Seek`. Also driven in headless Chromium against a simulated Jellyfin
+(Fladder host-only + Android TV receiver, progress reported every 3 s):
+receiver started at the host's position, followed pause, seek+play, and
+stayed within ±1.2 s. **Not yet run against a real Jellyfin server.**
+
+**Docs updated**: `admin-panel.md` (Jellyfin devices), `server.md`
+(`jellyfin/` module), `host-bridge.md` (pointer), `features.md`,
+`configuration.md`, `security.md`, `.env.example`, compose files.

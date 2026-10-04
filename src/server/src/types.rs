@@ -59,6 +59,20 @@ pub struct Client {
     /// False once the attached connection has ended (the entry is then in
     /// its reconnect grace period).
     pub connected: bool,
+    pub kind: ClientKind,
+}
+
+/// What sits behind a client entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ClientKind {
+    /// A websocket connection (the Jellyfin web client, the plugin's
+    /// bridges, third-party clients).
+    #[default]
+    Web,
+    /// A Jellyfin session this server drives itself over the Jellyfin API
+    /// (admin panel device bridge). Its "socket" is an in-process task, so
+    /// it is never reaped as a zombie and can't be reattached to.
+    Bridge,
 }
 
 #[derive(Debug, Clone, Serialize)]

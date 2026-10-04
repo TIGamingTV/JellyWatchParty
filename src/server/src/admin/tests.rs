@@ -23,6 +23,7 @@ fn state() -> AdminState {
         test_helpers::create_rooms(),
         cfg(),
         false,
+        JellyfinStatus::Unavailable("not configured".into()),
     )
 }
 
@@ -440,4 +441,66 @@ async fn create_rejects_blank_names() {
     )
     .await;
     assert_eq!(r.status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn jellyfin_devices_report_why_they_are_off() {
+    let s = state();
+    let token = login(&s).await;
+    let t = Some(token.as_str());
+    let r = call(&s, "GET", "/api/jellyfin/sessions", t, None).await;
+    assert_eq!(r.status, StatusCode::OK);
+    assert_eq!(r.json["enabled"], false);
+    assert_eq!(r.json["reason"], "not configured");
+
+    let ov = call(&s, "GET", "/api/overview", t, None).await.json;
+    assert_eq!(ov["server"]["jellyfin"]["enabled"], false);
+
+    let room = call(
+        &s,
+        "POST",
+        "/api/rooms",
+        t,
+        Some(serde_json::json!({ "name": "G" })),
+    )
+    .await
+    .json["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let r = call(
+        &s,
+        "POST",
+        &format!("/api/rooms/{}/members", room),
+        t,
+        Some(serde_json::json!({ "jellyfin_session_id": "abc", "role": "host" })),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::CONFLICT);
+    let r = call(
+        &s,
+        "POST",
+        &format!("/api/rooms/{}/members", room),
+        t,
+        Some(serde_json::json!({})),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+}
+
+#[test]
+fn device_list_hides_long_idle_sessions_only() {
+    use crate::jellyfin::api::JfSession;
+    let now = crate::utils::now_ms();
+    let mut s = JfSession::default();
+    assert!(api::recently_active(&s, 0, now), "no date: listed");
+    s.last_activity_date = Some("2020-01-01T00:00:00.0000000Z".into());
+    assert!(!api::recently_active(&s, 0, now));
+    s.last_activity_date = Some("2020-01-01T00:00:00.0000000Z".into());
+    // Clock offset applies.
+    assert!(api::recently_active(
+        &s,
+        now as i64 - 1_577_836_800_000,
+        now
+    ));
 }
