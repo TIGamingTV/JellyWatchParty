@@ -4,8 +4,10 @@
 //! lobby's room list afterwards.
 
 use super::{auth, error_response, AdminState, ClientIp, JellyfinStatus};
+use crate::jellyfin::api::{JfSession, LISTED_ACTIVE_WITHIN_MS};
 use crate::jellyfin::bridge::{AddError, Role, Snapshot};
-use crate::jellyfin::logic::device_view;
+use crate::jellyfin::logic::{device_view, MAX_EXTRAPOLATION_SECS};
+use crate::jellyfin::time::parse_utc_ms;
 use crate::jellyfin::Bridges;
 use crate::messaging::broadcast_room_list;
 use crate::room::ops::{self, AddOptions, OpError};
@@ -496,6 +498,18 @@ pub async fn set_host(
 
 // --- Jellyfin devices ------------------------------------------------------
 
+/// Active within `LISTED_ACTIVE_WITHIN_MS`. A session without a usable
+/// `LastActivityDate` is listed rather than hidden.
+pub(super) fn recently_active(s: &JfSession, clock_offset_ms: i64, now: u64) -> bool {
+    match s.last_activity_date.as_deref().and_then(parse_utc_ms) {
+        None => true,
+        Some(t) => {
+            let local = (t as i64).saturating_add(clock_offset_ms).max(0) as u64;
+            now.saturating_sub(local) < LISTED_ACTIVE_WITHIN_MS
+        }
+    }
+}
+
 /// Jellyfin sessions an admin can put into a room: everything active except
 /// clients that run the Watch Party panel themselves (they join as web
 /// clients) and this server's own API session.
@@ -517,8 +531,11 @@ pub async fn jellyfin_sessions(State(state): State<AdminState>) -> Response {
         .sessions
         .iter()
         .filter(|s| !s.is_own() && !s.runs_web_client())
-        .map(|s| {
-            let view = device_view(s, now);
+        .map(|s| (s, bridges.bridged_device(s.device_id(), &s.user_id())))
+        // Recently active ones, plus anything already bridged.
+        .filter(|(s, bridged)| bridged.is_some() || recently_active(s, snap.clock_offset_ms, now))
+        .map(|(s, bridged)| {
+            let view = device_view(s, now, snap.clock_offset_ms, MAX_EXTRAPOLATION_SECS);
             serde_json::json!({
                 "id": s.id,
                 "user_name": s.user_name(),
@@ -531,7 +548,7 @@ pub async fn jellyfin_sessions(State(state): State<AdminState>) -> Response {
                 })),
                 "position": view.position,
                 "paused": view.paused,
-                "bridged_as": bridges.bridged_device(s.device_id(), &s.user_id()),
+                "bridged_as": bridged,
             })
         })
         .collect();

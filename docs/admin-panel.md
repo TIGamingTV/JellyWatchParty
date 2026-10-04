@@ -143,10 +143,16 @@ to be installed on the device.
   playing the room's item, it is told to play it from the room's
   position (so an idle TV on its home screen just starts). After that it
   is paused, unpaused and seeked to stay within 2 seconds of the host.
-  When the host switches to another item, the device follows.
+  When the host switches to another item, the device follows. A play
+  that is scheduled (the start countdown, or the short delay every play
+  has) starts on the device at the same moment as everyone else.
+  If someone stops the movie on the device itself, the bridge leaves it
+  alone until the host moves on to another item. If the device doesn't
+  start the item after three tries, the bridge stops asking and says so.
 - **As host**: the room follows the device. Play, pause, seeks and
   switching to another item on the device go to everyone in the room.
-  If playback stops on the device, the room pauses.
+  If playback stops on the device, the room pauses. A device host has no
+  start countdown: it is already playing, so the room starts with it.
 
 Each device can be in one room at a time. **Make host** works for devices
 too: the role is simply whether the device is the room's host right now.
@@ -160,14 +166,25 @@ show an error until you make them host or remove them.
 ### Status and limits
 
 The room shows each device's status and drift from the room (for
-example `synced +0.4s`). `loading` means the device was told to play the
-room's item and hasn't started yet; `offline` means Jellyfin no longer
-lists it (after 90 seconds it leaves the room).
+example *In sync -0.4s*). *Loading* means the device was told to play the
+room's item and hasn't started yet; *Offline* means Jellyfin no longer
+lists it (after 90 seconds it leaves the room). Problems (a command
+Jellyfin refused, an app that can't be a receiver) show in red under the
+device's name.
 
 - Jellyfin only learns a device's position when the device reports
   progress, every few seconds. The session server estimates the position
   in between, so receivers are kept within about 2 seconds, not frame
   accurate like the web client.
+- The clocks of the Jellyfin server and the session server don't need to
+  agree: the difference is measured from the devices' progress reports
+  and taken into account.
+- The devices list shows apps active in the last 16 minutes. A device in
+  a room stays as long as Jellyfin knows it, even if it sits idle.
+- For an `https://` `JELLYFIN_URL` with a certificate from your own
+  certificate authority, install that CA in the session server container
+  (the system store is trusted, as well as the usual public CAs).
+  `HTTPS_PROXY` / `NO_PROXY` are honoured.
 - A device starts following when it is added; it doesn't remember its
   room after a session server restart.
 

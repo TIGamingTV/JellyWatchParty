@@ -12,9 +12,10 @@
 
 use super::api::{JellyfinApi, JfSession};
 use super::logic::{
-    device_view, follower_step, host_step, Command, FollowerMemory, HostEvent, HostMemory,
-    RoomView, TICKS_PER_SEC,
+    device_view, follower_step, host_step, local_checkin_ms, Command, FollowerMemory, HostEvent,
+    HostMemory, RoomView, MAX_EXTRAPOLATION_SECS, TICKS_PER_SEC,
 };
+use super::time::parse_utc_ms;
 use super::JellyfinConfig;
 use crate::messaging::broadcast_room_list;
 use crate::room::handle_leave;
@@ -24,12 +25,12 @@ use crate::types::{
 };
 use crate::utils::{now_ms, random_token};
 use log::{info, warn};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 use tokio::sync::{mpsc, watch};
-use tokio::task::AbortHandle;
+use tokio::task::{AbortHandle, JoinHandle};
 
 /// Keep polling this long after the admin panel last asked for devices.
 const ADMIN_VIEW_KEEPALIVE_MS: u64 = 30_000;
@@ -37,6 +38,12 @@ const ADMIN_VIEW_KEEPALIVE_MS: u64 = 30_000;
 /// (same grace a disconnected web client gets).
 const DEVICE_GONE_AFTER_MS: u64 = 90_000;
 const BRIDGE_CHANNEL_BUFFER: usize = 100;
+/// Unpause receivers this long before a scheduled play, to cover the time a
+/// device takes to act on the command.
+const UNPAUSE_LEAD_MS: u64 = 300;
+/// Clock offset samples older than this are dropped, so a clock that was
+/// corrected is picked up again.
+const CLOCK_SAMPLE_WINDOW_MS: u64 = 10 * 60 * 1000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Role {
@@ -77,6 +84,51 @@ pub struct Snapshot {
     pub sessions: Vec<JfSession>,
     pub fetched_at: u64,
     pub error: Option<String>,
+    /// This server's clock minus Jellyfin's (ms), estimated from progress
+    /// reports. Applied to every Jellyfin timestamp before use.
+    pub clock_offset_ms: i64,
+}
+
+/// Estimates how far this server's clock is from Jellyfin's. Each time a
+/// session's `LastPlaybackCheckIn` changes, the report happened before we
+/// fetched it, so `fetched_at - checkin` is the offset plus a delay >= 0;
+/// the smallest recent sample is the best estimate.
+#[derive(Debug, Default)]
+struct ClockEstimator {
+    last_checkin: HashMap<String, u64>,
+    samples: VecDeque<(u64, i64)>,
+    offset: i64,
+}
+
+impl ClockEstimator {
+    fn observe(&mut self, sessions: &[JfSession], fetched_at: u64) -> i64 {
+        let mut seen = HashMap::new();
+        for s in sessions {
+            let Some(t) = s.last_playback_check_in.as_deref().and_then(parse_utc_ms) else {
+                continue;
+            };
+            if let Some(prev) = self.last_checkin.get(&s.id) {
+                if *prev != t {
+                    self.samples
+                        .push_back((fetched_at, fetched_at as i64 - t as i64));
+                }
+            }
+            seen.insert(s.id.clone(), t);
+        }
+        self.last_checkin = seen;
+        while self.samples.len() > 500
+            || self
+                .samples
+                .front()
+                .is_some_and(|(at, _)| fetched_at.saturating_sub(*at) > CLOCK_SAMPLE_WINDOW_MS)
+        {
+            self.samples.pop_front();
+        }
+        if let Some(min) = self.samples.iter().map(|(_, o)| *o).min() {
+            self.offset = min;
+        }
+        self.offset
+    }
 }
 
 /// What the admin panel shows about a bridged device.
@@ -91,6 +143,8 @@ pub struct BridgeInfo {
     pub status: &'static str,
     pub drift: Option<f64>,
     pub detail: Option<String>,
+    /// Error from the last remote-control command, if it failed.
+    pub cmd_error: Option<String>,
 }
 
 struct Entry {
@@ -107,6 +161,7 @@ struct Inner {
     snapshot: watch::Sender<Arc<Snapshot>>,
     last_view_ms: AtomicU64,
     fetch_lock: tokio::sync::Mutex<()>,
+    clock: Mutex<ClockEstimator>,
 }
 
 #[derive(Clone)]
@@ -139,11 +194,16 @@ impl Bridges {
             snapshot,
             last_view_ms: AtomicU64::new(0),
             fetch_lock: tokio::sync::Mutex::new(()),
+            clock: Mutex::new(ClockEstimator::default()),
         })))
     }
 
     fn entries(&self) -> MutexGuard<'_, HashMap<String, Entry>> {
         self.0.entries.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn clock(&self) -> MutexGuard<'_, ClockEstimator> {
+        self.0.clock.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     fn wanted(&self) -> bool {
@@ -161,10 +221,13 @@ impl Bridges {
                 if let Some(e) = previous_error {
                     info!("Jellyfin reachable again (was: {})", e);
                 }
+                let fetched_at = now_ms();
+                let clock_offset_ms = self.clock().observe(&sessions, fetched_at);
                 Snapshot {
                     sessions,
-                    fetched_at: now_ms(),
+                    fetched_at,
                     error: None,
+                    clock_offset_ms,
                 }
             }
             Err(e) => {
@@ -175,6 +238,7 @@ impl Bridges {
                     sessions: Vec::new(),
                     fetched_at: now_ms(),
                     error: Some(e),
+                    clock_offset_ms: self.clock().offset,
                 }
             }
         };
@@ -236,11 +300,38 @@ impl Bridges {
             return Err(AddError::NoRemoteControl);
         }
         let user_id = s.user_id();
-        if self.bridged_device(s.device_id(), &user_id).is_some() {
-            return Err(AddError::AlreadyBridged);
+        let client_id = uuid::Uuid::new_v4().to_string();
+
+        // Reserve the device first, check and insert under one lock, so two
+        // concurrent adds (a double click, two admin tabs) can't both pass.
+        {
+            let mut entries = self.entries();
+            if entries
+                .values()
+                .any(|e| e.info.device_id == s.device_id() && e.info.jf_user_id == user_id)
+            {
+                return Err(AddError::AlreadyBridged);
+            }
+            entries.insert(
+                client_id.clone(),
+                Entry {
+                    info: BridgeInfo {
+                        device_id: s.device_id().to_string(),
+                        jf_user_id: user_id.clone(),
+                        session_id: s.id.clone(),
+                        device_name: s.device_name().to_string(),
+                        client_name: s.client_name().to_string(),
+                        remote_control: s.supports_remote_control,
+                        status: "loading",
+                        drift: None,
+                        detail: None,
+                        cmd_error: None,
+                    },
+                    abort: None,
+                },
+            );
         }
 
-        let client_id = uuid::Uuid::new_v4().to_string();
         let (tx, rx) = mpsc::channel(BRIDGE_CHANNEL_BUFFER);
         let label = format!(
             "{} ({})",
@@ -260,6 +351,7 @@ impl Bridges {
             let mut rooms = self.0.rooms.write().await;
             let mut clients = self.0.clients.write().await;
             if !rooms.contains_key(room_id) {
+                self.entries().remove(&client_id);
                 return Err(AddError::Op(OpError::RoomNotFound));
             }
             clients.insert(
@@ -286,6 +378,7 @@ impl Bridges {
             };
             if let Err(e) = ops::add_member(room_id, &client_id, &mut rooms, &mut clients, opts) {
                 clients.remove(&client_id);
+                self.entries().remove(&client_id);
                 return Err(AddError::Op(e));
             }
             if role == Role::Host {
@@ -293,23 +386,6 @@ impl Bridges {
             }
         }
 
-        self.entries().insert(
-            client_id.clone(),
-            Entry {
-                info: BridgeInfo {
-                    device_id: s.device_id().to_string(),
-                    jf_user_id: user_id,
-                    session_id: s.id.clone(),
-                    device_name: s.device_name().to_string(),
-                    client_name: s.client_name().to_string(),
-                    remote_control: s.supports_remote_control,
-                    status: "loading",
-                    drift: None,
-                    detail: None,
-                },
-                abort: None,
-            },
-        );
         let handle = tokio::spawn(run(self.clone(), client_id.clone(), rx));
         if let Some(e) = self.entries().get_mut(&client_id) {
             e.abort = Some(handle.abort_handle());
@@ -331,7 +407,11 @@ impl Bridges {
         if let Some(a) = entry.abort {
             a.abort();
         }
-        self.detach(client_id).await;
+        // Detach in its own task, so it completes even if the caller (an
+        // admin HTTP request) goes away while waiting for the locks.
+        let b = self.clone();
+        let id = client_id.to_string();
+        let _ = tokio::spawn(async move { b.detach(&id).await }).await;
         true
     }
 
@@ -399,7 +479,7 @@ impl Bridges {
         st: &mut TaskState,
     ) -> Option<&'static str> {
         let now = now_ms();
-        let (room_id, view, is_host, ready) = {
+        let (room_id, view, is_host, ready, started) = {
             let rooms = self.0.rooms.read().await;
             let clients = self.0.clients.read().await;
             let Some(client) = clients.get(client_id) else {
@@ -411,27 +491,36 @@ impl Bridges {
             let Some(room) = rooms.get(&room_id) else {
                 return Some("room closed");
             };
-            let playing = room.state.play_state == "playing" && room.pending_play.is_none();
+            let mut playing = room.state.play_state == "playing" && room.pending_play.is_none();
             let mut expected = if playing {
                 room.state.position + now.saturating_sub(room.last_state_ts) as f64 / 1000.0
             } else {
                 room.state.position
             };
-            match st.hold {
-                Some((until, pos)) if now < until => expected = pos,
-                Some(_) => st.hold = None,
-                None => {}
+            let mut hold = false;
+            // A scheduled play (countdown, or the usual short delay) starts at
+            // its target time, not when it was announced: until the room
+            // reports a newer state, measure from the target.
+            if let Some((target, pos)) = st.anchor {
+                if room.last_state_ts > target || room.state.play_state != "playing" {
+                    st.anchor = None;
+                } else {
+                    playing = true;
+                    if now + UNPAUSE_LEAD_MS < target {
+                        hold = true;
+                        expected = pos;
+                    } else {
+                        expected = pos + now.saturating_sub(target) as f64 / 1000.0;
+                    }
+                }
             }
-            let view = RoomView {
-                media_id: room.media_id.clone(),
-                playing,
-                expected,
-            };
+            let view = RoomView::new(room.media_id.as_deref(), playing, expected, hold);
             (
                 room_id,
                 view,
                 room.host_id == client_id,
                 room.ready_clients.contains(client_id),
+                room.started,
             )
         };
 
@@ -467,9 +556,11 @@ impl Bridges {
                     i.session_id = sid;
                     i.remote_control = rc;
                 });
+                st.note_checkin(local_checkin_ms(s, snap.clock_offset_ms));
             }
         }
-        let device = session.map(|s| device_view(s, now));
+        let max_extrapolation = st.max_extrapolation_secs();
+        let device = session.map(|s| device_view(s, now, snap.clock_offset_ms, max_extrapolation));
 
         if st.was_host != Some(is_host) {
             st.was_host = Some(is_host);
@@ -478,6 +569,13 @@ impl Bridges {
         }
 
         let (status, drift, detail) = if is_host {
+            if !started {
+                // A device can't hold its first play for the start
+                // countdown; it is already playing. Start the room as is.
+                if let Some(room) = self.0.rooms.write().await.get_mut(&room_id) {
+                    room.started = true;
+                }
+            }
             if !ready && device.as_ref().is_some_and(|d| d.item_id.is_some()) {
                 self.send_to_room(
                     client_id,
@@ -521,22 +619,14 @@ impl Bridges {
                     "This app doesn't accept remote control; make it the host instead".to_string(),
                 ),
             )
+        } else if st.inflight.as_ref().is_some_and(|h| !h.is_finished()) {
+            // Commands from the last tick are still on their way; decide
+            // again once they're through.
+            (info.status, info.drift, info.detail.clone())
         } else {
             let step = follower_step(&view, device.as_ref(), &mut st.follower, now);
-            let mut detail = None;
-            if let Some(s) = session {
-                for cmd in &step.commands {
-                    if let Err(e) = self.run_command(&s.id, cmd).await {
-                        if st.last_error.as_deref() != Some(e.as_str()) {
-                            warn!("Bridge {}: {:?} failed: {}", client_id, cmd, e);
-                            st.last_error = Some(e.clone());
-                        }
-                        detail = Some(e);
-                    }
-                }
-            }
-            if detail.is_none() {
-                st.last_error = None;
+            if let (Some(s), false) = (session, step.commands.is_empty()) {
+                st.inflight = Some(self.spawn_commands(client_id, &s.id, step.commands.clone()));
             }
             if step.on_item && !ready {
                 self.send_to_room(
@@ -547,6 +637,10 @@ impl Bridges {
                 )
                 .await;
             }
+            let detail = step
+                .note
+                .map(String::from)
+                .or_else(|| info.cmd_error.clone());
             (step.status, step.drift, detail)
         };
 
@@ -562,6 +656,35 @@ impl Bridges {
             i.detail = detail;
         });
         None
+    }
+
+    /// Sends remote-control commands in their own task, so the bridge keeps
+    /// reading room messages while Jellyfin answers (up to its timeout).
+    fn spawn_commands(
+        &self,
+        client_id: &str,
+        session_id: &str,
+        cmds: Vec<Command>,
+    ) -> JoinHandle<()> {
+        let b = self.clone();
+        let client_id = client_id.to_string();
+        let session_id = session_id.to_string();
+        tokio::spawn(async move {
+            let mut error = None;
+            for cmd in &cmds {
+                if let Err(e) = b.run_command(&session_id, cmd).await {
+                    let repeated = b
+                        .info(&client_id)
+                        .is_some_and(|i| i.cmd_error.as_deref() == Some(e.as_str()));
+                    if !repeated {
+                        warn!("Bridge {}: {:?} failed: {}", client_id, cmd, e);
+                    }
+                    error = Some(e);
+                    break;
+                }
+            }
+            b.update(&client_id, |i| i.cmd_error = error);
+        })
     }
 
     /// Shows the device's state in the room's participant list.
@@ -591,31 +714,66 @@ struct TaskState {
     host: HostMemory,
     follower: FollowerMemory,
     was_host: Option<bool>,
-    /// A play the room scheduled for later: `(target ms, position)`.
-    hold: Option<(u64, f64)>,
+    /// The room's latest scheduled play: `(target ms, position)`.
+    anchor: Option<(u64, f64)>,
     missing_since: Option<u64>,
     reported: Option<(String, &'static str)>,
-    last_error: Option<String>,
+    /// Remote-control commands still being sent.
+    inflight: Option<JoinHandle<()>>,
+    /// Last progress report seen (local ms) and the usual gap between them.
+    last_checkin: u64,
+    report_interval_ms: Option<u64>,
 }
 
-/// Notes a scheduled play from the room, so the expected position holds
-/// still until it actually starts.
-fn note_room_message(text: &str, st: &mut TaskState, now: u64) {
+impl TaskState {
+    fn note_checkin(&mut self, checkin: u64) {
+        if checkin > self.last_checkin {
+            if self.last_checkin > 0 {
+                let gap = checkin - self.last_checkin;
+                self.report_interval_ms = Some(match self.report_interval_ms {
+                    Some(prev) => (prev * 3 + gap) / 4,
+                    None => gap,
+                });
+            }
+            self.last_checkin = checkin;
+        }
+    }
+
+    /// Extrapolate up to three report intervals (30-120 s): a device that
+    /// reports rarely isn't mistaken for a stalled one.
+    fn max_extrapolation_secs(&self) -> f64 {
+        self.report_interval_ms
+            .map(|ms| (ms as f64 * 3.0 / 1000.0).clamp(MAX_EXTRAPOLATION_SECS, 120.0))
+            .unwrap_or(MAX_EXTRAPOLATION_SECS)
+    }
+
+    /// How long until the receiver should be unpaused for a scheduled
+    /// play, if one is coming up.
+    fn wake_in(&self, now: u64) -> Option<Duration> {
+        let (target, _) = self.anchor?;
+        let at = target.saturating_sub(UNPAUSE_LEAD_MS);
+        (at > now).then(|| Duration::from_millis(at - now))
+    }
+}
+
+/// Notes scheduled plays (and what cancels them) from the room's messages.
+fn note_room_message(text: &str, st: &mut TaskState) {
     let Ok(msg) = serde_json::from_str::<serde_json::Value>(text) else {
         return;
     };
     match msg["type"].as_str() {
-        Some("player_event") if msg["payload"]["action"] == "play" => {
-            if let (Some(target), Some(pos)) = (
-                msg["payload"]["target_server_ts"].as_u64(),
-                msg["payload"]["position"].as_f64(),
-            ) {
-                if target > now {
-                    st.hold = Some((target, pos));
+        Some("player_event") => match msg["payload"]["action"].as_str() {
+            Some("play") => {
+                if let (Some(target), Some(pos)) = (
+                    msg["payload"]["target_server_ts"].as_u64(),
+                    msg["payload"]["position"].as_f64(),
+                ) {
+                    st.anchor = Some((target, pos));
                 }
             }
-        }
-        Some("room_state") | Some("media_changed") => st.hold = None,
+            _ => st.anchor = None,
+        },
+        Some("room_state") | Some("media_changed") => st.anchor = None,
         _ => {}
     }
 }
@@ -624,11 +782,12 @@ async fn run(bridges: Bridges, client_id: String, mut rx: ClientReceiver) {
     let mut snaps = bridges.0.snapshot.subscribe();
     let mut st = TaskState::default();
     let reason = loop {
+        let wake = st.wake_in(now_ms());
         tokio::select! {
             msg = rx.recv() => match msg {
                 None => break "removed",
                 Some(m) => {
-                    note_room_message(&m.into_text(), &mut st, now_ms());
+                    note_room_message(&m.into_text(), &mut st);
                     continue;
                 }
             },
@@ -637,6 +796,8 @@ async fn run(bridges: Bridges, client_id: String, mut rx: ClientReceiver) {
                     break "shutting down";
                 }
             }
+            // Unpause right when a scheduled play starts, not on the next poll.
+            _ = tokio::time::sleep(wake.unwrap_or_default()), if wake.is_some() => {}
         }
         let snap = snaps.borrow_and_update().clone();
         if let Some(reason) = bridges.tick(&client_id, &snap, &mut st).await {
@@ -689,6 +850,7 @@ mod tests {
                 is_paused: paused,
             }),
             last_playback_check_in: None,
+            last_activity_date: None,
         }
     }
 
@@ -731,6 +893,7 @@ mod tests {
                     status: "loading",
                     drift: None,
                     detail: None,
+                    cmd_error: None,
                 },
                 abort: None,
             },
@@ -743,6 +906,7 @@ mod tests {
             sessions,
             fetched_at: now_ms(),
             error: None,
+            clock_offset_ms: 0,
         }
     }
 
@@ -805,6 +969,7 @@ mod tests {
             sessions: vec![],
             fetched_at: now_ms(),
             error: Some("boom".into()),
+            clock_offset_ms: 0,
         };
         assert_eq!(b.tick(&id, &bad, &mut st).await, None);
         let info = b.info(&id).unwrap();
@@ -1060,18 +1225,109 @@ mod tests {
     }
 
     #[test]
-    fn scheduled_plays_hold_the_expected_position() {
+    fn scheduled_plays_are_anchored_and_cancelled() {
         let mut st = TaskState::default();
-        let msg = serde_json::json!({
+        let play = serde_json::json!({
             "type": "player_event",
             "payload": { "action": "play", "position": 12.5, "target_server_ts": 5_000 }
         });
-        note_room_message(&msg.to_string(), &mut st, 4_000);
-        assert_eq!(st.hold, Some((5_000, 12.5)));
-        note_room_message(r#"{"type":"media_changed"}"#, &mut st, 4_100);
-        assert_eq!(st.hold, None);
-        // Already due: nothing to hold.
-        note_room_message(&msg.to_string(), &mut st, 6_000);
-        assert_eq!(st.hold, None);
+        note_room_message(&play.to_string(), &mut st);
+        assert_eq!(st.anchor, Some((5_000, 12.5)));
+        assert_eq!(st.wake_in(4_000), Some(Duration::from_millis(700)));
+        assert_eq!(st.wake_in(4_800), None, "inside the unpause lead");
+        note_room_message(
+            r#"{"type":"player_event","payload":{"action":"pause","position":1}}"#,
+            &mut st,
+        );
+        assert_eq!(st.anchor, None);
+        // Read late (after its target): still anchors, for the position.
+        note_room_message(&play.to_string(), &mut st);
+        assert_eq!(st.anchor, Some((5_000, 12.5)));
+        note_room_message(r#"{"type":"media_changed"}"#, &mut st);
+        assert_eq!(st.anchor, None);
+    }
+
+    #[test]
+    fn clock_offset_is_the_smallest_fresh_sample() {
+        let mut c = ClockEstimator::default();
+        let mut s = session("s", Some(ITEM), false, true);
+        s.last_playback_check_in = Some("1970-01-01T00:00:10Z".into());
+        // First sighting: no sample (the report could be old).
+        assert_eq!(c.observe(&[s.clone()], 50_000), 0);
+        // Jellyfin's clock is 5 s behind ours: reports land 5 s "late" plus
+        // up to a poll interval.
+        s.last_playback_check_in = Some("1970-01-01T00:00:13Z".into());
+        assert_eq!(c.observe(&[s.clone()], 18_700), 5_700);
+        s.last_playback_check_in = Some("1970-01-01T00:00:16Z".into());
+        assert_eq!(c.observe(&[s.clone()], 21_100), 5_100);
+        // Unchanged report: no new sample.
+        assert_eq!(c.observe(&[s.clone()], 23_000), 5_100);
+        // Old samples expire.
+        s.last_playback_check_in = Some("1970-01-01T00:00:19Z".into());
+        let later = 21_100 + CLOCK_SAMPLE_WINDOW_MS + 1;
+        let o = c.observe(&[s], later);
+        assert_eq!(o, later as i64 - 19_000);
+    }
+
+    #[test]
+    fn extrapolation_cap_follows_the_report_interval() {
+        let mut st = TaskState::default();
+        assert_eq!(st.max_extrapolation_secs(), MAX_EXTRAPOLATION_SECS);
+        st.note_checkin(1_000);
+        st.note_checkin(41_000);
+        assert_eq!(st.max_extrapolation_secs(), 120.0);
+        let mut quick = TaskState::default();
+        quick.note_checkin(1_000);
+        quick.note_checkin(4_000);
+        assert_eq!(quick.max_extrapolation_secs(), MAX_EXTRAPOLATION_SECS);
+    }
+
+    #[tokio::test]
+    async fn a_device_host_starts_the_room_without_a_countdown() {
+        let b = bridges();
+        let room = ops::create_group("G", None, &mut *b.0.rooms.write().await).unwrap();
+        b.0.rooms.write().await.get_mut(&room).unwrap().started = false;
+        let s = session("s7", Some(ITEM), false, false);
+        let (id, _rx) = add_member(&b, &room, &s, true).await;
+        let mut st = TaskState::default();
+        assert_eq!(b.tick(&id, &snap(vec![s]), &mut st).await, None);
+        assert!(b.0.rooms.read().await[&room].started);
+    }
+
+    #[tokio::test]
+    async fn receivers_wait_for_a_scheduled_play_then_follow_from_its_target() {
+        let b = bridges();
+        let room = ops::create_group("G", None, &mut *b.0.rooms.write().await).unwrap();
+        let s = session("s8", Some(ITEM), true, true);
+        let (id, _rx) = add_member(&b, &room, &s, false).await;
+        let now = now_ms();
+        {
+            let mut lr = b.0.rooms.write().await;
+            let r = lr.get_mut(&room).unwrap();
+            r.media_id = Some(ITEM.into());
+            r.state.position = 10.0;
+            r.state.play_state = "playing".into();
+            // Announced 4 s ago (before either target below).
+            r.last_state_ts = now - 4_000;
+        }
+        // Countdown: play at 10 s, starting 3 s from now. The paused TV is
+        // at 10 s: in sync, and not unpaused early.
+        let mut st = TaskState {
+            anchor: Some((now + 3_000, 10.0)),
+            ..Default::default()
+        };
+        assert_eq!(b.tick(&id, &snap(vec![s.clone()]), &mut st).await, None);
+        assert!(st.inflight.is_none(), "no command before the start");
+        assert_eq!(b.info(&id).unwrap().status, "synced");
+
+        // After the target, the room counts from the target (11 s), not
+        // from when the play was announced (which would say 14 s).
+        let mut st = TaskState {
+            anchor: Some((now - 1_000, 10.0)),
+            ..Default::default()
+        };
+        assert_eq!(b.tick(&id, &snap(vec![s]), &mut st).await, None);
+        let drift = b.info(&id).unwrap().drift.unwrap();
+        assert!((drift + 1.0).abs() < 0.2, "drift {}", drift);
     }
 }

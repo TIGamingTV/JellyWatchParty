@@ -487,3 +487,20 @@ async fn jellyfin_devices_report_why_they_are_off() {
     .await;
     assert_eq!(r.status, StatusCode::BAD_REQUEST);
 }
+
+#[test]
+fn device_list_hides_long_idle_sessions_only() {
+    use crate::jellyfin::api::JfSession;
+    let now = crate::utils::now_ms();
+    let mut s = JfSession::default();
+    assert!(api::recently_active(&s, 0, now), "no date: listed");
+    s.last_activity_date = Some("2020-01-01T00:00:00.0000000Z".into());
+    assert!(!api::recently_active(&s, 0, now));
+    s.last_activity_date = Some("2020-01-01T00:00:00.0000000Z".into());
+    // Clock offset applies.
+    assert!(api::recently_active(
+        &s,
+        now as i64 - 1_577_836_800_000,
+        now
+    ));
+}
