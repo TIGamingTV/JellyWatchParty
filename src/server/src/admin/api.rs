@@ -143,10 +143,12 @@ fn member_json(
     bridges: Option<&Bridges>,
 ) -> serde_json::Value {
     let client = clients.get(id);
+    let plugin_bridge =
+        client.is_some_and(|c| c.kind == ClientKind::Web && c.bridge_device.is_some());
     let mut m = serde_json::json!({
         "id": id,
         "name": client.map(|c| c.user_name.as_str()).unwrap_or("Someone"),
-        "kind": "web",
+        "kind": if plugin_bridge { "plugin_bridge" } else { "web" },
         "is_host": room.host_id == id,
         "status": room.client_status.get(id).map(String::as_str).unwrap_or("unknown"),
         "ready": room.ready_clients.contains(id),
@@ -409,6 +411,18 @@ pub async fn add_member(
         let client = locked_clients
             .get(&client_id)
             .ok_or_else(|| op_error(OpError::ClientNotFound))?;
+        if client.kind == ClientKind::Web
+            && client.bridge_device.is_some()
+            && client.room_id.is_some()
+        {
+            // A plugin bridge only knows the room its user picked; moving
+            // it would leave it driving (or following) the wrong room.
+            return Err(ApiError(
+                StatusCode::CONFLICT,
+                "This device was bridged from the Watch Party panel; remove it and add it here instead"
+                    .into(),
+            ));
+        }
         if !client.authenticated {
             // Adding it would let a connection that never proved who it is
             // skip authentication entirely.
@@ -527,14 +541,31 @@ pub async fn jellyfin_sessions(State(state): State<AdminState>) -> Response {
     };
     let snap = bridges.snapshot_for_admin().await;
     let now = now_ms();
+    // Who stands in for which device right now: our own bridges, and the
+    // plugin's in-panel bridges (tagged with `bridge_device_id`).
+    let bridged: Vec<(String, String, bool)> = state
+        .clients
+        .read()
+        .await
+        .iter()
+        .filter(|(_, c)| c.room_id.is_some())
+        .filter_map(|(id, c)| {
+            c.bridge_device
+                .as_ref()
+                .map(|d| (id.clone(), d.clone(), c.kind == ClientKind::Web))
+        })
+        .collect();
     let mut sessions: Vec<_> = snap
         .sessions
         .iter()
         .filter(|s| !s.is_own() && !s.runs_web_client())
-        .map(|s| (s, bridges.bridged_device(s.device_id(), &s.user_id())))
+        .map(|s| {
+            let bridge = bridged.iter().find(|(_, d, _)| d == s.device_id());
+            (s, bridge)
+        })
         // Recently active ones, plus anything already bridged.
-        .filter(|(s, bridged)| bridged.is_some() || recently_active(s, snap.clock_offset_ms, now))
-        .map(|(s, bridged)| {
+        .filter(|(s, bridge)| bridge.is_some() || recently_active(s, snap.clock_offset_ms, now))
+        .map(|(s, bridge)| {
             let view = device_view(s, now, snap.clock_offset_ms, MAX_EXTRAPOLATION_SECS);
             serde_json::json!({
                 "id": s.id,
@@ -548,7 +579,8 @@ pub async fn jellyfin_sessions(State(state): State<AdminState>) -> Response {
                 })),
                 "position": view.position,
                 "paused": view.paused,
-                "bridged_as": bridged,
+                "bridged_as": bridge.map(|b| &b.0),
+                "bridged_by_plugin": bridge.is_some_and(|b| b.2),
             })
         })
         .collect();

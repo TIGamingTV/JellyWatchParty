@@ -27,6 +27,10 @@ public sealed class SessionHostBridge : IAsyncDisposable
     // mirroring the web client's keepalive (see implem.md §1.9).
     private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(20);
 
+    // How long Start waits for the session server to confirm (room_state) or
+    // refuse (error) the room. Servers that never answer don't block it.
+    internal static readonly TimeSpan StartAnswerTimeout = TimeSpan.FromSeconds(5);
+
     private readonly string _sessionId;
     private readonly string _userId;
     private readonly string _userName;
@@ -39,22 +43,36 @@ public sealed class SessionHostBridge : IAsyncDisposable
     // can otherwise overlap an event-driven send, so all sends serialize here.
     private readonly SemaphoreSlim _sendLock = new(1, 1);
 
+    // Completes with null once the room exists, or with the server's error.
+    private readonly TaskCompletionSource<string?> _started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly Action? _onEnded;
+
     private Task? _receiveLoop;
     private Task? _heartbeatLoop;
     private bool? _lastIsPaused;
+    private int _disposed;
 
-    public SessionHostBridge(SessionInfo session, PluginConfiguration config, ILogger logger)
+    /// <summary>
+    /// Creates a bridge for <paramref name="session"/>. <paramref name="onEnded"/>
+    /// is called if the room closes or the bridge is removed from it, so the
+    /// owner can drop the bridge.
+    /// </summary>
+    public SessionHostBridge(SessionInfo session, PluginConfiguration config, ILogger logger, Action? onEnded = null)
     {
         _sessionId = session.Id;
         _userId = session.UserId.ToString("N");
         _userName = $"{session.UserName} ({session.DeviceName})";
         _config = config;
         _logger = logger;
+        _onEnded = onEnded;
     }
 
     public string? RoomId { get; private set; }
 
     public string UserName => _userName;
+
+    /// <summary>The Jellyfin user (id, "N" format) whose session this is.</summary>
+    public string OwnerUserId => _userId;
 
     public bool Connected => _socket.State == WebSocketState.Open;
 
@@ -70,6 +88,14 @@ public sealed class SessionHostBridge : IAsyncDisposable
         _lastIsPaused = session.PlayState?.IsPaused;
         _receiveLoop = Task.Run(() => ReceiveLoopAsync(_cts.Token), CancellationToken.None);
         _heartbeatLoop = Task.Run(() => HeartbeatLoopAsync(_cts.Token), CancellationToken.None);
+
+        // Surface a refusal (e.g. the device is already in a watch party) to
+        // the caller instead of reporting a bridge that has no room.
+        var finished = await Task.WhenAny(_started.Task, Task.Delay(StartAnswerTimeout, cancellationToken)).ConfigureAwait(false);
+        if (finished == _started.Task && await _started.Task.ConfigureAwait(false) is { } error)
+        {
+            throw new InvalidOperationException(error);
+        }
     }
 
     public async Task OnPlaybackProgressAsync(bool isPaused, long? positionTicks, CancellationToken cancellationToken)
@@ -97,6 +123,20 @@ public sealed class SessionHostBridge : IAsyncDisposable
     public async Task StopAsync()
     {
         _cts.Cancel();
+        // Leave the room explicitly: a plain close would keep this bridge in
+        // the room (as host) for the server's 90 s reconnect grace.
+        if (_socket.State == WebSocketState.Open && RoomId is { } room)
+        {
+            try
+            {
+                await SendAsync(new JObject(), "leave_room", room, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is WebSocketException or ObjectDisposedException or InvalidOperationException)
+            {
+                // Going away anyway.
+            }
+        }
+
         if (_socket.State == WebSocketState.Open)
         {
             // Take the send lock so the close frame can't race an in-flight
@@ -135,6 +175,13 @@ public sealed class SessionHostBridge : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        // Safe to call more than once (a config change and a failed start can
+        // both dispose the same bridge).
+        if (Interlocked.Exchange(ref _disposed, 1) == 1)
+        {
+            return;
+        }
+
         await StopAsync().ConfigureAwait(false);
         _socket.Dispose();
         _cts.Dispose();
@@ -206,7 +253,10 @@ public sealed class SessionHostBridge : IAsyncDisposable
         }
     }
 
-    private void HandleServerMessage(string json)
+    /// <summary>Outcome of the start: null once the room exists, else the server's error.</summary>
+    internal Task<string?> StartOutcome => _started.Task;
+
+    internal void HandleServerMessage(string json)
     {
         JObject message;
         try
@@ -222,15 +272,24 @@ public sealed class SessionHostBridge : IAsyncDisposable
         {
             case "room_state":
                 RoomId = message["room"]?.ToString();
+                _started.TrySetResult(null);
                 break;
             case "error":
+                var error = message["payload"]?["message"]?.ToString() ?? "The session server refused the request";
                 _logger.LogWarning(
                     "[JellyWatchParty] Session server rejected a message for bridged session {SessionId}: {Message}",
                     _sessionId,
-                    message["payload"]?["message"]);
+                    error);
+                if (RoomId == null)
+                {
+                    _started.TrySetResult(error);
+                }
+
                 break;
             case "room_closed":
+                // Closed, or an admin removed this bridge: nothing left to do.
                 RoomId = null;
+                _onEnded?.Invoke();
                 break;
         }
     }
@@ -294,7 +353,21 @@ public sealed class SessionHostBridge : IAsyncDisposable
             payload["media_id"] = itemId.Value.ToString("N");
         }
 
+        AddBridgeDeviceId(payload, session.DeviceId);
         return payload;
+    }
+
+    /// <summary>
+    /// Tells the session server which Jellyfin device this connection stands
+    /// in for, so its admin panel can show it as a plugin bridge and won't
+    /// bridge the same device a second time.
+    /// </summary>
+    internal static void AddBridgeDeviceId(JObject payload, string? deviceId)
+    {
+        if (!string.IsNullOrEmpty(deviceId))
+        {
+            payload["bridge_device_id"] = deviceId;
+        }
     }
 
     internal static JObject BuildPlayerEventPayload(bool isPaused, double positionSeconds) =>

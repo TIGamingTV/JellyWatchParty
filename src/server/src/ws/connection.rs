@@ -45,6 +45,7 @@ fn register_client(
         conn_id: next_conn_id(),
         connected: true,
         kind: crate::types::ClientKind::Web,
+        bridge_device: None,
     }
 }
 

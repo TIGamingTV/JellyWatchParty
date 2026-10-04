@@ -504,3 +504,52 @@ fn device_list_hides_long_idle_sessions_only() {
         now
     ));
 }
+
+#[tokio::test]
+async fn plugin_bridges_are_labelled_in_the_overview() {
+    let s = state();
+    let token = login(&s).await;
+    let t = Some(token.as_str());
+    {
+        let mut lr = s.rooms.write().await;
+        let mut lc = s.clients.write().await;
+        let _rx = test_helpers::setup_room_with_host(&mut lc, &mut lr, "fladder-bridge");
+        lc.get_mut("fladder-bridge").unwrap().bridge_device = Some("dev-1".into());
+    }
+    let ov = call(&s, "GET", "/api/overview", t, None).await.json;
+    assert_eq!(ov["rooms"][0]["members"][0]["kind"], "plugin_bridge");
+}
+
+#[tokio::test]
+async fn plugin_bridges_cannot_be_moved() {
+    let s = state();
+    let token = login(&s).await;
+    let t = Some(token.as_str());
+    {
+        let mut lr = s.rooms.write().await;
+        let mut lc = s.clients.write().await;
+        let _rx = test_helpers::setup_room_with_host(&mut lc, &mut lr, "fladder-bridge");
+        lc.get_mut("fladder-bridge").unwrap().bridge_device = Some("dev-1".into());
+    }
+    let other = call(
+        &s,
+        "POST",
+        "/api/rooms",
+        t,
+        Some(serde_json::json!({ "name": "B" })),
+    )
+    .await
+    .json["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let r = call(
+        &s,
+        "POST",
+        &format!("/api/rooms/{}/members", other),
+        t,
+        Some(serde_json::json!({ "client_id": "fladder-bridge" })),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::CONFLICT);
+}

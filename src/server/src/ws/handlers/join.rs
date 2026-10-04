@@ -1,6 +1,6 @@
 use super::super::constants::{FAILED_JOIN_WINDOW_MS, MAX_FAILED_JOINS};
 use super::super::dispatch::{is_authenticated, send_error};
-use super::super::validation::sanitize_name;
+use super::super::validation::{bridge_device_id, sanitize_name};
 use crate::messaging::{broadcast_room_list, send_to_client};
 use crate::password::verify_password;
 use crate::room::ops::{add_member, AddOptions, MAX_CLIENTS_PER_ROOM};
@@ -51,6 +51,27 @@ fn send_join_error(
     );
 }
 
+/// If this create/join stands in for a Jellyfin device (`bridge_device_id`)
+/// that some other client already drives in a room, the error to send.
+/// One device must not be driven from two places (e.g. the admin panel and
+/// a user's panel bridge) at once.
+pub(in crate::ws) fn device_taken_error(
+    client_id: &str,
+    payload: Option<&serde_json::Value>,
+    clients: &HashMap<String, Client>,
+) -> Option<serde_json::Value> {
+    let device = bridge_device_id(payload)?;
+    let taken = clients
+        .iter()
+        .any(|(id, c)| id != client_id && c.bridges_device(&device));
+    taken.then(|| {
+        serde_json::json!({
+            "message": "This device is already in a watch party",
+            "reason": "device_already_bridged"
+        })
+    })
+}
+
 pub(in crate::ws) async fn handle_join_room(
     client_id: &str,
     parsed: &IncomingMessage,
@@ -92,6 +113,11 @@ pub(in crate::ws) async fn handle_join_room(
         crate::messaging::send_room_list(client_id, clients, rooms).await;
         return;
     };
+
+    if let Some(err) = device_taken_error(client_id, parsed.payload.as_ref(), &locked_clients) {
+        send_join_error(client_id, room_id, &locked_clients, err);
+        return;
+    }
 
     let is_existing_member = room.clients.contains(&client_id.to_string());
 
@@ -166,8 +192,13 @@ pub(in crate::ws) async fn handle_join_room(
         room.failed_joins.remove(&user_id);
     }
 
-    if let (Some(name), Some(client)) = (payload_name, locked_clients.get_mut(client_id)) {
-        client.user_name = name;
+    if let Some(client) = locked_clients.get_mut(client_id) {
+        if let Some(name) = payload_name {
+            client.user_name = name;
+        }
+        if let Some(device) = bridge_device_id(parsed.payload.as_ref()) {
+            client.bridge_device = Some(device);
+        }
     }
     let opts = AddOptions {
         by_admin: false,
@@ -523,5 +554,40 @@ mod tests {
         );
         assert_eq!(msgs[1].msg_type, "room_list");
         assert!(clients.read().await["guest"].room_id.is_none());
+    }
+
+    #[tokio::test]
+    async fn handle_join_room_refuses_a_device_driven_elsewhere() {
+        let (clients, rooms, mut rxs) =
+            setup_password_room(&[("bridge", "ub"), ("admin-bridge", "ub")]).await;
+        {
+            let mut lc = clients.write().await;
+            let other = lc.get_mut("admin-bridge").unwrap();
+            other.bridge_device = Some("tv-123".into());
+            other.room_id = Some("room-2".into());
+        }
+        let mut msg = join_msg("bridge", "secret");
+        msg.payload.as_mut().unwrap()["bridge_device_id"] = "tv-123".into();
+        handle_join_room("bridge", &msg, &clients, &rooms).await;
+        assert_eq!(
+            last_reason(rxs.get_mut("bridge").unwrap()).as_deref(),
+            Some("device_already_bridged")
+        );
+        assert!(!rooms.read().await["room-1"]
+            .clients
+            .contains(&"bridge".to_string()));
+    }
+
+    #[tokio::test]
+    async fn handle_join_room_records_the_bridged_device() {
+        let (clients, rooms, _rxs) = setup_password_room(&[("bridge", "ub")]).await;
+        let mut msg = join_msg("bridge", "secret");
+        msg.payload.as_mut().unwrap()["bridge_device_id"] = "tv-123".into();
+        handle_join_room("bridge", &msg, &clients, &rooms).await;
+        assert_eq!(
+            clients.read().await["bridge"].bridge_device.as_deref(),
+            Some("tv-123")
+        );
+        assert!(clients.read().await["bridge"].bridges_device("tv-123"));
     }
 }

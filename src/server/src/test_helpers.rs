@@ -32,6 +32,7 @@ pub fn create_client_with_rx(
         conn_id: 0,
         connected: true,
         kind: crate::types::ClientKind::Web,
+        bridge_device: None,
     };
     (client, rx)
 }
