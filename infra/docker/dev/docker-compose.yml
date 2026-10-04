@@ -29,6 +29,11 @@ services:
       - ADMIN_COOKIE_SECURE=${ADMIN_COOKIE_SECURE:-false}
       - ADMIN_TRUST_X_FORWARDED_FOR=${ADMIN_TRUST_X_FORWARDED_FOR:-false}
       - ADMIN_EMPTY_GROUP_TTL_SECS=${ADMIN_EMPTY_GROUP_TTL_SECS:-600}
+      # Jellyfin devices in the admin panel (TV apps, Fladder, ...). Needs a
+      # URL the session server can reach and an API key from Dashboard > API Keys.
+      - JELLYFIN_URL=${JELLYFIN_URL:-http://jellyfin-dev:8096}
+      - JELLYFIN_API_KEY=${JELLYFIN_API_KEY:-}
+      - BRIDGE_POLL_INTERVAL_MS=${BRIDGE_POLL_INTERVAL_MS:-1000}
     deploy:
       resources:
         limits:

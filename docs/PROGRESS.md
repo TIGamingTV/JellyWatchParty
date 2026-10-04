@@ -2408,3 +2408,177 @@ warnings` clean.
 `configuration.md` (`RUST_LOG` instead of the never-read `LOG_LEVEL`,
 `JWT_AUDIENCE`/`JWT_ISSUER`), `security.md`, `deployment.md`,
 `features.md`, `.env.example`, both compose files, Dockerfile `EXPOSE`.
+
+---
+
+## Round 36 — Admin panel, part 2 of 3: Jellyfin devices (session-server bridge)
+
+**Goal**: let admins put clients that can't run the injected script (TV
+apps, Fladder, Swiftfin, ...) into any room as host or receiver, without
+the plugin's per-user in-panel bridges.
+
+**Design**:
+
+- New `jellyfin/` module, started with the admin panel when `JELLYFIN_URL`
+  + `JELLYFIN_API_KEY` (or `_FILE`) are set. `reqwest` 0.12, no default
+  features, `rustls-tls` (ring + webpki roots; no `h2`, no aws-lc).
+- A bridged device is a real room member (`ClientKind::Bridge`) driven by
+  an in-process task. Host vs receiver is just "am I `room.host_id`?" each
+  tick, so admin moves/kicks/host changes need no bridge-specific code.
+  Its messages go through the normal handlers via `ws::dispatch_internal`.
+- One `/Sessions` poller (`BRIDGE_POLL_INTERVAL_MS`, default 1 s; idle when
+  no bridges and no admin viewing) feeds a `watch` channel.
+- `logic.rs` holds pure `host_step` / `follower_step` (unit tested).
+  Device positions are extrapolated from `LastPlaybackCheckIn`; after a
+  seek/pause the bridge trusts its command until a newer check-in, which
+  fixes the C# follower's repeat-seek-on-stale-position behaviour.
+- Improvements over the plugin bridges: receivers start playback
+  themselves (`PlayNow`, incl. idle TVs) and follow `set_media`; hosts
+  report item switches as `set_media`; status/drift per device in the
+  panel; devices missing 90 s leave; a person is preferred over a device
+  when a host is auto-promoted.
+- Checked Jellyfin master: `SessionManager.AssertCanControl` explicitly
+  allows API-key callers ("a privileged context"), and `GetSession` builds
+  the controlling session from the `MediaBrowser` header's
+  Client/Version/DeviceId, which we send.
+
+**API/UI**: `GET /api/jellyfin/sessions`; `POST /api/rooms/{id}/members`
+accepts `{jellyfin_session_id, role}`; removing a device member stops its
+bridge. UI: "Jellyfin devices" section, devices in each room's add list
+with an as-receiver/as-host choice, device/drift/error per member.
+
+**Tests**: Rust 204, incl. `logic` (extrapolation, cooldowns, trusting
+commands, host transitions), bridge ticks, and an end-to-end receiver test
+against a fake Jellyfin (axum) checking the auth header, `PlayNow` and
+`Seek`. Also driven in headless Chromium against a simulated Jellyfin
+(Fladder host-only + Android TV receiver, progress reported every 3 s):
+receiver started at the host's position, followed pause, seek+play, and
+stayed within ±1.2 s. **Not yet run against a real Jellyfin server.**
+
+**Docs updated**: `admin-panel.md` (Jellyfin devices), `server.md`
+(`jellyfin/` module), `host-bridge.md` (pointer), `features.md`,
+`configuration.md`, `security.md`, `.env.example`, compose files.
+
+---
+
+## Round 37 — Admin panel, part 3 of 3: plugin panel bridging becomes opt-in for trusted servers
+
+**Trigger**: with admins bridging devices from the session server's admin
+panel (Round 36), the plugin's in-player bridges should no longer be on for
+everyone. They also had no ownership checks: any user could bridge or stop
+**any** user's session and attach any session to any room as a receiver
+(the empty controlling-session id bypassed Jellyfin's
+`EnableRemoteControlOfOtherUsers`).
+
+**Changes (plugin 2.1.0.0)**:
+
+- New master switch `PluginConfiguration.EnablePanelBridging` (off). As a
+  new field it is also off on upgraded installs, so the existing
+  `AllowThirdPartyClientHost` / `AllowSupportedClientReceiver` flags stop
+  having any effect until an admin opts in again. `PanelHostAllowed` /
+  `PanelReceiverAllowed` combine them; `/Token` sends the combined values.
+- Ownership: `Bridge/Sessions` and `Bridge/Status` list only the caller's
+  own sessions; `Start`/`Follow`/`Stop` return 403 for someone else's.
+  Callers in the `Administrator` role (Jellyfin's `ClaimTypes.Role`) may do
+  any. Stop stays available with the switch off.
+- Turning the switch or a role off stops the matching running bridges
+  (`HostBridgeManager.ApplyConfigurationAsync` on
+  `Plugin.ConfigurationChanged`).
+- Both bridges send `bridge_device_id` (the session's `DeviceId`) in
+  `create_room`/`join_room`. The session server stores it
+  (`Client.bridge_device`), labels the client *Plugin bridge* in the admin
+  panel, and its own bridge refuses a device that is already bridged
+  either way.
+- Config page: section renamed "Watch Party Panel Bridging (trusted
+  servers only)" with an explanation and a pointer to the admin panel;
+  per-role checkboxes are disabled while the switch is off.
+
+**Docs fixed on the way**: `plugin.md` claimed the JWT secret is never sent
+back to the config page; it is (admin-only plugin configuration API), and
+the docs now say so.
+
+**Tests**: C# 146 (new `PanelBridgingTests`: switch gating, upgraded-XML
+default, XML round-trip, `MayControl`, owner filtering, payload tag). Rust
+207 (join records `bridge_device_id`, plugin-bridge label, refused double
+bridge). JS 180.
+
+**Docs updated**: `configuration.md`, `host-bridge.md`, `features.md`,
+`user-guide.md`, `troubleshooting.md`, `plugin.md` (REST table, config
+page), `ARCHITECTURE.md`, `protocol.md` (`bridge_device_id`),
+`admin-panel.md`, `implem.md` §2.5.
+
+---
+
+## Round 38 — Review of the admin panel PRs (#85, #86, #87)
+
+**Trigger**: a full bug hunt over the three stacked PRs, a Jellyfin 12
+conformance check, and a UI review. Fixes are folded into each PR's branch.
+
+**#85 (core)**:
+
+- **Stale-socket eviction (medium)**: a connection that ended late
+  (half-open TCP) scheduled a disconnect for whatever sender the entry
+  held then, evicting the live session that had reconnected. Connections
+  now have a `conn_id`; only the attached one schedules, and eviction
+  re-checks it (`reconnect::should_evict`). The admin "connected" dot
+  uses an explicit flag.
+- **Tabs fighting over one session (medium)**: id + resume secret moved
+  from `localStorage` to per-tab `sessionStorage`.
+- **Stale UI after reattach (medium)**: `client_hello` carries `room_id`;
+  the web client drops a room the server no longer has it in, or one that
+  differs from `room_state`, also without `admin_moved`.
+- Admin move hid the panel; a removed host stayed host in the lobby;
+  resume secret now rotates on reattach; `ready` from non-members no
+  longer counts; `join_room` for a vanished room answers `room_not_found`;
+  zombie reaper subtraction saturates.
+- Admin: CSRF compares hostnames only (proxies drop ports); last
+  `X-Forwarded-For` line; IPv6 throttled per /64; unknown
+  `ADMIN_ENABLED` is an error; TTLs capped; `ADMIN_HOST=::` works;
+  `ADMIN_PORT == PORT` refused; dashboard no longer freezes while a field
+  keeps focus. Docs recommend a separate host name for the panel.
+
+**#86 (device bridge)**:
+
+- **Scheduled plays (high)**: receivers were unpaused when a delayed or
+  countdown play was announced and measured the room from the
+  announcement (TVs up to wait + 3 s ahead). Bridges now anchor on
+  `target_server_ts`, hold play/pause until then and wake 300 ms before.
+- **Clock skew (medium)**: offset between Jellyfin and session server is
+  estimated from progress reports and applied.
+- **Idle TVs dropped (medium)**: no `activeWithinSeconds` on the poll; the
+  admin list filters by `LastActivityDate` instead.
+- **Double add (medium)**: device reserved under one lock.
+- Device hosts mark the room started; commands run off the message loop;
+  cancel-safe remove; command trust capped at 10 s; uppercase media ids;
+  stop-on-device opt-out and 3-try `PlayNow` cap; per-device
+  extrapolation cap; tolerant `/Sessions` parsing; system CA store.
+- **UI**: header chips, collapsed help widget (button guide + host/receiver
+  compatibility), readable sync statuses, in-page dialog instead of
+  `prompt`/`confirm`, password toasts that stay with a Copy button,
+  disabled add controls when nothing to add, card rows on mobile.
+
+**#87 (plugin)**:
+
+- **Duplicate driving (medium)**: only one direction was guarded. The
+  server now refuses a plugin bridge's create/join for a device already
+  in a room (`device_already_bridged`), matching on the device alone; a
+  tag left on a client outside any room no longer counts.
+- **90 s ghost (medium-low)**: bridges send `leave_room` before closing;
+  a bridge whose room closes or that an admin removes stops itself.
+- Start waits for the server's answer and surfaces refusals as 400;
+  `DisposeAsync` idempotent; config-change teardown isolates failures and
+  start re-checks the switch; vanished session is 400, not 403; admin API
+  refuses to move a plugin bridge; user id read from `Jellyfin-UserId`.
+
+**Jellyfin 12 conformance** (checked against `release-12.z`):
+`GET /Sessions` (API key sees all), `POST /Sessions/{id}/Playing/{cmd}`,
+`POST /Sessions/{id}/Playing?playCommand=PlayNow`, the `MediaBrowser`
+auth header (Client/Version/DeviceId required, API key privileged in
+`AssertCanControl`), `SessionInfoDto` field names and formats ("N" GUIDs,
+UTC `Z` dates), plugin claims (`Jellyfin-UserId`, `ClaimTypes.Role`),
+`BasePlugin<T>.ConfigurationChanged`, and JSON round-trip of read-only
+config properties all match. Still not run against a live Jellyfin.
+
+**Tests**: Rust 228, JS 184, C# 149. Admin UI driven in headless Chromium
+against a simulated Jellyfin (desktop + 400 px mobile, no console errors,
+no horizontal overflow).

@@ -8,6 +8,7 @@ pub mod auth;
 pub mod config;
 mod ui;
 
+use crate::jellyfin::Bridges;
 use crate::types::{Clients, Rooms};
 use crate::utils::now_ms;
 use auth::AuthStore;
@@ -38,10 +39,25 @@ pub struct AdminState {
     pub auth: Arc<Mutex<AuthStore>>,
     pub started_at: u64,
     pub jwt_enabled: bool,
+    pub jellyfin: JellyfinStatus,
+}
+
+/// Whether Jellyfin devices can be bridged from the panel.
+#[derive(Clone)]
+pub enum JellyfinStatus {
+    Enabled(Bridges),
+    /// Why not (shown in the UI).
+    Unavailable(String),
 }
 
 impl AdminState {
-    pub fn new(clients: Clients, rooms: Rooms, cfg: AdminConfig, jwt_enabled: bool) -> Self {
+    pub fn new(
+        clients: Clients,
+        rooms: Rooms,
+        cfg: AdminConfig,
+        jwt_enabled: bool,
+        jellyfin: JellyfinStatus,
+    ) -> Self {
         Self {
             clients,
             rooms,
@@ -49,6 +65,14 @@ impl AdminState {
             auth: Arc::new(Mutex::new(AuthStore::default())),
             started_at: now_ms(),
             jwt_enabled,
+            jellyfin,
+        }
+    }
+
+    pub fn bridges(&self) -> Option<&Bridges> {
+        match &self.jellyfin {
+            JellyfinStatus::Enabled(b) => Some(b),
+            JellyfinStatus::Unavailable(_) => None,
         }
     }
 
@@ -229,6 +253,7 @@ pub fn build_router(state: AdminState) -> Router {
         .route("/rooms/{id}/members", post(api::add_member))
         .route("/rooms/{id}/members/{member}", delete(api::remove_member))
         .route("/rooms/{id}/host", put(api::set_host))
+        .route("/jellyfin/sessions", get(api::jellyfin_sessions))
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             require_session,

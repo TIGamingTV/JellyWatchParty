@@ -7,6 +7,9 @@
   // Bridges a native-client Jellyfin session (e.g. Fladder or the official
   // Android TV app, which can't run this injected script at all) into a
   // JellyWatchParty room. See docs/ARCHITECTURE.md "Native Client Bridge".
+  // Only shown when an admin enabled panel bridging (trusted servers); users
+  // can bridge only their own sessions. Admins normally use the session
+  // server's admin panel instead.
   // Two roles are offered per session:
   //   - Host: the session drives a brand-new room; other users join it from
   //     the normal room list below, exactly as any other room.
@@ -84,7 +87,9 @@
       apiFetch('/JellyWatchParty/Bridge/Status').then((r) => (r.ok ? r.json() : []))
     ]).then(([sessions, bridges]) => {
       renderList('jwp-bridge-active', bridges, 'No active bridges.', buildActiveRow);
-      renderList('jwp-bridge-available', sessions, 'No other sessions are playing something.', buildSessionRow);
+      // The server lists only the user's own sessions (all of them for an
+      // administrator); start playing on the device for it to show up.
+      renderList('jwp-bridge-available', sessions, 'None of your other devices is playing something.', buildSessionRow);
     }).catch((err) => {
       console.warn('[JellyWatchParty] Failed to load bridge sessions:', err);
     });

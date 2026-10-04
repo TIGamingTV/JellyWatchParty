@@ -1,4 +1,4 @@
-use crate::types::{Clients, Room, Rooms};
+use crate::types::{ClientKind, Clients, Room, Rooms};
 use crate::utils::now_ms;
 use log::{info, warn};
 use std::collections::HashMap;
@@ -19,6 +19,9 @@ pub fn spawn_zombie_cleanup(clients: Clients, rooms: Rooms) {
                     .iter()
                     // Ended connections already have a disconnect scheduled.
                     .filter(|(_, c)| c.connected)
+                    // Bridged devices have no socket to go quiet; their own
+                    // task watches the Jellyfin session instead.
+                    .filter(|(_, c)| c.kind == ClientKind::Web)
                     // last_seen can be a hair newer than `now` (taken before
                     // the lock), or the clock may step back: never wrap.
                     .filter(|(_, c)| now.saturating_sub(c.last_seen) > ZOMBIE_TIMEOUT_MS)

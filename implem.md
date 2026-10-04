@@ -300,11 +300,16 @@ UI — has zero effect on sync.
 
 ### 2.5 Host Bridge controls (bridging a *different* session in as host)
 
-Lets this client's widget start/stop a Host Bridge for some other
-currently-playing Jellyfin session (e.g. a TV in another room), mirroring
-`ui/bridge.js`'s "Host From Another Device" section. Useful if your
-client is used as a remote/companion, less useful if it's only ever used
-to watch on the device it's running on.
+Lets this client's widget start/stop a Host Bridge for another of the
+user's own currently-playing Jellyfin sessions (e.g. their TV in another
+room), mirroring `ui/bridge.js`'s "Host From Another Device" section.
+Useful if your client is used as a remote/companion, less useful if it's
+only ever used to watch on the device it's running on.
+
+Only available when the server admin turned on panel bridging
+(`allow_third_party_host` / `allow_supported_receiver` in the `/Token`
+response); hide these controls otherwise. Admins normally use the session
+server's admin panel for this instead.
 
 ```
 GET /JellyWatchParty/Bridge/Sessions
@@ -325,14 +330,18 @@ GET /JellyWatchParty/Bridge/Status
 
 ```
 POST /JellyWatchParty/Bridge/{sessionId}/Start
+POST /JellyWatchParty/Bridge/{sessionId}/Follow?roomId=<room>
 POST /JellyWatchParty/Bridge/{sessionId}/Stop
 ```
-No request body. Poll `Bridge/Status` after `Start` to discover the
-resulting `roomId` and surface a "join the room you just started" shortcut
-in your widget.
+No request body. `Start` bridges the session in as a new room's host;
+`Follow` attaches it to an existing room as a receiver. Poll
+`Bridge/Status` after `Start` to discover the resulting `roomId` and
+surface a "join the room you just started" shortcut in your widget.
+`400` means panel bridging (or that role) is off; `403` means the session
+isn't the user's own.
 
-All four Bridge endpoints are `[Authorize]` (any logged-in user, not
-admin-gated) — response keys are camelCase; note in
+The Bridge endpoints are `[Authorize]` and scoped to the caller's own
+sessions (administrators: all) — response keys are camelCase; note in
 `docs/PROGRESS.md` Round 17 that Jellyfin controllers do **not**
 auto-camelCase, so match the field names exactly as shown above, not a
 PascalCase guess.

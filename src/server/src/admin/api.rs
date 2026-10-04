@@ -3,10 +3,15 @@
 //! rooms -> clients order, log an `admin:` audit line, and refresh every
 //! lobby's room list afterwards.
 
-use super::{auth, error_response, AdminState, ClientIp};
+use super::{auth, error_response, AdminState, ClientIp, JellyfinStatus};
+use crate::jellyfin::api::{JfSession, LISTED_ACTIVE_WITHIN_MS};
+use crate::jellyfin::bridge::{AddError, Role, Snapshot};
+use crate::jellyfin::logic::{device_view, MAX_EXTRAPOLATION_SECS};
+use crate::jellyfin::time::parse_utc_ms;
+use crate::jellyfin::Bridges;
 use crate::messaging::broadcast_room_list;
 use crate::room::ops::{self, AddOptions, OpError};
-use crate::types::{Client, Room};
+use crate::types::{Client, ClientKind, Room};
 use crate::utils::now_ms;
 use axum::extract::{Path, State};
 use axum::http::{header, HeaderMap, StatusCode};
@@ -18,12 +23,22 @@ use std::collections::HashMap;
 
 /// An API failure: status plus a message for the UI. Kept small so
 /// `Result<Response, ApiError>` stays cheap to return.
-pub struct ApiError(StatusCode, &'static str);
+pub struct ApiError(StatusCode, std::borrow::Cow<'static, str>);
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        error_response(self.0, self.1)
+        error_response(self.0, &self.1)
     }
+}
+
+fn bridge_error(e: AddError) -> ApiError {
+    let status = match &e {
+        AddError::Unavailable(_) => StatusCode::BAD_GATEWAY,
+        AddError::SessionNotFound => StatusCode::NOT_FOUND,
+        AddError::Op(op) => return op_error(*op),
+        _ => StatusCode::CONFLICT,
+    };
+    ApiError(status, e.message().into())
 }
 
 type ApiResult = Result<Response, ApiError>;
@@ -36,7 +51,7 @@ fn op_error(e: OpError) -> ApiError {
         OpError::RoomFull => StatusCode::CONFLICT,
         OpError::InvalidName => StatusCode::BAD_REQUEST,
     };
-    ApiError(status, e.message())
+    ApiError(status, e.message().into())
 }
 
 fn ok() -> Response {
@@ -121,25 +136,60 @@ fn expected_position(room: &Room, now: u64) -> f64 {
     }
 }
 
-fn member_json(id: &str, room: &Room, clients: &HashMap<String, Client>) -> serde_json::Value {
+fn member_json(
+    id: &str,
+    room: &Room,
+    clients: &HashMap<String, Client>,
+    bridges: Option<&Bridges>,
+) -> serde_json::Value {
     let client = clients.get(id);
-    serde_json::json!({
+    let plugin_bridge =
+        client.is_some_and(|c| c.kind == ClientKind::Web && c.bridge_device.is_some());
+    let mut m = serde_json::json!({
         "id": id,
         "name": client.map(|c| c.user_name.as_str()).unwrap_or("Someone"),
-        "kind": "web",
+        "kind": if plugin_bridge { "plugin_bridge" } else { "web" },
         "is_host": room.host_id == id,
         "status": room.client_status.get(id).map(String::as_str).unwrap_or("unknown"),
         "ready": room.ready_clients.contains(id),
         "connected": client.is_some_and(|c| c.connected),
-    })
+    });
+    if client.is_some_and(|c| c.kind == ClientKind::Bridge) {
+        m["kind"] = "jellyfin".into();
+        if let Some(info) = bridges.and_then(|b| b.info(id)) {
+            m["status"] = info.status.into();
+            m["connected"] = (info.status != "offline").into();
+            m["drift"] = info.drift.map(|d| (d * 10.0).round() / 10.0).into();
+            m["detail"] = info.detail.into();
+            m["device"] = if info.client_name.is_empty() {
+                info.device_name.into()
+            } else {
+                format!("{} - {}", info.device_name, info.client_name).into()
+            };
+            m["remote_control"] = info.remote_control.into();
+        }
+    }
+    m
+}
+
+/// A readable name for an item id, if some Jellyfin session is playing it.
+fn media_name(snapshot: Option<&Snapshot>, media_id: Option<&str>) -> Option<String> {
+    let id = media_id?;
+    snapshot?
+        .sessions
+        .iter()
+        .find(|s| s.item_id().as_deref() == Some(id))
+        .and_then(|s| s.item_name())
 }
 
 /// Everything the dashboard shows, in one snapshot.
 pub fn build_overview(
     rooms: &HashMap<String, Room>,
     clients: &HashMap<String, Client>,
+    bridges: Option<&Bridges>,
     now: u64,
 ) -> serde_json::Value {
+    let snapshot = bridges.map(|b| b.snapshot());
     let mut room_list: Vec<&Room> = rooms.values().collect();
     room_list.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.name.cmp(&b.name)));
     let rooms_json: Vec<_> = room_list
@@ -151,20 +201,21 @@ pub fn build_overview(
                 "admin_created": r.admin_created,
                 "has_password": r.password_hash.is_some(),
                 "media_id": r.media_id,
+                "media_name": media_name(snapshot.as_deref(), r.media_id.as_deref()),
                 "host_id": if r.is_hostless() { None } else { Some(&r.host_id) },
                 "position": expected_position(r, now),
                 "play_state": r.state.play_state,
                 "started": r.started,
                 "pending_play": r.pending_play.is_some(),
                 "created_at": r.created_at,
-                "members": r.clients.iter().map(|id| member_json(id, r, clients)).collect::<Vec<_>>(),
+                "members": r.clients.iter().map(|id| member_json(id, r, clients, bridges)).collect::<Vec<_>>(),
             })
         })
         .collect();
 
     let mut unassigned: Vec<_> = clients
         .iter()
-        .filter(|(_, c)| c.room_id.is_none())
+        .filter(|(_, c)| c.room_id.is_none() && c.kind == ClientKind::Web)
         .map(|(id, c)| {
             serde_json::json!({
                 "id": id,
@@ -184,21 +235,38 @@ pub fn build_overview(
         "unassigned": unassigned,
         "totals": {
             "rooms": rooms.len(),
-            "clients": clients.len(),
+            "clients": clients.values().filter(|c| c.kind == ClientKind::Web).count(),
         },
     })
+}
+
+fn jellyfin_json(state: &AdminState) -> serde_json::Value {
+    match &state.jellyfin {
+        JellyfinStatus::Unavailable(reason) => {
+            serde_json::json!({ "enabled": false, "reason": reason })
+        }
+        JellyfinStatus::Enabled(b) => {
+            let snap = b.snapshot();
+            serde_json::json!({
+                "enabled": true,
+                "error": snap.error,
+                "last_poll": snap.fetched_at,
+            })
+        }
+    }
 }
 
 pub async fn overview(State(state): State<AdminState>) -> Response {
     let mut body = {
         let locked_rooms = state.rooms.read().await;
         let locked_clients = state.clients.read().await;
-        build_overview(&locked_rooms, &locked_clients, now_ms())
+        build_overview(&locked_rooms, &locked_clients, state.bridges(), now_ms())
     };
     body["server"] = serde_json::json!({
         "version": env!("CARGO_PKG_VERSION"),
         "uptime_secs": now_ms().saturating_sub(state.started_at) / 1000,
         "auth_enabled": state.jwt_enabled,
+        "jellyfin": jellyfin_json(&state),
     });
     Json(body).into_response()
 }
@@ -287,7 +355,15 @@ pub async fn delete_room(State(state): State<AdminState>, Path(id): Path<String>
 
 #[derive(Deserialize)]
 pub struct AddMemberBody {
-    client_id: String,
+    /// A connected client (web client or an already bridged device).
+    #[serde(default)]
+    client_id: Option<String>,
+    /// Or a Jellyfin session to bridge in...
+    #[serde(default)]
+    jellyfin_session_id: Option<String>,
+    /// ...as `host` or `receiver` (default).
+    #[serde(default)]
+    role: Option<String>,
 }
 
 pub async fn add_member(
@@ -295,18 +371,64 @@ pub async fn add_member(
     Path(id): Path<String>,
     Json(body): Json<AddMemberBody>,
 ) -> ApiResult {
+    if let Some(session_id) = body.jellyfin_session_id.as_deref() {
+        let Some(bridges) = state.bridges() else {
+            return Err(ApiError(
+                StatusCode::CONFLICT,
+                "Jellyfin devices are not set up (JELLYFIN_URL / JELLYFIN_API_KEY)".into(),
+            ));
+        };
+        let role = match body.role.as_deref() {
+            Some("host") => Role::Host,
+            None | Some("receiver") => Role::Receiver,
+            Some(_) => {
+                return Err(ApiError(
+                    StatusCode::BAD_REQUEST,
+                    "role must be host or receiver".into(),
+                ))
+            }
+        };
+        let client_id = bridges
+            .add(&id, session_id, role)
+            .await
+            .map_err(bridge_error)?;
+        info!(
+            "admin: bridged Jellyfin session {} into room {} as {:?} (client {})",
+            session_id, id, role, client_id
+        );
+        return Ok(Json(serde_json::json!({ "ok": true, "client_id": client_id })).into_response());
+    }
+
+    let Some(client_id) = body.client_id else {
+        return Err(ApiError(
+            StatusCode::BAD_REQUEST,
+            "client_id or jellyfin_session_id is required".into(),
+        ));
+    };
     {
         let mut locked_rooms = state.rooms.write().await;
         let mut locked_clients = state.clients.write().await;
         let client = locked_clients
-            .get(&body.client_id)
+            .get(&client_id)
             .ok_or_else(|| op_error(OpError::ClientNotFound))?;
+        if client.kind == ClientKind::Web
+            && client.bridge_device.is_some()
+            && client.room_id.is_some()
+        {
+            // A plugin bridge only knows the room its user picked; moving
+            // it would leave it driving (or following) the wrong room.
+            return Err(ApiError(
+                StatusCode::CONFLICT,
+                "This device was bridged from the Watch Party panel; remove it and add it here instead"
+                    .into(),
+            ));
+        }
         if !client.authenticated {
             // Adding it would let a connection that never proved who it is
             // skip authentication entirely.
             return Err(ApiError(
                 StatusCode::CONFLICT,
-                "This client has not signed in yet",
+                "This client has not signed in yet".into(),
             ));
         }
         let opts = AddOptions {
@@ -315,14 +437,14 @@ pub async fn add_member(
         };
         ops::add_member(
             &id,
-            &body.client_id,
+            &client_id,
             &mut locked_rooms,
             &mut locked_clients,
             opts,
         )
         .map_err(op_error)?;
     }
-    info!("admin: added client {} to room {}", body.client_id, id);
+    info!("admin: added client {} to room {}", client_id, id);
     broadcast_room_list(&state.clients, &state.rooms).await;
     Ok(ok())
 }
@@ -331,6 +453,27 @@ pub async fn remove_member(
     State(state): State<AdminState>,
     Path((id, member)): Path<(String, String)>,
 ) -> ApiResult {
+    let is_bridge_here = {
+        let locked_rooms = state.rooms.read().await;
+        let locked_clients = state.clients.read().await;
+        let in_room = locked_rooms
+            .get(&id)
+            .ok_or_else(|| op_error(OpError::RoomNotFound))?
+            .clients
+            .contains(&member);
+        in_room
+            && locked_clients
+                .get(&member)
+                .is_some_and(|c| c.kind == ClientKind::Bridge)
+    };
+    if is_bridge_here {
+        if let Some(b) = state.bridges() {
+            if b.remove(&member).await {
+                info!("admin: removed bridged device {} from room {}", member, id);
+                return Ok(ok());
+            }
+        }
+    }
     {
         let mut locked_rooms = state.rooms.write().await;
         let mut locked_clients = state.clients.write().await;
@@ -365,4 +508,90 @@ pub async fn set_host(
     }
     info!("admin: made {} host of room {}", body.member, id);
     Ok(ok())
+}
+
+// --- Jellyfin devices ------------------------------------------------------
+
+/// Active within `LISTED_ACTIVE_WITHIN_MS`. A session without a usable
+/// `LastActivityDate` is listed rather than hidden.
+pub(super) fn recently_active(s: &JfSession, clock_offset_ms: i64, now: u64) -> bool {
+    match s.last_activity_date.as_deref().and_then(parse_utc_ms) {
+        None => true,
+        Some(t) => {
+            let local = (t as i64).saturating_add(clock_offset_ms).max(0) as u64;
+            now.saturating_sub(local) < LISTED_ACTIVE_WITHIN_MS
+        }
+    }
+}
+
+/// Jellyfin sessions an admin can put into a room: everything active except
+/// clients that run the Watch Party panel themselves (they join as web
+/// clients) and this server's own API session.
+pub async fn jellyfin_sessions(State(state): State<AdminState>) -> Response {
+    let bridges = match &state.jellyfin {
+        JellyfinStatus::Unavailable(reason) => {
+            return Json(serde_json::json!({
+                "enabled": false,
+                "reason": reason,
+                "sessions": [],
+            }))
+            .into_response()
+        }
+        JellyfinStatus::Enabled(b) => b,
+    };
+    let snap = bridges.snapshot_for_admin().await;
+    let now = now_ms();
+    // Who stands in for which device right now: our own bridges, and the
+    // plugin's in-panel bridges (tagged with `bridge_device_id`).
+    let bridged: Vec<(String, String, bool)> = state
+        .clients
+        .read()
+        .await
+        .iter()
+        .filter(|(_, c)| c.room_id.is_some())
+        .filter_map(|(id, c)| {
+            c.bridge_device
+                .as_ref()
+                .map(|d| (id.clone(), d.clone(), c.kind == ClientKind::Web))
+        })
+        .collect();
+    let mut sessions: Vec<_> = snap
+        .sessions
+        .iter()
+        .filter(|s| !s.is_own() && !s.runs_web_client())
+        .map(|s| {
+            let bridge = bridged.iter().find(|(_, d, _)| d == s.device_id());
+            (s, bridge)
+        })
+        // Recently active ones, plus anything already bridged.
+        .filter(|(s, bridge)| bridge.is_some() || recently_active(s, snap.clock_offset_ms, now))
+        .map(|(s, bridge)| {
+            let view = device_view(s, now, snap.clock_offset_ms, MAX_EXTRAPOLATION_SECS);
+            serde_json::json!({
+                "id": s.id,
+                "user_name": s.user_name(),
+                "device_name": s.device_name(),
+                "client": s.client_name(),
+                "remote_control": s.supports_remote_control,
+                "now_playing": s.item_id().map(|id| serde_json::json!({
+                    "id": id,
+                    "name": s.item_name(),
+                })),
+                "position": view.position,
+                "paused": view.paused,
+                "bridged_as": bridge.map(|b| &b.0),
+                "bridged_by_plugin": bridge.is_some_and(|b| b.2),
+            })
+        })
+        .collect();
+    sessions.sort_by(|a, b| {
+        (a["user_name"].as_str(), a["device_name"].as_str())
+            .cmp(&(b["user_name"].as_str(), b["device_name"].as_str()))
+    });
+    Json(serde_json::json!({
+        "enabled": true,
+        "error": snap.error,
+        "sessions": sessions,
+    }))
+    .into_response()
 }

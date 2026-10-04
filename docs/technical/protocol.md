@@ -115,6 +115,7 @@ Create a new watch party room.
 | `media_id` | string | Jellyfin media ID (optional) |
 | `password` | string | Optional room password. If set, `join_room` must supply a matching `password` (see below). Never echoed back to any client. |
 | `started` | boolean | Optional. `false` asks for the [start countdown](#start-countdown): the host is not playing yet and holds its first play. `true` means the host is already playing. **Leaving it out means the room has already started** (no countdown), so hosts that don't hold their first play, like the native Host Bridge or older web clients, never leave guests waiting. |
+| `bridge_device_id` | string | Optional. Sent by the plugin's in-panel bridges: the Jellyfin `DeviceId` of the session this connection stands in for (1-200 printable ASCII characters, else ignored). The admin panel shows such clients as *Plugin bridge*. Refused with `error` `reason: "device_already_bridged"` if another client in a room already drives that device. |
 
 **Response:** `room_state`
 
@@ -140,6 +141,7 @@ Join an existing room.
 | Payload Field | Type | Description |
 |---------------|------|-------------|
 | `password` | string | Required only if the room was created with a password. Not checked for a client that's already a member of the room (e.g. a re-sent join after a panel refresh). |
+| `bridge_device_id` | string | Optional; as for `create_room`. |
 
 **Response:** `room_state`, or `error` with `payload.reason: "wrong_password"` if the password is missing/incorrect, or `"room_not_found"` (followed by a fresh `room_list`) if the room no longer exists.
 
@@ -718,7 +720,7 @@ Error response.
 | Payload Field | Type | Description |
 |---------------|------|-------------|
 | `message` | string | Human-readable error description |
-| `reason` | string | Optional machine-readable code for errors a client may want to special-case. Currently `"wrong_password"`, `"too_many_attempts"` and `"room_not_found"`, all from `join_room` |
+| `reason` | string | Optional machine-readable code for errors a client may want to special-case. Currently `"wrong_password"`, `"too_many_attempts"` and `"room_not_found"` from `join_room`, and `"device_already_bridged"` from `create_room` / `join_room` |
 | `retry_after_ms` | number | Only with `reason: "too_many_attempts"`: milliseconds until the user may try the room's password again |
 
 ## Sequence Diagram: Complete Session
