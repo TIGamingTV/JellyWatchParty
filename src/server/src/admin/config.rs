@@ -5,6 +5,9 @@ use std::net::SocketAddr;
 const DEFAULT_PORT: u16 = 3001;
 const DEFAULT_SESSION_TTL_SECS: u64 = 12 * 60 * 60;
 const DEFAULT_EMPTY_GROUP_TTL_SECS: u64 = 600;
+/// Upper bound for the `*_SECS` settings (30 days), so ms maths can't
+/// overflow.
+const MAX_SECS: u64 = 30 * 24 * 60 * 60;
 /// Shorter passwords still work but log a warning at startup.
 pub const RECOMMENDED_MIN_PASSWORD_LEN: usize = 12;
 
@@ -62,11 +65,20 @@ impl AdminSetup {
     }
 
     pub fn from_lookup(get: impl Fn(&str) -> Option<String>) -> Self {
-        let enabled = get("ADMIN_ENABLED")
-            .map(|v| parse_bool(&v).unwrap_or(true))
-            .unwrap_or(true);
-        if !enabled {
-            return AdminSetup::Disabled;
+        match get("ADMIN_ENABLED").filter(|v| !v.trim().is_empty()) {
+            None => {}
+            Some(v) => match parse_bool(&v) {
+                Some(true) => {}
+                Some(false) => return AdminSetup::Disabled,
+                // Better to not start than to start when the admin meant
+                // "off" in words we don't recognise.
+                None => {
+                    return AdminSetup::Misconfigured(format!(
+                        "ADMIN_ENABLED must be true or false (got '{}')",
+                        v
+                    ))
+                }
+            },
         }
 
         let password = match secret(&get, "ADMIN_PASSWORD") {
@@ -91,21 +103,41 @@ impl AdminSetup {
                 Err(_) => return AdminSetup::Misconfigured(format!("invalid ADMIN_PORT '{}'", p)),
             },
         };
-        let addr = match format!("{}:{}", host, port).parse::<SocketAddr>() {
-            Ok(a) => a,
+        let addr = match host.trim().parse::<std::net::IpAddr>() {
+            Ok(ip) => SocketAddr::new(ip, port),
             Err(_) => {
                 return AdminSetup::Misconfigured(format!(
-                    "invalid ADMIN_HOST/ADMIN_PORT '{}:{}'",
-                    host, port
+                    "invalid ADMIN_HOST '{}' (use an IP address such as 0.0.0.0 or ::)",
+                    host
                 ))
             }
         };
+        let main_port = get("PORT")
+            .and_then(|p| p.trim().parse::<u16>().ok())
+            .unwrap_or(3000);
+        if port == main_port {
+            return AdminSetup::Misconfigured(format!(
+                "ADMIN_PORT ({}) must differ from PORT, the websocket server's port",
+                port
+            ));
+        }
 
         let secs = |name: &str, default: u64| -> u64 {
-            get(name)
-                .and_then(|v| v.trim().parse::<u64>().ok())
-                .filter(|v| *v > 0)
-                .unwrap_or(default)
+            match get(name) {
+                None => default,
+                Some(v) => match v.trim().parse::<u64>() {
+                    Ok(n) if n > 0 => n.min(MAX_SECS),
+                    _ => {
+                        log::warn!(
+                            "{}='{}' is not a positive number; using {}",
+                            name,
+                            v,
+                            default
+                        );
+                        default
+                    }
+                },
+            }
         };
         let flag = |name: &str| get(name).and_then(|v| parse_bool(&v)).unwrap_or(false);
 
@@ -188,6 +220,47 @@ mod tests {
         assert_eq!(c.empty_group_ttl_ms, 5_000);
         assert!(c.cookie_secure);
         assert!(c.trust_forwarded_for);
+    }
+
+    #[test]
+    fn unknown_enabled_value_is_reported_not_treated_as_on() {
+        assert!(matches!(
+            setup(&[("ADMIN_ENABLED", "disabled"), ("ADMIN_PASSWORD", "x")]),
+            AdminSetup::Misconfigured(_)
+        ));
+        assert!(matches!(
+            setup(&[("ADMIN_ENABLED", ""), ("ADMIN_PASSWORD", "x")]),
+            AdminSetup::Enabled(_)
+        ));
+    }
+
+    #[test]
+    fn ipv6_host_huge_ttls_and_port_clash() {
+        let AdminSetup::Enabled(c) = setup(&[
+            ("ADMIN_PASSWORD", "pw"),
+            ("ADMIN_HOST", "::"),
+            ("ADMIN_SESSION_TTL_SECS", "18446744073709551615"),
+        ]) else {
+            panic!("expected enabled");
+        };
+        assert_eq!(c.addr.to_string(), "[::]:3001");
+        assert_eq!(c.session_ttl_ms, MAX_SECS * 1000);
+        assert!(matches!(
+            setup(&[("ADMIN_PASSWORD", "pw"), ("ADMIN_PORT", "3000")]),
+            AdminSetup::Misconfigured(_)
+        ));
+        assert!(matches!(
+            setup(&[
+                ("ADMIN_PASSWORD", "pw"),
+                ("PORT", "8080"),
+                ("ADMIN_PORT", "8080")
+            ]),
+            AdminSetup::Misconfigured(_)
+        ));
+        assert!(matches!(
+            setup(&[("ADMIN_PASSWORD", "pw"), ("ADMIN_HOST", "localhost")]),
+            AdminSetup::Misconfigured(_)
+        ));
     }
 
     #[test]

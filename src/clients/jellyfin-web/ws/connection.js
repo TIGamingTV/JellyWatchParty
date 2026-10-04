@@ -6,7 +6,13 @@
   const ui = JWP.ui;
   const { DEFAULT_WS_URL, RECONNECT_BASE_MS, RECONNECT_MAX_MS, PING_INIT_MS, PING_STABLE_MS, PING_STABLE_AFTER } = JWP.constants;
 
+  // The client id and its resume secret are kept per browser tab
+  // (sessionStorage survives reloads of the tab, but each tab gets its own),
+  // so two tabs never fight over one session on the server.
   const CLIENT_ID_STORAGE_KEY = 'owp_persistent_client_id';
+  // The server hands each client a secret in client_hello; only a connection
+  // presenting it may reattach to that client id (and its room/host role).
+  const RESUME_SECRET_STORAGE_KEY = 'owp_resume_secret';
 
   const generateUuid = () => {
     if (window.crypto && typeof window.crypto.randomUUID === 'function') {
@@ -19,13 +25,31 @@
     });
   };
 
+  const tabStorage = () => {
+    try {
+      return window.sessionStorage || null;
+    } catch (err) {
+      return null;
+    }
+  };
+
+  // Earlier versions shared one id (and secret) across all tabs.
+  try {
+    if (window.localStorage) {
+      window.localStorage.removeItem(CLIENT_ID_STORAGE_KEY);
+      window.localStorage.removeItem(RESUME_SECRET_STORAGE_KEY);
+    }
+  } catch (err) { /* storage unavailable */ }
+
   const getPersistentClientId = () => {
     try {
-      let id = window.localStorage.getItem(CLIENT_ID_STORAGE_KEY);
+      const store = tabStorage();
+      let id = store && store.getItem(CLIENT_ID_STORAGE_KEY);
       if (!id) {
-        id = generateUuid();
-        window.localStorage.setItem(CLIENT_ID_STORAGE_KEY, id);
+        id = state.sessionOnlyClientId || generateUuid();
+        if (store) store.setItem(CLIENT_ID_STORAGE_KEY, id);
       }
+      state.sessionOnlyClientId = id;
       return id;
     } catch (err) {
       if (!state.sessionOnlyClientId) state.sessionOnlyClientId = generateUuid();
@@ -33,13 +57,10 @@
     }
   };
 
-  // The server hands each client a secret in client_hello; only a connection
-  // presenting it may reattach to that client id (and its room/host role).
-  const RESUME_SECRET_STORAGE_KEY = 'owp_resume_secret';
-
   const getResumeSecret = () => {
     try {
-      return window.localStorage.getItem(RESUME_SECRET_STORAGE_KEY) || state.sessionOnlyResumeSecret || '';
+      const store = tabStorage();
+      return (store && store.getItem(RESUME_SECRET_STORAGE_KEY)) || state.sessionOnlyResumeSecret || '';
     } catch (err) {
       return state.sessionOnlyResumeSecret || '';
     }
@@ -47,17 +68,19 @@
 
   // Called on client_hello. If the server refused to reattach (no or wrong
   // secret) it issued a different id: adopt that one so the next reconnect
-  // resumes it.
+  // resumes it. The secret also changes on every reattach.
   const rememberSession = (clientId, resumeSecret) => {
     if (!clientId) return;
     state.sessionOnlyClientId = clientId;
     state.sessionOnlyResumeSecret = resumeSecret || '';
     try {
-      window.localStorage.setItem(CLIENT_ID_STORAGE_KEY, clientId);
+      const store = tabStorage();
+      if (!store) return;
+      store.setItem(CLIENT_ID_STORAGE_KEY, clientId);
       if (resumeSecret) {
-        window.localStorage.setItem(RESUME_SECRET_STORAGE_KEY, resumeSecret);
+        store.setItem(RESUME_SECRET_STORAGE_KEY, resumeSecret);
       } else {
-        window.localStorage.removeItem(RESUME_SECRET_STORAGE_KEY);
+        store.removeItem(RESUME_SECRET_STORAGE_KEY);
       }
     } catch (err) {
       // Storage unavailable (private mode): the session-only copies above

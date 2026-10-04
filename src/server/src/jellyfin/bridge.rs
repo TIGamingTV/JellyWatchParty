@@ -275,6 +275,8 @@ impl Bridges {
                     last_seen: now,
                     resume_secret: random_token(),
                     connected_at: now,
+                    conn_id: 0,
+                    connected: true,
                     kind: ClientKind::Bridge,
                 },
             );

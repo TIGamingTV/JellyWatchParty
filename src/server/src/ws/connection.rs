@@ -8,8 +8,15 @@ use crate::utils::{now_ms, random_token};
 use axum::extract::ws::{Message, WebSocket};
 use futures::StreamExt;
 use log::{info, warn};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::mpsc;
+
+static NEXT_CONN_ID: AtomicU64 = AtomicU64::new(1);
+
+fn next_conn_id() -> u64 {
+    NEXT_CONN_ID.fetch_add(1, Ordering::Relaxed)
+}
 use tokio_stream::wrappers::ReceiverStream;
 
 fn register_client(
@@ -35,19 +42,24 @@ fn register_client(
         last_seen: now,
         resume_secret: random_token(),
         connected_at: now,
+        conn_id: next_conn_id(),
+        connected: true,
         kind: crate::types::ClientKind::Web,
     }
 }
 
 /// Greets a client with its id and resume secret. Only this client ever
 /// sees the secret; other members only learn its id (via `participants`).
+/// `room_id` is the room the server has this client in (`null` for none),
+/// so a client that reattaches after being moved or removed while it was
+/// offline can drop a room it is no longer in.
 fn send_client_hello(
     client_id: &str,
     locked_clients: &std::collections::HashMap<String, crate::types::Client>,
 ) {
-    let resume_secret = locked_clients
+    let (resume_secret, room_id) = locked_clients
         .get(client_id)
-        .map(|c| c.resume_secret.clone())
+        .map(|c| (c.resume_secret.clone(), c.room_id.clone()))
         .unwrap_or_default();
     send_to_client(
         client_id,
@@ -59,6 +71,7 @@ fn send_client_hello(
             payload: Some(serde_json::json!({
                 "client_id": client_id,
                 "resume_secret": resume_secret,
+                "room_id": room_id,
             })),
             ts: now_ms(),
             server_ts: Some(now_ms()),
@@ -135,6 +148,7 @@ pub async fn client_connection(
     // and role it had. A known id without the right secret is someone else's
     // session (ids are visible to everyone in a room), so that connection
     // gets a fresh id instead of taking the entry over.
+    let my_conn_id;
     let rejoined_room_id = {
         let mut locked_clients = clients.write().await;
         match decide_attach(locked_clients.get(&client_id), resume_secret.as_deref()) {
@@ -145,6 +159,13 @@ pub async fn client_connection(
                     .expect("checked by decide_attach");
                 existing.sender = client_sender;
                 existing.last_seen = now_ms();
+                existing.conn_id = next_conn_id();
+                existing.connected = true;
+                // A fresh secret on every reattach: one that leaked (e.g. in
+                // a proxy access log, it travels in the URL) stops working
+                // as soon as the owner reconnects.
+                existing.resume_secret = random_token();
+                my_conn_id = existing.conn_id;
                 existing.room_id.clone()
             }
             attach => {
@@ -161,6 +182,7 @@ pub async fn client_connection(
                     client_id, jwt_config.enabled
                 );
                 let client = register_client(client_sender, &jwt_config);
+                my_conn_id = client.conn_id;
                 locked_clients.insert(client_id.clone(), client);
                 None
             }
@@ -184,7 +206,15 @@ pub async fn client_connection(
         }
     }
 
-    crate::room::schedule_disconnect(client_id, clients, rooms).await;
+    {
+        let mut locked_clients = clients.write().await;
+        match locked_clients.get_mut(&client_id) {
+            Some(c) if c.conn_id == my_conn_id => c.connected = false,
+            // Another connection took this entry over; it isn't ours to end.
+            _ => return,
+        }
+    }
+    crate::room::schedule_disconnect(client_id, my_conn_id, clients, rooms).await;
 }
 
 #[cfg(test)]

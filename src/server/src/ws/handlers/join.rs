@@ -76,6 +76,20 @@ pub(in crate::ws) async fn handle_join_room(
     let mut locked_clients = clients.write().await;
 
     let Some(room) = locked_rooms.get_mut(room_id) else {
+        // Closed or removed (e.g. an empty admin group) since the client's
+        // room list was sent: say so, and send it a fresh list.
+        send_join_error(
+            client_id,
+            room_id,
+            &locked_clients,
+            serde_json::json!({
+                "message": "This room no longer exists",
+                "reason": "room_not_found"
+            }),
+        );
+        drop(locked_clients);
+        drop(locked_rooms);
+        crate::messaging::send_room_list(client_id, clients, rooms).await;
         return;
     };
 
@@ -492,5 +506,22 @@ mod tests {
         );
         handle_join_room("guest", &join_msg("guest", "secret"), &clients, &rooms).await;
         assert!(!rooms.read().await["room-1"].failed_joins.contains_key("ug"));
+    }
+
+    #[tokio::test]
+    async fn handle_join_room_reports_a_missing_room() {
+        let clients = test_helpers::create_clients();
+        let rooms = test_helpers::create_rooms();
+        let (guest, mut rx) = test_helpers::create_client_with_rx("ug", "Guest", true);
+        clients.write().await.insert("guest".to_string(), guest);
+        handle_join_room("guest", &join_msg("guest", ""), &clients, &rooms).await;
+        let msgs = drain(&mut rx);
+        assert_eq!(msgs[0].msg_type, "error");
+        assert_eq!(
+            msgs[0].payload.as_ref().unwrap()["reason"],
+            "room_not_found"
+        );
+        assert_eq!(msgs[1].msg_type, "room_list");
+        assert!(clients.read().await["guest"].room_id.is_none());
     }
 }

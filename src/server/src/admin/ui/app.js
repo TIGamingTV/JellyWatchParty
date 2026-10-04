@@ -57,6 +57,8 @@
 
   // Runs an admin action, reports the outcome, refreshes the view.
   const act = async (label, fn) => {
+    // Hand focus back so the next poll may re-render the lists.
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
     try {
       await fn();
       banner(label);
@@ -254,7 +256,7 @@
       : el('p', { className: 'empty', text: 'Nobody here yet.' });
 
     const options = candidates(ov, room.id);
-    const select = el('select', { 'aria-label': `Who to add to ${room.name}` },
+    const select = el('select', { 'aria-label': `Who to add to ${room.name}`, 'data-key': `room-add:${room.id}` },
       el('option', { value: '', text: options.length ? 'Add someone...' : 'Nobody else to add' }),
       groupedOptions(options));
     const role = roleSelect(`Role in ${room.name}`);
@@ -286,7 +288,7 @@
       return;
     }
     const rows = ov.unassigned.map((c) => {
-      const select = el('select', { 'aria-label': `Room for ${c.name}` },
+      const select = el('select', { 'aria-label': `Room for ${c.name}`, 'data-key': `unassigned:${c.id}` },
         el('option', { value: '', text: ov.rooms.length ? 'Choose a room...' : 'No rooms' }),
         ov.rooms.map((r) => el('option', { value: r.id, text: r.name })));
       const cell = el('td', { className: 'actions' });
@@ -383,18 +385,40 @@
     $('server-info').textContent = parts.join(' | ');
   };
 
-  // Don't rebuild the DOM under the admin's cursor: a re-render would reset
-  // an open <select> or a half-typed field.
+  // The lists are rebuilt on every poll. Don't do that while the admin has a
+  // dropdown in them focused (it would snap shut), but only for a while, so
+  // a select that simply kept focus doesn't freeze the dashboard.
+  const LIVE_AREAS = ['rooms', 'unassigned', 'devices'];
+  let focusedAt = 0;
+  document.addEventListener('focusin', () => { focusedAt = Date.now(); });
   const isInteracting = () => {
     const a = document.activeElement;
-    return a && $('app-view').contains(a) && (a.tagName === 'SELECT' || a.tagName === 'INPUT');
+    return !!a && a.tagName === 'SELECT' && Date.now() - focusedAt < 15000
+      && LIVE_AREAS.some((id) => $(id) && $(id).contains(a));
+  };
+
+  // Choices made in the lists' dropdowns survive a re-render.
+  const saveChoices = () => {
+    const saved = {};
+    for (const sel of document.querySelectorAll('select[data-key]')) {
+      if (sel.value) saved[sel.dataset.key] = sel.value;
+    }
+    return saved;
+  };
+  const restoreChoices = (saved) => {
+    for (const sel of document.querySelectorAll('select[data-key]')) {
+      const v = saved[sel.dataset.key];
+      if (v && [...sel.options].some((o) => o.value === v)) sel.value = v;
+    }
   };
 
   const render = (ov) => {
+    const saved = saveChoices();
     renderServerInfo(ov);
     renderRooms(ov);
     renderUnassigned(ov);
     renderDevices(ov);
+    restoreChoices(saved);
   };
 
   const refresh = async (force = false) => {

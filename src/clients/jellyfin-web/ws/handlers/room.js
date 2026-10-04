@@ -16,6 +16,14 @@
       if (JWP.actions && JWP.actions.rememberSession) {
         JWP.actions.rememberSession(msg.payload.client_id, msg.payload.resume_secret);
       }
+      // The server says which room it has us in. If we think we're in a room
+      // but the server has none (removed or closed while we were offline,
+      // or the reconnect window ran out), leave it locally. A different room
+      // arrives as room_state right after this and is handled there.
+      if ('room_id' in msg.payload && !msg.payload.room_id && state.inRoom) {
+        if (JWP.actions && JWP.actions.resetRoomState) JWP.actions.resetRoomState();
+        ui.showToast('You are no longer in the watch party');
+      }
       ui.render();
     }
   };
@@ -49,6 +57,9 @@
   };
 
   h.handleRoomClosed = (msg) => {
+    // Full local reset (countdown, chat, timers, host flag), not just the
+    // room fields: a removed host must not stay "host" in the lobby.
+    if (JWP.actions && JWP.actions.resetRoomState) JWP.actions.resetRoomState();
     state.inRoom = false;
     state.roomId = '';
     state.roomMediaId = '';
@@ -84,6 +95,10 @@
     const message = msg.payload?.message || 'Unknown error';
     console.error('[JellyWatchParty] Server error:', message);
     ui.showToast(message);
+    if (msg.payload?.reason === 'room_not_found' && !state.inRoom) {
+      // joinRoom set this optimistically; the room is gone.
+      state.roomId = '';
+    }
     if (msg.payload?.reason === 'wrong_password' && msg.room) {
       ui.promptJoinWithPassword(msg.room);
     }

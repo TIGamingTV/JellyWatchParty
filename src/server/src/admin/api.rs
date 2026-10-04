@@ -148,7 +148,7 @@ fn member_json(
         "is_host": room.host_id == id,
         "status": room.client_status.get(id).map(String::as_str).unwrap_or("unknown"),
         "ready": room.ready_clients.contains(id),
-        "connected": client.is_some_and(|c| !c.sender.is_closed()),
+        "connected": client.is_some_and(|c| c.connected),
     });
     if client.is_some_and(|c| c.kind == ClientKind::Bridge) {
         m["kind"] = "jellyfin".into();
@@ -218,7 +218,7 @@ pub fn build_overview(
                 "name": if c.user_name.is_empty() { "(not signed in)" } else { &c.user_name },
                 "kind": "web",
                 "authenticated": c.authenticated,
-                "connected": !c.sender.is_closed(),
+                "connected": c.connected,
                 "connected_at": c.connected_at,
             })
         })
