@@ -262,6 +262,42 @@ fn csrf_accepts_proxied_origin() {
 }
 
 #[test]
+fn csrf_ignores_ports_and_case() {
+    let mut h = HeaderMap::new();
+    h.insert(CSRF_HEADER, HeaderValue::from_static("1"));
+    h.insert(header::HOST, HeaderValue::from_static("Example.com"));
+    h.insert(
+        header::ORIGIN,
+        HeaderValue::from_static("https://example.com:8920"),
+    );
+    assert!(csrf_ok(&Method::POST, &h));
+    h.insert(
+        header::ORIGIN,
+        HeaderValue::from_static("https://example.com.evil.net"),
+    );
+    assert!(!csrf_ok(&Method::POST, &h));
+    h.insert(header::HOST, HeaderValue::from_static("[::1]:3001"));
+    h.insert(
+        header::ORIGIN,
+        HeaderValue::from_static("http://[::1]:3001"),
+    );
+    assert!(csrf_ok(&Method::POST, &h));
+    h.insert(header::ORIGIN, HeaderValue::from_static("null"));
+    assert!(!csrf_ok(&Method::POST, &h));
+}
+
+#[test]
+fn throttle_groups_ipv6_by_64() {
+    let a: IpAddr = "2001:db8:1:2:aaaa::1".parse().unwrap();
+    let b: IpAddr = "2001:db8:1:2:bbbb::9".parse().unwrap();
+    let c: IpAddr = "2001:db8:1:3::1".parse().unwrap();
+    assert_eq!(throttle_key(a), throttle_key(b));
+    assert_ne!(throttle_key(a), throttle_key(c));
+    let mapped: IpAddr = "::ffff:10.0.0.1".parse().unwrap();
+    assert_eq!(throttle_key(mapped), "10.0.0.1".parse::<IpAddr>().unwrap());
+}
+
+#[test]
 fn forwarded_ip_uses_the_last_hop() {
     let mut h = HeaderMap::new();
     h.insert(
@@ -269,6 +305,9 @@ fn forwarded_ip_uses_the_last_hop() {
         HeaderValue::from_static("6.6.6.6, 10.1.2.3"),
     );
     assert_eq!(forwarded_ip(&h), Some("10.1.2.3".parse().unwrap()));
+    // A client-supplied first line is not trusted over the proxy's line.
+    h.append("x-forwarded-for", HeaderValue::from_static("192.168.5.5"));
+    assert_eq!(forwarded_ip(&h), Some("192.168.5.5".parse().unwrap()));
     assert_eq!(forwarded_ip(&HeaderMap::new()), None);
 }
 

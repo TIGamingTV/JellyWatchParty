@@ -55,6 +55,11 @@ pub(in crate::ws) async fn handle_ready(
     if let Some(ref room_id) = parsed.room {
         let mut locked_rooms = rooms.write().await;
         if let Some(room) = locked_rooms.get_mut(room_id) {
+            // all_ready compares counts, so a `ready` from someone who isn't
+            // (or no longer is) a member must not count.
+            if !room.clients.iter().any(|id| id == client_id) {
+                return;
+            }
             room.ready_clients.insert(client_id.to_string());
             if room.pending_play.is_some() && all_ready(room) {
                 let position = room
@@ -187,5 +192,27 @@ mod tests {
         // pending_play should be cleared
         let lr = rooms.read().await;
         assert!(lr.get("room-1").unwrap().pending_play.is_none());
+    }
+
+    #[tokio::test]
+    async fn handle_ready_ignores_non_members() {
+        let clients = test_helpers::create_clients();
+        let rooms = test_helpers::create_rooms();
+        {
+            let mut lr = rooms.write().await;
+            let mut room = test_helpers::create_room("room-1", "host");
+            room.ready_clients.clear();
+            lr.insert("room-1".to_string(), room);
+        }
+        let parsed = IncomingMessage {
+            msg_type: crate::types::ClientMessageType::Ready,
+            room: Some("room-1".to_string()),
+            client: None,
+            payload: None,
+            ts: 0,
+            server_ts: None,
+        };
+        handle_ready("stranger", &parsed, &clients, &rooms).await;
+        assert!(rooms.read().await["room-1"].ready_clients.is_empty());
     }
 }

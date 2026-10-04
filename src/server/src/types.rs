@@ -51,6 +51,14 @@ pub struct Client {
     pub resume_secret: String,
     /// When this entry was first registered (ms since epoch).
     pub connected_at: u64,
+    /// Id of the websocket connection currently attached to this entry. A
+    /// connection that ends only schedules a disconnect if it is still the
+    /// attached one, so a half-dead old socket can never evict the session
+    /// that replaced it.
+    pub conn_id: u64,
+    /// False once the attached connection has ended (the entry is then in
+    /// its reconnect grace period).
+    pub connected: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

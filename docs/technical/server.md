@@ -466,7 +466,7 @@ pub fn validate_token(token: &str, secret: &str) -> Result<Claims, Error> {
 ### Persistent Client ID
 
 Reconnection is matched by identity, not by luck: the client generates a
-UUID once and stores it in `localStorage`
+UUID once per browser tab and stores it in `sessionStorage`
 (`getPersistentClientId()`/`withClientId()` in
 `src/clients/jellyfin-web/ws/connection.js`), then sends it as
 `?client_id=<uuid>` on every WebSocket connection attempt (see
@@ -483,7 +483,16 @@ entry and sent only to its owner in `client_hello`. The client stores it
 next to its id and sends it as `&resume=`. Without the right secret
 (`decide_attach` in `ws/connection.rs`, constant-time compare), a
 connection asking for an id that is in use gets a fresh id instead of
-taking over the entry's room membership and host role.
+taking over the entry's room membership and host role. The secret is
+replaced on every reattach.
+
+Each websocket connection also gets a `conn_id`. When a connection ends,
+it marks the entry disconnected and schedules the grace-period check only
+if it is still the entry's current connection; after the grace period the
+entry is removed only if that same connection is still attached and
+either ended or stayed silent for 60 s (`reconnect::should_evict`). This
+keeps a half-dead old socket, noticed long after the client reconnected,
+from evicting the live session.
 
 ### Reconnection Behavior
 

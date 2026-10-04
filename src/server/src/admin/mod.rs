@@ -78,16 +78,21 @@ impl FromRequestParts<AdminState> for ClientIp {
             .unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED));
         if state.cfg.trust_forwarded_for {
             if let Some(ip) = forwarded_ip(&parts.headers) {
-                return Ok(ClientIp(ip));
+                return Ok(ClientIp(throttle_key(ip)));
             }
         }
-        Ok(ClientIp(peer))
+        Ok(ClientIp(throttle_key(peer)))
     }
 }
 
+/// The last `X-Forwarded-For` hop, i.e. the address the closest proxy saw.
+/// Uses the last header line too: some proxies append a separate line
+/// instead of extending the client's.
 fn forwarded_ip(headers: &HeaderMap) -> Option<IpAddr> {
     headers
-        .get("x-forwarded-for")?
+        .get_all("x-forwarded-for")
+        .iter()
+        .next_back()?
         .to_str()
         .ok()?
         .rsplit(',')
@@ -95,6 +100,21 @@ fn forwarded_ip(headers: &HeaderMap) -> Option<IpAddr> {
         .trim()
         .parse()
         .ok()
+}
+
+/// Login throttling works per address, but one IPv6 host usually owns a
+/// whole /64: count those together. IPv4-mapped addresses become IPv4.
+fn throttle_key(ip: IpAddr) -> IpAddr {
+    match ip {
+        IpAddr::V4(_) => ip,
+        IpAddr::V6(v6) => match v6.to_ipv4_mapped() {
+            Some(v4) => IpAddr::V4(v4),
+            None => {
+                let s = v6.segments();
+                IpAddr::V6(std::net::Ipv6Addr::new(s[0], s[1], s[2], s[3], 0, 0, 0, 0))
+            }
+        },
+    }
 }
 
 pub fn error_response(status: StatusCode, message: &str) -> Response {
@@ -110,9 +130,26 @@ async fn require_session(State(state): State<AdminState>, req: Request, next: Ne
     }
 }
 
-/// `host[:port]` of an `Origin` header value.
-fn origin_authority(origin: &str) -> Option<&str> {
-    origin.split_once("://").map(|(_, rest)| rest)
+/// The host part of `host[:port]` / `[v6]:port`, lowercased.
+fn host_only(authority: &str) -> String {
+    let authority = authority.trim();
+    let host = if let Some(rest) = authority.strip_prefix('[') {
+        rest.split(']').next().unwrap_or(rest)
+    } else {
+        authority.rsplit_once(':').map_or(authority, |(h, port)| {
+            if port.chars().all(|c| c.is_ascii_digit()) {
+                h
+            } else {
+                authority
+            }
+        })
+    };
+    host.to_ascii_lowercase()
+}
+
+/// Host of an `Origin` header value (`scheme://host[:port]`).
+fn origin_host(origin: &str) -> Option<String> {
+    origin.split_once("://").map(|(_, rest)| host_only(rest))
 }
 
 fn csrf_ok(method: &Method, headers: &HeaderMap) -> bool {
@@ -123,21 +160,22 @@ fn csrf_ok(method: &Method, headers: &HeaderMap) -> bool {
         return false;
     }
     // Belt and braces: if the browser says where the request came from, it
-    // must be this panel (as reached directly or through a proxy).
+    // must be this panel's host (reached directly or through a proxy). Ports
+    // are not compared: proxies often forward the host without its port
+    // (nginx `$host`), and the custom header above is the real barrier.
     let Some(origin) = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok()) else {
         return true;
     };
-    let Some(authority) = origin_authority(origin) else {
+    let Some(origin_host) = origin_host(origin) else {
         return false;
     };
     ["x-forwarded-host", "host"].iter().any(|h| {
         headers
-            .get(*h)
-            .and_then(|v| v.to_str().ok())
-            .is_some_and(|v| {
-                v.split(',')
-                    .any(|v| v.trim().eq_ignore_ascii_case(authority))
-            })
+            .get_all(*h)
+            .iter()
+            .filter_map(|v| v.to_str().ok())
+            .flat_map(|v| v.split(','))
+            .any(|v| host_only(v) == origin_host)
     })
 }
 

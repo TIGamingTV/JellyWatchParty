@@ -14,9 +14,10 @@ JellyWatchParty uses a JSON-over-WebSocket protocol for real-time communication 
 
 ### `client_id` and `resume` Query Parameters
 
-The client generates a UUID once, persists it in `localStorage`, and
-sends it as `?client_id=` on every connection attempt (including
-reconnects). This query param is what lets the server recognize "this is
+The client generates a UUID once per browser tab, keeps it in
+`sessionStorage` (it survives reloads of that tab; other tabs get their
+own), and sends it as `?client_id=` on every connection attempt
+(including reconnects). This query param is what lets the server recognize "this is
 the same client as before" across a dropped connection, so it can
 reattach the client to its existing room membership (and resend
 `room_state`) instead of treating it as brand new. Only values that look
@@ -30,7 +31,8 @@ client in `client_hello`. A connection reattaches only if it also sends
 that secret as `&resume=`. If the id is already in use and the secret is
 missing or wrong, the server ignores the requested id and issues a new
 one in `client_hello`; the client should then store the new id and
-secret. Clients from before this change (no `resume`) still connect, but
+secret. The secret is replaced on every successful reattach, so always
+store the one from the latest `client_hello`. Clients from before this change (no `resume`) still connect, but
 lose their room on reconnect while the old entry is still held.
 
 See [Server: Persistent Client ID]({{ '/technical/server/' | relative_url }}#persistent-client-id) for the
@@ -139,7 +141,7 @@ Join an existing room.
 |---------------|------|-------------|
 | `password` | string | Required only if the room was created with a password. Not checked for a client that's already a member of the room (e.g. a re-sent join after a panel refresh). |
 
-**Response:** `room_state`, or `error` with `payload.reason: "wrong_password"` if the password is missing/incorrect.
+**Response:** `room_state`, or `error` with `payload.reason: "wrong_password"` if the password is missing/incorrect, or `"room_not_found"` (followed by a fresh `room_list`) if the room no longer exists.
 
 After 5 wrong passwords within 60 s, the same user (keyed by `user_id`, i.e. the JWT `sub`, not the client id) is refused for the rest of that 60 s window with `payload.reason: "too_many_attempts"` and `payload.retry_after_ms`, without the password being checked. The throttle is per room and per user, so one user guessing can't lock others out. A successful join clears the user's count.
 
@@ -365,7 +367,11 @@ A participant reports its own playback status, for the room's participant list. 
 Sent immediately after WebSocket connection. `client_id` may differ from
 the requested `?client_id=` (see [above](#client_id-and-resume-query-parameters));
 `resume_secret` is needed to reattach to this id later and is never sent to
-anyone else.
+anyone else. `room_id` is the room the server has this client in, or
+`null`: a reattaching client that thinks it is in a room but gets `null`
+was removed (or the room closed) while it was offline and should go back
+to the lobby; if it is in a different room, `room_state` for that room
+follows.
 
 ```json
 {
@@ -373,7 +379,8 @@ anyone else.
   "client": "uuid-client-id",
   "payload": {
     "client_id": "uuid-client-id",
-    "resume_secret": "64-hex-chars"
+    "resume_secret": "64-hex-chars",
+    "room_id": null
   },
   "ts": 1678900000000,
   "server_ts": 1678900000000
@@ -711,7 +718,7 @@ Error response.
 | Payload Field | Type | Description |
 |---------------|------|-------------|
 | `message` | string | Human-readable error description |
-| `reason` | string | Optional machine-readable code for errors a client may want to special-case. Currently `"wrong_password"` and `"too_many_attempts"`, both from `join_room` |
+| `reason` | string | Optional machine-readable code for errors a client may want to special-case. Currently `"wrong_password"`, `"too_many_attempts"` and `"room_not_found"`, all from `join_room` |
 | `retry_after_ms` | number | Only with `reason: "too_many_attempts"`: milliseconds until the user may try the room's password again |
 
 ## Sequence Diagram: Complete Session
