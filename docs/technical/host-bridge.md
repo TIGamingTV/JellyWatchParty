@@ -62,9 +62,18 @@ anyone's session, and attach any session to any room as a receiver,
 bypassing Jellyfin's `EnableRemoteControlOfOtherUsers` permission.
 
 Both bridges send the bridged session's `DeviceId` as `bridge_device_id`
-in `create_room` / `join_room`. The session server records it, shows the
-connection as a *Plugin bridge* in its admin panel, and refuses to
-bridge the same device a second time from there.
+in `create_room` / `join_room`. The session server records it and shows
+the connection as a *Plugin bridge* in its admin panel. One device is
+never driven from two places: the admin panel refuses a device a plugin
+bridge drives, and the server refuses a plugin bridge's create/join
+(`reason: "device_already_bridged"`) for a device that is already in a
+room. Start waits up to 5 s for the server's answer, so such a refusal
+(or a wrong room password) reaches the user as an error instead of a
+bridge without a room.
+
+Stopping a bridge sends `leave_room` before closing, so it leaves its
+room at once instead of after the server's 90 s reconnect grace. A
+bridge whose room closes, or that an admin removes, stops itself.
 
 So a native client can still participate as a guest via the receiver
 role. Running the injected UI directly (a browser, or Jellyfin Desktop

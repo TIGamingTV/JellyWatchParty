@@ -2506,3 +2506,79 @@ bridge). JS 180.
 `user-guide.md`, `troubleshooting.md`, `plugin.md` (REST table, config
 page), `ARCHITECTURE.md`, `protocol.md` (`bridge_device_id`),
 `admin-panel.md`, `implem.md` §2.5.
+
+---
+
+## Round 38 — Review of the admin panel PRs (#85, #86, #87)
+
+**Trigger**: a full bug hunt over the three stacked PRs, a Jellyfin 12
+conformance check, and a UI review. Fixes are folded into each PR's branch.
+
+**#85 (core)**:
+
+- **Stale-socket eviction (medium)**: a connection that ended late
+  (half-open TCP) scheduled a disconnect for whatever sender the entry
+  held then, evicting the live session that had reconnected. Connections
+  now have a `conn_id`; only the attached one schedules, and eviction
+  re-checks it (`reconnect::should_evict`). The admin "connected" dot
+  uses an explicit flag.
+- **Tabs fighting over one session (medium)**: id + resume secret moved
+  from `localStorage` to per-tab `sessionStorage`.
+- **Stale UI after reattach (medium)**: `client_hello` carries `room_id`;
+  the web client drops a room the server no longer has it in, or one that
+  differs from `room_state`, also without `admin_moved`.
+- Admin move hid the panel; a removed host stayed host in the lobby;
+  resume secret now rotates on reattach; `ready` from non-members no
+  longer counts; `join_room` for a vanished room answers `room_not_found`;
+  zombie reaper subtraction saturates.
+- Admin: CSRF compares hostnames only (proxies drop ports); last
+  `X-Forwarded-For` line; IPv6 throttled per /64; unknown
+  `ADMIN_ENABLED` is an error; TTLs capped; `ADMIN_HOST=::` works;
+  `ADMIN_PORT == PORT` refused; dashboard no longer freezes while a field
+  keeps focus. Docs recommend a separate host name for the panel.
+
+**#86 (device bridge)**:
+
+- **Scheduled plays (high)**: receivers were unpaused when a delayed or
+  countdown play was announced and measured the room from the
+  announcement (TVs up to wait + 3 s ahead). Bridges now anchor on
+  `target_server_ts`, hold play/pause until then and wake 300 ms before.
+- **Clock skew (medium)**: offset between Jellyfin and session server is
+  estimated from progress reports and applied.
+- **Idle TVs dropped (medium)**: no `activeWithinSeconds` on the poll; the
+  admin list filters by `LastActivityDate` instead.
+- **Double add (medium)**: device reserved under one lock.
+- Device hosts mark the room started; commands run off the message loop;
+  cancel-safe remove; command trust capped at 10 s; uppercase media ids;
+  stop-on-device opt-out and 3-try `PlayNow` cap; per-device
+  extrapolation cap; tolerant `/Sessions` parsing; system CA store.
+- **UI**: header chips, collapsed help widget (button guide + host/receiver
+  compatibility), readable sync statuses, in-page dialog instead of
+  `prompt`/`confirm`, password toasts that stay with a Copy button,
+  disabled add controls when nothing to add, card rows on mobile.
+
+**#87 (plugin)**:
+
+- **Duplicate driving (medium)**: only one direction was guarded. The
+  server now refuses a plugin bridge's create/join for a device already
+  in a room (`device_already_bridged`), matching on the device alone; a
+  tag left on a client outside any room no longer counts.
+- **90 s ghost (medium-low)**: bridges send `leave_room` before closing;
+  a bridge whose room closes or that an admin removes stops itself.
+- Start waits for the server's answer and surfaces refusals as 400;
+  `DisposeAsync` idempotent; config-change teardown isolates failures and
+  start re-checks the switch; vanished session is 400, not 403; admin API
+  refuses to move a plugin bridge; user id read from `Jellyfin-UserId`.
+
+**Jellyfin 12 conformance** (checked against `release-12.z`):
+`GET /Sessions` (API key sees all), `POST /Sessions/{id}/Playing/{cmd}`,
+`POST /Sessions/{id}/Playing?playCommand=PlayNow`, the `MediaBrowser`
+auth header (Client/Version/DeviceId required, API key privileged in
+`AssertCanControl`), `SessionInfoDto` field names and formats ("N" GUIDs,
+UTC `Z` dates), plugin claims (`Jellyfin-UserId`, `ClaimTypes.Role`),
+`BasePlugin<T>.ConfigurationChanged`, and JSON round-trip of read-only
+config properties all match. Still not run against a live Jellyfin.
+
+**Tests**: Rust 228, JS 184, C# 149. Admin UI driven in headless Chromium
+against a simulated Jellyfin (desktop + 400 px mobile, no console errors,
+no horizontal overflow).

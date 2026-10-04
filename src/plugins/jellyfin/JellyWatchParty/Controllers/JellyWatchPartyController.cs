@@ -298,14 +298,25 @@ public class JellyWatchPartyController : ControllerBase
     /// <summary>
     /// The calling user's id, or null if the claims don't carry one.
     /// </summary>
-    private Guid? CallerUserId()
+    private Guid? CallerUserId() => UserIdOf(User);
+
+    /// <summary>
+    /// The user id of a Jellyfin principal. Jellyfin's auth handler puts it in
+    /// "Jellyfin-UserId" ("N" format) and sets no NameIdentifier claim.
+    /// </summary>
+    internal static Guid? UserIdOf(ClaimsPrincipal user)
     {
-        var raw = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
-               ?? User.FindFirst("Jellyfin-UserId")?.Value;
-        return Guid.TryParse(raw, out var id) ? id : null;
+        var raw = user.FindFirst("Jellyfin-UserId")?.Value
+               ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        return Guid.TryParse(raw, out var id) && id != Guid.Empty ? id : null;
     }
 
-    private bool CallerIsAdmin() => User.IsInRole("Administrator");
+    private const string SessionGoneMessage = "That session is no longer active. Start playing on the device and try again.";
+
+    private bool CallerIsAdmin() => IsAdmin(User);
+
+    /// <summary>Jellyfin gives administrators (and API keys) the "Administrator" role.</summary>
+    internal static bool IsAdmin(ClaimsPrincipal user) => user.IsInRole("Administrator");
 
     /// <summary>
     /// Whether the caller may bridge (or stop the bridge of) a session owned
@@ -396,7 +407,13 @@ public class JellyWatchPartyController : ControllerBase
             return BadRequest(new { error = PanelBridgingOffMessage });
         }
 
-        if (!MayControl(CallerUserId(), CallerIsAdmin(), _hostBridgeManager.GetSessionUserId(sessionId)))
+        var owner = _hostBridgeManager.GetSessionUserId(sessionId);
+        if (owner == null)
+        {
+            return BadRequest(new { error = SessionGoneMessage });
+        }
+
+        if (!MayControl(CallerUserId(), CallerIsAdmin(), owner))
         {
             return StatusCode(403, new { error = NotYourSessionMessage });
         }
@@ -429,7 +446,13 @@ public class JellyWatchPartyController : ControllerBase
             return BadRequest(new { error = PanelBridgingOffMessage });
         }
 
-        if (!MayControl(CallerUserId(), CallerIsAdmin(), _hostBridgeManager.GetSessionUserId(sessionId)))
+        var owner = _hostBridgeManager.GetSessionUserId(sessionId);
+        if (owner == null)
+        {
+            return BadRequest(new { error = SessionGoneMessage });
+        }
+
+        if (!MayControl(CallerUserId(), CallerIsAdmin(), owner))
         {
             return StatusCode(403, new { error = NotYourSessionMessage });
         }

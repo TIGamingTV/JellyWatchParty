@@ -56,18 +56,30 @@ public sealed class SessionFollowerBridge : IAsyncDisposable
     // can otherwise overlap the receive loop's sends, so all sends serialize here.
     private readonly SemaphoreSlim _sendLock = new(1, 1);
 
+    // Completes with null once the join is confirmed, or with the server's error.
+    private readonly TaskCompletionSource<string?> _started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly Action? _onEnded;
+
     private Task? _receiveLoop;
     private Task? _heartbeatLoop;
     private bool? _lastCommandedPaused;
     private DateTime _lastSeekAt = DateTime.MinValue;
+    private int _disposed;
 
+    /// <summary>
+    /// Creates a receiver bridge for <paramref name="session"/> in
+    /// <paramref name="roomId"/>. <paramref name="onEnded"/> is called if the
+    /// room closes or the bridge is removed from it, so the owner can drop it.
+    /// </summary>
     public SessionFollowerBridge(
         SessionInfo session,
         string roomId,
         PluginConfiguration config,
         ISessionManager sessionManager,
-        ILogger logger)
+        ILogger logger,
+        Action? onEnded = null)
     {
+        _onEnded = onEnded;
         _sessionId = session.Id;
         _userId = session.UserId.ToString("N");
         _userName = $"{session.UserName} ({session.DeviceName})";
@@ -103,11 +115,34 @@ public sealed class SessionFollowerBridge : IAsyncDisposable
         // bridge does not support) does not surface as a phantom connected bridge.
         _receiveLoop = Task.Run(() => ReceiveLoopAsync(_cts.Token), CancellationToken.None);
         _heartbeatLoop = Task.Run(() => HeartbeatLoopAsync(_cts.Token), CancellationToken.None);
+
+        // Surface a refused join (wrong password, the device is already in a
+        // watch party, ...) to the caller instead of a bridge with no room.
+        var finished = await Task.WhenAny(_started.Task, Task.Delay(SessionHostBridge.StartAnswerTimeout, cancellationToken))
+            .ConfigureAwait(false);
+        if (finished == _started.Task && await _started.Task.ConfigureAwait(false) is { } error)
+        {
+            throw new InvalidOperationException(error);
+        }
     }
 
     public async Task StopAsync()
     {
         _cts.Cancel();
+        // Leave the room explicitly: a plain close would keep this bridge in
+        // the room for the server's 90 s reconnect grace.
+        if (_socket.State == WebSocketState.Open && RoomId is { } room)
+        {
+            try
+            {
+                await SendAsync(new JObject(), "leave_room", room, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is WebSocketException or ObjectDisposedException or InvalidOperationException)
+            {
+                // Going away anyway.
+            }
+        }
+
         if (_socket.State == WebSocketState.Open)
         {
             // Take the send lock so the close frame can't race an in-flight
@@ -146,6 +181,13 @@ public sealed class SessionFollowerBridge : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        // Safe to call more than once (a config change and a failed start can
+        // both dispose the same bridge).
+        if (Interlocked.Exchange(ref _disposed, 1) == 1)
+        {
+            return;
+        }
+
         await StopAsync().ConfigureAwait(false);
         _socket.Dispose();
         _cts.Dispose();
@@ -218,7 +260,10 @@ public sealed class SessionFollowerBridge : IAsyncDisposable
         }
     }
 
-    private async Task HandleServerMessageAsync(string json, CancellationToken cancellationToken)
+    /// <summary>Outcome of the start: null once joined, else the server's error.</summary>
+    internal Task<string?> StartOutcome => _started.Task;
+
+    internal async Task HandleServerMessageAsync(string json, CancellationToken cancellationToken)
     {
         JObject message;
         try
@@ -239,6 +284,7 @@ public sealed class SessionFollowerBridge : IAsyncDisposable
                 // "play" for the whole room by MAX_READY_WAIT_MS. `ready` persists
                 // for the room's lifetime, so sending it once on join is enough.
                 RoomId = _roomId;
+                _started.TrySetResult(null);
                 await SendAsync(BuildReadyPayload(), "ready", _roomId, cancellationToken).ConfigureAwait(false);
                 var initial = ParseRoomEvent(message);
                 if (initial.HasValue)
@@ -248,13 +294,21 @@ public sealed class SessionFollowerBridge : IAsyncDisposable
 
                 break;
             case "room_closed":
+                // Closed, or an admin removed this bridge: nothing left to do.
                 RoomId = null;
+                _onEnded?.Invoke();
                 break;
             case "error":
+                var error = message["payload"]?["message"]?.ToString() ?? "The session server refused the request";
                 _logger.LogWarning(
                     "[JellyWatchParty] Session server rejected a message for follower session {SessionId}: {Message}",
                     _sessionId,
-                    message["payload"]?["message"]);
+                    error);
+                if (RoomId == null)
+                {
+                    _started.TrySetResult(error);
+                }
+
                 break;
             default:
                 var roomState = ParseRoomEvent(message);

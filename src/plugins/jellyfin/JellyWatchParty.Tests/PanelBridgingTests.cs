@@ -155,3 +155,88 @@ public class PanelBridgingTests
         Assert.Null(SessionHostBridge.BuildCreateRoomPayload(session)["bridge_device_id"]);
     }
 }
+
+/// <summary>
+/// Claims as Jellyfin's CustomAuthenticationHandler builds them, and the
+/// bridges' handling of the session server's answers.
+/// </summary>
+public class PanelBridgingRuntimeTests
+{
+    private static System.Security.Claims.ClaimsPrincipal JellyfinPrincipal(Guid userId, string role)
+    {
+        var claims = new[]
+        {
+            new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Name, "alice"),
+            new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, role),
+            new System.Security.Claims.Claim("Jellyfin-UserId", userId.ToString("N")),
+            new System.Security.Claims.Claim("Jellyfin-IsApiKey", "False"),
+        };
+        return new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity(claims, "CustomAuthentication"));
+    }
+
+    [Fact]
+    public void Claims_AreReadTheWayJellyfinWritesThem()
+    {
+        var id = Guid.NewGuid();
+        var user = JellyfinPrincipal(id, "User");
+        Assert.Equal(id, JellyWatchPartyController.UserIdOf(user));
+        Assert.False(JellyWatchPartyController.IsAdmin(user));
+        Assert.True(JellyWatchPartyController.IsAdmin(JellyfinPrincipal(id, "Administrator")));
+        // An API key has no user.
+        Assert.Null(JellyWatchPartyController.UserIdOf(JellyfinPrincipal(Guid.Empty, "Administrator")));
+    }
+
+    private static SessionInfo Session() => new(Mock.Of<ISessionManager>(), Mock.Of<ILogger>())
+    {
+        Id = "s1",
+        UserId = Guid.NewGuid(),
+        UserName = "Alice",
+        DeviceName = "TV",
+        DeviceId = "tv-1",
+        Client = "Fladder",
+    };
+
+    [Fact]
+    public async Task HostBridge_ReportsARefusalAndEndsWithItsRoom()
+    {
+        var ended = 0;
+        var bridge = new SessionHostBridge(Session(), new PluginConfiguration(), Mock.Of<ILogger>(), () => ended++);
+
+        bridge.HandleServerMessage("""{"type":"error","payload":{"message":"This device is already in a watch party","reason":"device_already_bridged"}}""");
+        Assert.Equal("This device is already in a watch party", await bridge.StartOutcome);
+
+        var ok = new SessionHostBridge(Session(), new PluginConfiguration(), Mock.Of<ILogger>(), () => ended++);
+        ok.HandleServerMessage("""{"type":"room_state","room":"r1","payload":{}}""");
+        Assert.Null(await ok.StartOutcome);
+        Assert.Equal("r1", ok.RoomId);
+        // Later errors don't count as a failed start.
+        ok.HandleServerMessage("""{"type":"error","payload":{"message":"Rate limit exceeded"}}""");
+        Assert.Null(await ok.StartOutcome);
+
+        ok.HandleServerMessage("""{"type":"room_closed","room":"r1","payload":{"reason":"An admin removed you from the room","removed":true}}""");
+        Assert.Null(ok.RoomId);
+        Assert.Equal(1, ended);
+
+        // Disposing twice is safe.
+        await ok.DisposeAsync();
+        await ok.DisposeAsync();
+        await bridge.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task FollowerBridge_ReportsARefusedJoinAndEndsWithItsRoom()
+    {
+        var ended = 0;
+        var follower = new SessionFollowerBridge(
+            Session(), "r1", new PluginConfiguration(), Mock.Of<ISessionManager>(), Mock.Of<ILogger>(), () => ended++);
+
+        await follower.HandleServerMessageAsync("""{"type":"error","payload":{"message":"Incorrect password","reason":"wrong_password"}}""", CancellationToken.None);
+        Assert.Equal("Incorrect password", await follower.StartOutcome);
+
+        await follower.HandleServerMessageAsync("""{"type":"room_closed","payload":{"reason":"Closed by an admin"}}""", CancellationToken.None);
+        Assert.Equal(1, ended);
+
+        await follower.DisposeAsync();
+        await follower.DisposeAsync();
+    }
+}

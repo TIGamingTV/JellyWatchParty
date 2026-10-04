@@ -144,6 +144,23 @@ public sealed class HostBridgeManager : IHostedService
     }
 
     /// <summary>
+    /// A bridge whose room closed (or that an admin removed from it) is
+    /// dropped, unless it was already replaced by a newer bridge for the
+    /// same session. Runs off the bridge's own receive loop.
+    /// </summary>
+    private void DropWhenEnded<TBridge>(ConcurrentDictionary<string, TBridge> bridges, string sessionId, TBridge bridge)
+        where TBridge : class, IAsyncDisposable
+    {
+        if (!bridges.TryRemove(new KeyValuePair<string, TBridge>(sessionId, bridge)))
+        {
+            return;
+        }
+
+        _logger.LogInformation("[JellyWatchParty] Bridge for session {SessionId} ended with its room", sessionId);
+        _ = Task.Run(() => RunAndLogAsync(bridge.DisposeAsync().AsTask(), sessionId));
+    }
+
+    /// <summary>
     /// Stops bridges whose role the configuration no longer allows, so that
     /// switching panel bridging off takes effect at once instead of leaving
     /// running bridges behind.
@@ -156,7 +173,8 @@ public sealed class HostBridgeManager : IHostedService
             {
                 if (_bridges.TryRemove(sessionId, out var bridge))
                 {
-                    await bridge.DisposeAsync().ConfigureAwait(false);
+                    // One failing bridge must not keep the others running.
+                    await RunAndLogAsync(bridge.DisposeAsync().AsTask(), sessionId).ConfigureAwait(false);
                     _logger.LogInformation(
                         "[JellyWatchParty] Stopped host bridge for session {SessionId}: panel bridging is off",
                         sessionId);
@@ -170,7 +188,7 @@ public sealed class HostBridgeManager : IHostedService
             {
                 if (_followers.TryRemove(sessionId, out var follower))
                 {
-                    await follower.DisposeAsync().ConfigureAwait(false);
+                    await RunAndLogAsync(follower.DisposeAsync().AsTask(), sessionId).ConfigureAwait(false);
                     _logger.LogInformation(
                         "[JellyWatchParty] Stopped receiver bridge for session {SessionId}: panel bridging is off",
                         sessionId);
@@ -195,7 +213,8 @@ public sealed class HostBridgeManager : IHostedService
     {
         var (session, config) = PrepareBridge(sessionId);
 
-        var bridge = new SessionHostBridge(session, config, _logger);
+        SessionHostBridge? bridge = null;
+        bridge = new SessionHostBridge(session, config, _logger, () => DropWhenEnded(_bridges, sessionId, bridge!));
         if (!_bridges.TryAdd(sessionId, bridge))
         {
             throw new InvalidOperationException($"Session '{sessionId}' is already bridged.");
@@ -204,10 +223,15 @@ public sealed class HostBridgeManager : IHostedService
         try
         {
             await bridge.StartAsync(session, CancellationToken.None).ConfigureAwait(false);
+            // The switch may have been turned off while this was starting.
+            if (Plugin.Instance?.Configuration is { PanelHostAllowed: false })
+            {
+                throw new InvalidOperationException("Bridging from the Watch Party panel was just turned off.");
+            }
         }
         catch
         {
-            _bridges.TryRemove(sessionId, out _);
+            _bridges.TryRemove(new KeyValuePair<string, SessionHostBridge>(sessionId, bridge));
             await bridge.DisposeAsync().ConfigureAwait(false);
             throw;
         }
@@ -235,7 +259,9 @@ public sealed class HostBridgeManager : IHostedService
 
         var (session, config) = PrepareBridge(sessionId);
 
-        var follower = new SessionFollowerBridge(session, roomId, config, _sessionManager, _logger);
+        SessionFollowerBridge? follower = null;
+        follower = new SessionFollowerBridge(
+            session, roomId, config, _sessionManager, _logger, () => DropWhenEnded(_followers, sessionId, follower!));
         if (!_followers.TryAdd(sessionId, follower))
         {
             throw new InvalidOperationException($"Session '{sessionId}' is already bridged.");
@@ -244,10 +270,15 @@ public sealed class HostBridgeManager : IHostedService
         try
         {
             await follower.StartAsync(CancellationToken.None).ConfigureAwait(false);
+            // The switch may have been turned off while this was starting.
+            if (Plugin.Instance?.Configuration is { PanelReceiverAllowed: false })
+            {
+                throw new InvalidOperationException("Bridging from the Watch Party panel was just turned off.");
+            }
         }
         catch
         {
-            _followers.TryRemove(sessionId, out _);
+            _followers.TryRemove(new KeyValuePair<string, SessionFollowerBridge>(sessionId, follower));
             await follower.DisposeAsync().ConfigureAwait(false);
             throw;
         }
