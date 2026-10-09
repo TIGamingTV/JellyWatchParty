@@ -27,8 +27,17 @@ src/
 │   ├── config.rs         # ADMIN_* environment variables
 │   ├── auth.rs           # Login, sessions, failed-login throttle
 │   ├── api.rs            # JSON API (overview, rooms, members, host)
+│   ├── integrations.rs   # Bot settings, link codes, activity log
 │   ├── ui.rs             # Serves the embedded UI
 │   └── ui/               # index.html, app.js, app.css (no build step)
+├── events.rs         # "Rooms changed" counter (wakes the integration long poll)
+├── integration/      # Chat integrations (Discord bot sidecar), see integration-api.md
+│   ├── mod.rs            # Integration state, user cache, guards, audit, reaper
+│   ├── config.rs         # DATA_DIR, INTEGRATION_*, *_INTEGRATION_TOKEN
+│   ├── store.rs          # integrations.json: settings, code HMACs, links
+│   ├── actions.rs        # Who may do what; chat room operations
+│   ├── view.rs           # Room list for sidecars
+│   └── api.rs            # Token-protected HTTP API (own listener)
 ├── jellyfin/         # Admin panel device bridge (Jellyfin REST API)
 │   ├── mod.rs            # JELLYFIN_* configuration
 │   ├── api.rs            # /Sessions, Playing/{cmd}, PlayNow (reqwest)

@@ -52,6 +52,40 @@ jobs:
       - name: Run tests
         run: cargo test --verbose
 
+  discord-bot-tests:
+    name: Discord Bot Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/integrations/discord-bot
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src/integrations/discord-bot/target
+          key: ${{ runner.os }}-cargo-discord-${{ hashFiles('src/integrations/discord-bot/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-discord-
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Run clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Run tests
+        run: cargo test --locked
+
   dotnet-tests:
     name: .NET Tests
     runs-on: ubuntu-latest

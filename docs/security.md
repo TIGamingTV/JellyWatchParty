@@ -107,6 +107,7 @@ permissions, and payload structure on every incoming message.
 - [ ] CORS restricted to specific origins
 - [ ] HTTPS enabled (via reverse proxy)
 - [ ] Session server not directly exposed to the internet
+- [ ] Discord bot (if used): integration port (3002) not published; `DISCORD_INTEGRATION_TOKEN` random (32+ characters); `DATA_DIR` volume backed up and private
 - [ ] Admin panel port (3001) firewalled or published on `127.0.0.1` only, or behind HTTPS with `ADMIN_COOKIE_SECURE=true`; `ADMIN_PASSWORD` long and random (or `ADMIN_ENABLED=false`)
 - [ ] Regular updates applied, logs monitored for suspicious activity
 
@@ -123,6 +124,15 @@ The [admin panel]({{ '/admin-panel/' | relative_url }}) runs on its own port and
 - every admin action logged as an `admin:` line.
 
 `JELLYFIN_API_KEY` (for [Jellyfin devices]({{ '/admin-panel/' | relative_url }}#jellyfin-devices)) is a full-admin Jellyfin credential held by the session server. It is only sent to `JELLYFIN_URL`, never to browsers or clients. Keep it in `.env` or a secret file, and use `https://` for `JELLYFIN_URL` across untrusted networks.
+
+## Discord Bot
+
+The [Discord bot]({{ '/discord-bot/' | relative_url }}) lets linked users run rooms and their own devices without an admin. The bot is a separate container that only relays who is asking; the session server decides everything:
+
+- **Linking:** an admin assigns a 4-digit code to a Jellyfin user. The user enters their Jellyfin name and the code in a private Discord form. After 10 wrong codes for one user (from anyone), that code stops working until the admin assigns a new one, so a guesser has at most a 1 in 1,000 chance per assigned code. Each Discord account is also locked out after 5 wrong codes, and linking pauses for everyone after 50 wrong codes in 10 minutes. Another account can't take over an existing link.
+- **Storage:** codes are stored as HMAC-SHA256 with a per-install key, in `DATA_DIR` (files mode 0600). They are shown once and never logged.
+- **Permissions:** devices can only be added by the Jellyfin user they're signed in as. This is checked against Jellyfin's session list at the moment of adding. Only a room's owner, or a Jellyfin administrator, controls the host and can remove people or close the room. Room passwords use the same check and throttle as the Watch Party panel.
+- **Integration API:** its own port (3002), never published. It needs `DISCORD_INTEGRATION_TOKEN`, which grants no admin access; holding it lets someone act only as already-linked users. Requests are limited to 30 per minute per Discord account, and every action is in the admin panel's activity log.
 
 ## Reconnect Takeover Protection
 

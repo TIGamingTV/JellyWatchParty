@@ -33,7 +33,17 @@ services:
       # URL the session server can reach and an API key from Dashboard > API Keys.
       - JELLYFIN_URL=${JELLYFIN_URL:-http://jellyfin-dev:8096}
       - JELLYFIN_API_KEY=${JELLYFIN_API_KEY:-}
+      - JELLYFIN_API_KEY_FILE=${JELLYFIN_API_KEY_FILE:-}
       - BRIDGE_POLL_INTERVAL_MS=${BRIDGE_POLL_INTERVAL_MS:-1000}
+      - ADMIN_HOST=${ADMIN_HOST:-0.0.0.0}
+      - ADMIN_PASSWORD_FILE=${ADMIN_PASSWORD_FILE:-}
+      # Chat integrations (Discord bot); never publish INTEGRATION_PORT.
+      - DATA_DIR=/data
+      - INTEGRATION_HOST=0.0.0.0
+      - INTEGRATION_PORT=${INTEGRATION_PORT:-3002}
+      - DISCORD_INTEGRATION_TOKEN=${DISCORD_INTEGRATION_TOKEN:-}
+    volumes:
+      - jwp-data:/data
     deploy:
       resources:
         limits:
@@ -68,6 +78,25 @@ services:
     restart: unless-stopped
     entrypoint: /jellyfin-entrypoint.sh
 
+  # Discord bot: `docker compose --profile discord up -d discord-bot`.
+  discord-bot:
+    build:
+      context: ../../../src/integrations/discord-bot
+      dockerfile: ../../../infra/docker/discord-bot.Dockerfile
+      args:
+        BUILD_MODE: dev
+    container_name: jwp-discord-bot
+    profiles:
+      - discord
+    restart: unless-stopped
+    depends_on:
+      - session-server
+    environment:
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
+      - JWP_INTEGRATION_URL=http://session-server:${INTEGRATION_PORT:-3002}
+      - JWP_INTEGRATION_TOKEN=${DISCORD_INTEGRATION_TOKEN:-}
+      - RUST_LOG=${RUST_LOG:-info}
+
   plugin-builder:
     image: mcr.microsoft.com/dotnet/sdk:10.0
     working_dir: /src
@@ -85,3 +114,4 @@ services:
 
 volumes:
   jellyfin-cache:
+  jwp-data:

@@ -59,6 +59,8 @@ hit that symptom on an older version, check your Jellyfin server logs for
 The admin panel has its own `ADMIN_*` variables (port, login, cookie
 options), and `JELLYFIN_URL` / `JELLYFIN_API_KEY` for putting Jellyfin
 devices into rooms. See [Admin Panel]({{ '/admin-panel/' | relative_url }}#environment-variables).
+The Discord bot adds `DATA_DIR`, `DISCORD_INTEGRATION_TOKEN` and
+`INTEGRATION_HOST` / `INTEGRATION_PORT`; see [Discord Bot]({{ '/discord-bot/' | relative_url }}#2-configure-the-containers).
 
 ```yaml
 services:
