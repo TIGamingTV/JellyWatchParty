@@ -6,8 +6,10 @@
 mod api;
 pub mod auth;
 pub mod config;
+mod integrations;
 mod ui;
 
+use crate::integration::IntegrationStatus;
 use crate::jellyfin::Bridges;
 use crate::types::{Clients, Rooms};
 use crate::utils::now_ms;
@@ -40,6 +42,7 @@ pub struct AdminState {
     pub started_at: u64,
     pub jwt_enabled: bool,
     pub jellyfin: JellyfinStatus,
+    pub integration: IntegrationStatus,
 }
 
 /// Whether Jellyfin devices can be bridged from the panel.
@@ -57,6 +60,7 @@ impl AdminState {
         cfg: AdminConfig,
         jwt_enabled: bool,
         jellyfin: JellyfinStatus,
+        integration: IntegrationStatus,
     ) -> Self {
         Self {
             clients,
@@ -66,6 +70,7 @@ impl AdminState {
             started_at: now_ms(),
             jwt_enabled,
             jellyfin,
+            integration,
         }
     }
 
@@ -254,6 +259,15 @@ pub fn build_router(state: AdminState) -> Router {
         .route("/rooms/{id}/members/{member}", delete(api::remove_member))
         .route("/rooms/{id}/host", put(api::set_host))
         .route("/jellyfin/sessions", get(api::jellyfin_sessions))
+        .route("/integrations", get(integrations::status))
+        .route("/integrations/{provider}", put(integrations::save_settings))
+        .route("/users", get(integrations::users))
+        .route(
+            "/users/{id}/code",
+            post(integrations::assign_code).delete(integrations::revoke_code),
+        )
+        .route("/users/{id}/links/{provider}", delete(integrations::unlink))
+        .route("/audit", get(integrations::audit))
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             require_session,

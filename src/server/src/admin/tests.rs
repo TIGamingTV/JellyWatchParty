@@ -24,6 +24,7 @@ fn state() -> AdminState {
         cfg(),
         false,
         JellyfinStatus::Unavailable("not configured".into()),
+        crate::integration::IntegrationStatus::Unavailable("no DATA_DIR".into()),
     )
 }
 
