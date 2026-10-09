@@ -133,6 +133,22 @@ impl JfSession {
     pub fn is_own(&self) -> bool {
         self.device_id() == OWN_DEVICE_ID
     }
+
+    /// Active within `LISTED_ACTIVE_WITHIN_MS`. A session without a usable
+    /// `LastActivityDate` counts as active rather than being hidden.
+    pub fn recently_active(&self, clock_offset_ms: i64, now: u64) -> bool {
+        match self
+            .last_activity_date
+            .as_deref()
+            .and_then(super::time::parse_utc_ms)
+        {
+            None => true,
+            Some(t) => {
+                let local = (t as i64).saturating_add(clock_offset_ms).max(0) as u64;
+                now.saturating_sub(local) < LISTED_ACTIVE_WITHIN_MS
+            }
+        }
+    }
 }
 
 #[derive(Clone)]

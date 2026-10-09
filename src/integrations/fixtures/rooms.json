@@ -1,0 +1,59 @@
+{
+  "version": 42,
+  "rooms": [
+    {
+      "id": "7b0d3c1e-0c39-4a43-9a0e-2f1f3a3e9d10",
+      "name": "Friday movie night",
+      "has_password": true,
+      "owner": {
+        "user_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "name": "Alice",
+        "external_id": "100000000000000001"
+      },
+      "participants": [
+        {
+          "user_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "name": "Alice",
+          "external_id": "100000000000000001"
+        },
+        {
+          "user_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "name": "Bob",
+          "external_id": null
+        }
+      ],
+      "host": {
+        "id": "c1",
+        "name": "Alice (Living room TV)"
+      },
+      "members": [
+        {
+          "id": "c1",
+          "name": "Alice (Living room TV)",
+          "kind": "jellyfin",
+          "is_host": true,
+          "status": "playing",
+          "owner_user_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "owner_external_id": "100000000000000001"
+        },
+        {
+          "id": "c2",
+          "name": "Bob",
+          "kind": "web",
+          "is_host": false,
+          "status": "synced",
+          "owner_user_id": null,
+          "owner_external_id": null
+        }
+      ],
+      "media_id": "0123456789abcdef0123456789abcdef",
+      "play_state": "playing",
+      "panel": {
+        "channel_id": "200000000000000002",
+        "message_id": "300000000000000003"
+      },
+      "created_at": 1760000000000,
+      "empty_since": null
+    }
+  ]
+}

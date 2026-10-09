@@ -7,17 +7,24 @@
 //!   API on its own port (`api.rs`). Every decision is made here.
 //! - A chat account acts as a Jellyfin user once linked with a 4-digit code
 //!   an admin assigned to that user in the admin UI (`store.rs`).
+//! - Rooms created from a chat have an owner and participants (`actions.rs`,
+//!   `types::ChatRoom`). Participants may only bridge their *own* Jellyfin
+//!   devices; the owner (or an admin) controls the room.
 
 mod actions;
 pub mod api;
 pub mod config;
 pub mod store;
+mod view;
 
 #[cfg(test)]
 mod tests;
 
+pub use actions::{DeviceRole, KickTarget, RoomUpdate};
+
 use crate::jellyfin::api::JfUser;
 use crate::jellyfin::Bridges;
+use crate::types::{Clients, Rooms};
 use crate::utils::now_ms;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -48,6 +55,7 @@ pub const REQUESTS_PER_ACTOR: u32 = 30;
 const REQUEST_WINDOW_MS: u64 = 60_000;
 /// A sidecar that hasn't checked in for this long is shown as offline.
 const SIDECAR_STALE_MS: u64 = 90_000;
+const REAPER_INTERVAL_SECS: u64 = 30;
 
 /// An integration API failure: `{error, reason, retry_after_ms?}`.
 #[derive(Debug)]
@@ -78,6 +86,14 @@ impl IntError {
 
     fn invalid(message: impl Into<String>) -> Self {
         Self::new(StatusCode::BAD_REQUEST, "invalid", message)
+    }
+
+    fn not_found() -> Self {
+        Self::new(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            "That room doesn't exist anymore",
+        )
     }
 
     fn wait(reason: &'static str, message: impl Into<String>, retry_after_ms: u64) -> Self {
@@ -233,6 +249,8 @@ struct UserCache {
 struct Inner {
     store: Store,
     bridges: Bridges,
+    clients: Clients,
+    rooms: Rooms,
     /// Providers whose sidecar token is configured.
     providers: Vec<String>,
     listen_addr: Option<std::net::SocketAddr>,
@@ -260,11 +278,18 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 impl Integration {
-    pub fn new(cfg: &IntegrationConfig, bridges: Bridges) -> Result<Self, String> {
+    pub fn new(
+        cfg: &IntegrationConfig,
+        bridges: Bridges,
+        clients: Clients,
+        rooms: Rooms,
+    ) -> Result<Self, String> {
         let store = Store::open(&cfg.data_dir)?;
         Ok(Self(Arc::new(Inner {
             store,
             bridges,
+            clients,
+            rooms,
             providers: cfg.tokens.iter().map(|(p, _)| p.clone()).collect(),
             listen_addr: (!cfg.tokens.is_empty()).then_some(cfg.addr),
             users: tokio::sync::Mutex::new(None),
@@ -277,6 +302,10 @@ impl Integration {
 
     pub fn store(&self) -> &Store {
         &self.0.store
+    }
+
+    pub fn bridges(&self) -> &Bridges {
+        &self.0.bridges
     }
 
     pub fn has_sidecar(&self, provider: &str) -> bool {
@@ -403,11 +432,58 @@ impl Integration {
     fn guards(&self) -> MutexGuard<'_, Guards> {
         lock(&self.0.guards)
     }
+
+    /// Closes chat rooms that have had no members for longer than their
+    /// platform's `empty_room_minutes`.
+    pub fn spawn_reaper(&self) {
+        let me = self.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(REAPER_INTERVAL_SECS)).await;
+                me.close_idle_rooms(now_ms()).await;
+            }
+        });
+    }
+
+    pub async fn close_idle_rooms(&self, now: u64) -> Vec<String> {
+        let settings = self.0.store.read(|d| d.settings.clone());
+        let closed = {
+            let mut rooms = self.0.rooms.write().await;
+            let mut clients = self.0.clients.write().await;
+            let idle: Vec<String> = rooms
+                .values()
+                .filter(|r| r.clients.is_empty())
+                .filter_map(|r| {
+                    let chat = r.chat.as_ref()?;
+                    let ttl =
+                        settings.for_provider(&chat.provider)?.empty_room_minutes as u64 * 60_000;
+                    let since = chat.empty_since.unwrap_or(r.created_at);
+                    (now.saturating_sub(since) > ttl).then(|| r.room_id.clone())
+                })
+                .collect();
+            for id in &idle {
+                info!("Closing chat room {} (nobody in it for a while)", id);
+                let _ = crate::room::ops::close_room(
+                    id,
+                    "Closed: nobody was watching",
+                    &mut rooms,
+                    &mut clients,
+                );
+            }
+            idle
+        };
+        if !closed.is_empty() {
+            crate::messaging::broadcast_room_list(&self.0.clients, &self.0.rooms).await;
+        }
+        closed
+    }
 }
 
 /// Sets up the chat integration (needs `DATA_DIR` and the Jellyfin device
 /// bridge) and starts its API listener when a sidecar token is configured.
 pub fn start(
+    clients: &Clients,
+    rooms: &Rooms,
     bridges: Option<&Bridges>,
     shutdown: impl std::future::Future<Output = ()> + Send + 'static,
 ) -> IntegrationStatus {
@@ -428,13 +504,14 @@ pub fn start(
         warn!("Chat integrations: NOT started - {}", reason);
         return IntegrationStatus::Unavailable(reason.into());
     };
-    let hub = match Integration::new(&cfg, bridges.clone()) {
+    let hub = match Integration::new(&cfg, bridges.clone(), clients.clone(), rooms.clone()) {
         Ok(h) => h,
         Err(e) => {
             warn!("Chat integrations: NOT started - {}", e);
             return IntegrationStatus::Unavailable(e);
         }
     };
+    hub.spawn_reaper();
     if cfg.tokens.is_empty() {
         info!(
             "Chat integrations: data in {}; no sidecar token set (DISCORD_INTEGRATION_TOKEN), so the integration API is not started",

@@ -58,6 +58,7 @@ pub fn build_participants(
 /// Sends the participant list to everyone in the room. Called whenever
 /// membership, the host or someone's status changes.
 pub fn broadcast_participants(room: &Room, clients: &HashMap<String, Client>) {
+    crate::events::bump();
     broadcast_to_room(room, clients, &build_participants_msg(room, clients), None);
 }
 
@@ -105,6 +106,7 @@ pub async fn send_room_list(client_id: &str, clients: &Clients, rooms: &Rooms) {
 }
 
 pub async fn broadcast_room_list(clients: &Clients, rooms: &Rooms) {
+    crate::events::bump();
     let json = {
         let locked_rooms = rooms.read().await;
         let msg = build_room_list_msg(&locked_rooms);
@@ -255,6 +257,7 @@ mod tests {
                 started: true,
                 admin_created: false,
                 created_at: 0,
+                chat: None,
             },
         );
         rooms.insert(
@@ -280,6 +283,7 @@ mod tests {
                 started: true,
                 admin_created: false,
                 created_at: 0,
+                chat: None,
             },
         );
         let msg = build_room_list_msg(&rooms);

@@ -58,6 +58,8 @@ pub enum AddError {
     RunsWebClient,
     NoRemoteControl,
     AlreadyBridged,
+    /// The session belongs to another Jellyfin user than the one asking.
+    NotYourDevice,
     Op(OpError),
 }
 
@@ -75,9 +77,30 @@ impl AddError {
             AddError::AlreadyBridged => {
                 "This device is already in a room (from here or from the Watch Party panel)".into()
             }
+            AddError::NotYourDevice => "That device is signed in as someone else".into(),
             AddError::Op(e) => e.message().into(),
         }
     }
+}
+
+/// Whether `s` may be bridged with `role`, and (when `owner` is given, a
+/// normalized Jellyfin user id) whether it is that user's own session.
+pub fn check_session(s: &JfSession, role: Role, owner: Option<&str>) -> Result<(), AddError> {
+    if s.is_own() {
+        return Err(AddError::SessionNotFound);
+    }
+    if let Some(owner) = owner {
+        if owner.is_empty() || s.user_id() != owner {
+            return Err(AddError::NotYourDevice);
+        }
+    }
+    if s.runs_web_client() {
+        return Err(AddError::RunsWebClient);
+    }
+    if role == Role::Receiver && !s.supports_remote_control {
+        return Err(AddError::NoRemoteControl);
+    }
+    Ok(())
 }
 
 /// The latest `/Sessions` result.
@@ -275,13 +298,25 @@ impl Bridges {
         &self.0.api
     }
 
+    /// Every running bridge (client id) with the normalized Jellyfin user
+    /// id its device is signed in as.
+    pub fn owners(&self) -> HashMap<String, String> {
+        self.entries()
+            .iter()
+            .map(|(id, e)| (id.clone(), e.info.jf_user_id.clone()))
+            .collect()
+    }
+
     /// Puts a Jellyfin session into a room. `Host` also makes it the host;
-    /// `Receiver` needs a device that accepts remote control.
+    /// `Receiver` needs a device that accepts remote control. With `owner`
+    /// (a normalized Jellyfin user id) only that user's own sessions are
+    /// accepted, checked against the same fresh `/Sessions` result.
     pub async fn add(
         &self,
         room_id: &str,
         session_id: &str,
         role: Role,
+        owner: Option<&str>,
     ) -> Result<String, AddError> {
         let snap = self.refresh().await;
         if let Some(e) = &snap.error {
@@ -292,12 +327,7 @@ impl Bridges {
             .iter()
             .find(|s| s.id == session_id && !s.is_own())
             .ok_or(AddError::SessionNotFound)?;
-        if s.runs_web_client() {
-            return Err(AddError::RunsWebClient);
-        }
-        if role == Role::Receiver && !s.supports_remote_control {
-            return Err(AddError::NoRemoteControl);
-        }
+        check_session(s, role, owner)?;
         let user_id = s.user_id();
         let client_id = uuid::Uuid::new_v4().to_string();
 
@@ -1164,11 +1194,11 @@ mod tests {
 
         // Web clients and the server's own session can't be bridged.
         assert!(matches!(
-            b.add("room-1", "web", Role::Receiver).await,
+            b.add("room-1", "web", Role::Receiver, None).await,
             Err(AddError::RunsWebClient)
         ));
         assert!(matches!(
-            b.add("room-1", "self", Role::Receiver).await,
+            b.add("room-1", "self", Role::Receiver, None).await,
             Err(AddError::SessionNotFound)
         ));
 
@@ -1181,7 +1211,7 @@ mod tests {
             clients.write().await.insert("plugin-bridge".into(), plugin);
         }
         assert!(matches!(
-            b.add("room-1", "tv-session", Role::Receiver).await,
+            b.add("room-1", "tv-session", Role::Receiver, None).await,
             Err(AddError::AlreadyBridged)
         ));
         // Removed from its room (tag left behind): no longer counts.
@@ -1192,9 +1222,18 @@ mod tests {
             .unwrap()
             .room_id = None;
 
-        let id = b.add("room-1", "tv-session", Role::Receiver).await.unwrap();
+        // A chat user may only bridge sessions signed in as themselves.
         assert!(matches!(
-            b.add("room-1", "tv-session", Role::Receiver).await,
+            b.add("room-1", "tv-session", Role::Receiver, Some("cccc"))
+                .await,
+            Err(AddError::NotYourDevice)
+        ));
+        let id = b
+            .add("room-1", "tv-session", Role::Receiver, Some("aaaabbbb"))
+            .await
+            .unwrap();
+        assert!(matches!(
+            b.add("room-1", "tv-session", Role::Receiver, None).await,
             Err(AddError::AlreadyBridged)
         ));
         assert!(clients.read().await[&id].bridges_device("tv-device"));
@@ -1240,7 +1279,7 @@ mod tests {
         let snap = b.refresh().await;
         assert!(snap.error.as_deref().unwrap().contains("JELLYFIN_API_KEY"));
         assert!(matches!(
-            b.add("room", "x", Role::Host).await,
+            b.add("room", "x", Role::Host, None).await,
             Err(AddError::Unavailable(_))
         ));
     }
@@ -1350,5 +1389,38 @@ mod tests {
         assert_eq!(b.tick(&id, &snap(vec![s]), &mut st).await, None);
         let drift = b.info(&id).unwrap().drift.unwrap();
         assert!((drift + 1.0).abs() < 0.2, "drift {}", drift);
+    }
+
+    #[test]
+    fn chat_users_may_only_bridge_their_own_sessions() {
+        let s = session("s9", None, false, true);
+        let me = s.user_id();
+        assert!(check_session(&s, Role::Receiver, Some(&me)).is_ok());
+        assert!(check_session(&s, Role::Receiver, None).is_ok());
+        assert!(matches!(
+            check_session(&s, Role::Host, Some("someone-else")),
+            Err(AddError::NotYourDevice)
+        ));
+        assert!(matches!(
+            check_session(&s, Role::Host, Some("")),
+            Err(AddError::NotYourDevice)
+        ));
+        let mut web = s.clone();
+        web.client = Some("Jellyfin Web".into());
+        assert!(matches!(
+            check_session(&web, Role::Host, Some(&me)),
+            Err(AddError::RunsWebClient)
+        ));
+        let fladder = session("s10", None, false, false);
+        assert!(matches!(
+            check_session(&fladder, Role::Receiver, Some(&me)),
+            Err(AddError::NoRemoteControl)
+        ));
+        let mut own = s;
+        own.device_id = Some(crate::jellyfin::api::OWN_DEVICE_ID.into());
+        assert!(matches!(
+            check_session(&own, Role::Host, None),
+            Err(AddError::SessionNotFound)
+        ));
     }
 }

@@ -168,6 +168,7 @@ td.actions select { max-width: 200px; }
 .note.problem { color: var(--bad); background: #f851491a; }
 
 /* --- Discord bot -------------------------------------------------------- */
+.badge-discord { border-color: #5865f288; color: #8f98ff; }
 .chips-inline { display: inline-flex; flex: none; vertical-align: middle; margin-left: 6px; }
 .settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px 16px; align-items: end; }
 .settings .wide { grid-column: 1 / -1; }

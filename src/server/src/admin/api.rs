@@ -4,10 +4,8 @@
 //! lobby's room list afterwards.
 
 use super::{auth, error_response, AdminState, ClientIp, JellyfinStatus};
-use crate::jellyfin::api::{JfSession, LISTED_ACTIVE_WITHIN_MS};
 use crate::jellyfin::bridge::{AddError, Role, Snapshot};
 use crate::jellyfin::logic::{device_view, MAX_EXTRAPOLATION_SECS};
-use crate::jellyfin::time::parse_utc_ms;
 use crate::jellyfin::Bridges;
 use crate::messaging::broadcast_room_list;
 use crate::room::ops::{self, AddOptions, OpError};
@@ -208,6 +206,12 @@ pub fn build_overview(
                 "started": r.started,
                 "pending_play": r.pending_play.is_some(),
                 "created_at": r.created_at,
+                "chat": r.chat.as_ref().map(|c| serde_json::json!({
+                    "provider": c.provider,
+                    "owner_name": c.owner_name,
+                    "participants": c.participants.iter().map(|p| &p.name).collect::<Vec<_>>(),
+                    "empty_since": c.empty_since,
+                })),
                 "members": r.clients.iter().map(|id| member_json(id, r, clients, bridges)).collect::<Vec<_>>(),
             })
         })
@@ -389,7 +393,7 @@ pub async fn add_member(
             }
         };
         let client_id = bridges
-            .add(&id, session_id, role)
+            .add(&id, session_id, role, None)
             .await
             .map_err(bridge_error)?;
         info!(
@@ -512,18 +516,6 @@ pub async fn set_host(
 
 // --- Jellyfin devices ------------------------------------------------------
 
-/// Active within `LISTED_ACTIVE_WITHIN_MS`. A session without a usable
-/// `LastActivityDate` is listed rather than hidden.
-pub(super) fn recently_active(s: &JfSession, clock_offset_ms: i64, now: u64) -> bool {
-    match s.last_activity_date.as_deref().and_then(parse_utc_ms) {
-        None => true,
-        Some(t) => {
-            let local = (t as i64).saturating_add(clock_offset_ms).max(0) as u64;
-            now.saturating_sub(local) < LISTED_ACTIVE_WITHIN_MS
-        }
-    }
-}
-
 /// Jellyfin sessions an admin can put into a room: everything active except
 /// clients that run the Watch Party panel themselves (they join as web
 /// clients) and this server's own API session.
@@ -564,7 +556,7 @@ pub async fn jellyfin_sessions(State(state): State<AdminState>) -> Response {
             (s, bridge)
         })
         // Recently active ones, plus anything already bridged.
-        .filter(|(s, bridge)| bridge.is_some() || recently_active(s, snap.clock_offset_ms, now))
+        .filter(|(s, bridge)| bridge.is_some() || s.recently_active(snap.clock_offset_ms, now))
         .map(|(s, bridge)| {
             let view = device_view(s, now, snap.clock_offset_ms, MAX_EXTRAPOLATION_SECS);
             serde_json::json!({

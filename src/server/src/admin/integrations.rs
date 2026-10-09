@@ -179,6 +179,7 @@ pub async fn revoke_code(State(state): State<AdminState>, Path(id): Path<String>
         format!("removed the code and links of {}", name),
         false,
     );
+    crate::events::bump();
     Json(serde_json::json!({ "ok": true })).into_response()
 }
 
@@ -210,6 +211,7 @@ pub async fn unlink(
         format!("unlinked the {} account of {}", provider, name),
         false,
     );
+    crate::events::bump();
     Json(serde_json::json!({ "ok": true })).into_response()
 }
 

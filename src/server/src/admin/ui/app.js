@@ -325,7 +325,9 @@
   const roomCard = (ov, room) => {
     const title = el('div', { className: 'room-title' },
       el('h3', { text: room.name }),
-      room.admin_created ? el('span', { className: 'badge badge-admin', text: 'Group' }) : el('span', { className: 'badge', text: 'User room' }),
+      room.chat
+        ? el('span', { className: 'badge badge-discord', text: 'Discord room' })
+        : room.admin_created ? el('span', { className: 'badge badge-admin', text: 'Group' }) : el('span', { className: 'badge', text: 'User room' }),
       el('span', { className: 'badge', text: room.has_password ? 'Password' : 'Open' }));
 
     const actions = el('div', { className: 'room-actions' },
@@ -371,6 +373,10 @@
       playbackPill(room),
       room.media_name ? el('span', { text: room.media_name }) : null,
       el('span', { text: plural(room.members.length, 'member') }),
+      room.chat ? el('span', {
+        title: room.chat.participants.join(', '),
+        text: `Owner ${room.chat.owner_name}, ${plural(room.chat.participants.length, 'participant')} on Discord`
+      }) : null,
       room.host_id ? null : pill('No host yet', 'warn'));
 
     const body = el('div', { className: 'room-body' },

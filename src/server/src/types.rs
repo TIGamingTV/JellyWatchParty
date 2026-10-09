@@ -137,6 +137,49 @@ pub struct Room {
     /// When the room was created (ms since epoch).
     #[serde(skip)]
     pub created_at: u64,
+    /// Created from a chat integration (the Discord bot). Such a room has
+    /// an owner and a participant list of Jellyfin users, and it stays open
+    /// (hostless) when its last member leaves until the integration's
+    /// empty-room timeout.
+    #[serde(skip)]
+    pub chat: Option<ChatRoom>,
+}
+
+/// A Jellyfin user taking part in a chat-created room.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChatParticipant {
+    /// Normalized Jellyfin user id (32 lowercase hex).
+    pub user_id: String,
+    pub name: String,
+}
+
+/// Where a chat-created room's live panel message is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PanelRef {
+    pub channel_id: String,
+    pub message_id: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ChatRoom {
+    /// The platform it was created on (`discord`).
+    pub provider: String,
+    /// Normalized Jellyfin user id of the owner, who may pick the host,
+    /// remove members, change the password, hand ownership over and close
+    /// the room.
+    pub owner: String,
+    pub owner_name: String,
+    /// Who joined through the chat (the owner first), in join order.
+    pub participants: Vec<ChatParticipant>,
+    pub panel: Option<PanelRef>,
+    /// Since when the room has had no members (`None` while it has some).
+    pub empty_since: Option<u64>,
+}
+
+impl ChatRoom {
+    pub fn is_participant(&self, user_id: &str) -> bool {
+        self.participants.iter().any(|p| p.user_id == user_id)
+    }
 }
 
 impl Room {
