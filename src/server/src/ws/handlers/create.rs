@@ -92,6 +92,7 @@ fn build_room(client_id: &str, host_name: &str, payload: Option<&serde_json::Val
         started,
         admin_created: false,
         created_at: now_ms(),
+        chat: None,
     }
 }
 

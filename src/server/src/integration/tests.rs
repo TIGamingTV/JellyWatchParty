@@ -2,6 +2,7 @@ use super::store::{self, ChatSettings, CODE_FAILS_BEFORE_FREEZE};
 use super::*;
 use crate::jellyfin::api::JfUserPolicy;
 use crate::jellyfin::JellyfinConfig;
+use crate::room::ops::{self as room_ops, AddOptions};
 use crate::test_helpers;
 use axum::body::Body;
 use http_body_util::BodyExt;
@@ -27,9 +28,6 @@ fn user(id: &str, name: &str, admin: bool, disabled: bool) -> JfUser {
 
 struct Fixture {
     hub: Integration,
-    bridges: Bridges,
-    clients: crate::types::Clients,
-    rooms: crate::types::Rooms,
     dir: PathBuf,
 }
 
@@ -58,7 +56,7 @@ async fn fixture() -> Fixture {
         rooms.clone(),
     )
     .unwrap();
-    let hub = Integration::new(&cfg, bridges.clone()).unwrap();
+    let hub = Integration::new(&cfg, bridges, clients, rooms).unwrap();
     hub.set_users(vec![
         user(ALICE, "Alice", false, false),
         user(BOB, "Bob", false, false),
@@ -67,13 +65,7 @@ async fn fixture() -> Fixture {
     ])
     .await;
     configure(&hub, |_| {});
-    Fixture {
-        hub,
-        bridges,
-        clients,
-        rooms,
-        dir,
-    }
+    Fixture { hub, dir }
 }
 
 fn configure(hub: &Integration, f: impl FnOnce(&mut ChatSettings)) {
@@ -332,6 +324,374 @@ async fn requests_are_rate_limited_per_account() {
     );
 }
 
+// --- rooms -----------------------------------------------------------------
+
+async fn owner_and_guest(f: &Fixture) -> String {
+    link(&f.hub, "100", "alice", ALICE).await;
+    link(&f.hub, "200", "bob", BOB).await;
+    let r = f
+        .hub
+        .create_room("discord", actor("100"), "Movie night", Some("pw"))
+        .await
+        .unwrap();
+    r["id"].as_str().unwrap().to_string()
+}
+
+#[tokio::test]
+async fn owner_controls_the_room_participants_do_not() {
+    let f = fixture().await;
+    let room = owner_and_guest(&f).await;
+
+    // Joining needs the password.
+    let r = f
+        .hub
+        .join_room("discord", actor("200"), &room, Some("nope"))
+        .await;
+    assert_eq!(reason(r), "wrong_password");
+    f.hub
+        .join_room("discord", actor("200"), &room, Some("pw"))
+        .await
+        .unwrap();
+
+    // Bob is a participant, not the owner.
+    for r in [
+        f.hub.close_room("discord", actor("200"), &room).await,
+        f.hub.set_host("discord", actor("200"), &room, "x").await,
+        f.hub
+            .update_room(
+                "discord",
+                actor("200"),
+                &room,
+                RoomUpdate {
+                    name: Some("Mine".into()),
+                    password: None,
+                },
+            )
+            .await,
+        f.hub
+            .transfer_room("discord", actor("200"), &room, "200")
+            .await,
+        f.hub
+            .kick(
+                "discord",
+                actor("200"),
+                &room,
+                KickTarget::User("100".into()),
+            )
+            .await,
+    ] {
+        assert_eq!(reason(r), "not_owner");
+    }
+
+    // The owner can't leave, but can hand the room over.
+    assert_eq!(
+        reason(f.hub.leave_room("discord", actor("100"), &room).await),
+        "owner_cannot_leave"
+    );
+    f.hub
+        .transfer_room("discord", actor("100"), &room, "200")
+        .await
+        .unwrap();
+    f.hub
+        .leave_room("discord", actor("100"), &room)
+        .await
+        .unwrap();
+    f.hub
+        .update_room(
+            "discord",
+            actor("200"),
+            &room,
+            RoomUpdate {
+                name: Some("Bob's".into()),
+                password: Some(None),
+            },
+        )
+        .await
+        .unwrap();
+    {
+        let rooms = f.hub.0.rooms.read().await;
+        assert_eq!(rooms[&room].name, "Bob's");
+        assert!(rooms[&room].password_hash.is_none());
+        assert_eq!(rooms[&room].chat.as_ref().unwrap().owner, BOB);
+    }
+    f.hub
+        .close_room("discord", actor("200"), &room)
+        .await
+        .unwrap();
+    assert!(f.hub.0.rooms.read().await.is_empty());
+}
+
+#[tokio::test]
+async fn wrong_room_passwords_are_throttled() {
+    let f = fixture().await;
+    let room = owner_and_guest(&f).await;
+    for _ in 0..5 {
+        let r = f
+            .hub
+            .join_room("discord", actor("200"), &room, Some("x"))
+            .await;
+        assert_eq!(reason(r), "wrong_password");
+    }
+    let r = f
+        .hub
+        .join_room("discord", actor("200"), &room, Some("pw"))
+        .await;
+    assert_eq!(reason(r), "too_many_attempts");
+}
+
+#[tokio::test]
+async fn admins_manage_any_room() {
+    let f = fixture().await;
+    let room = owner_and_guest(&f).await;
+    link(&f.hub, "300", "carol", CAROL).await;
+    // Jellyfin admins skip the password and may close.
+    f.hub
+        .join_room("discord", actor("300"), &room, None)
+        .await
+        .unwrap();
+    f.hub
+        .close_room("discord", actor("300"), &room)
+        .await
+        .unwrap();
+
+    // So does the configured admin role.
+    let room = f
+        .hub
+        .create_room("discord", actor("100"), "Again", None)
+        .await
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    configure(&f.hub, |s| s.admin_role_id = "55".into());
+    let mut bob = actor("200");
+    bob.roles = vec!["55".into()];
+    f.hub.close_room("discord", bob, &room).await.unwrap();
+}
+
+#[tokio::test]
+async fn room_limits_and_required_passwords() {
+    let f = fixture().await;
+    link(&f.hub, "100", "alice", ALICE).await;
+    configure(&f.hub, |s| {
+        s.max_rooms_per_user = 1;
+        s.require_password = true;
+    });
+    let r = f
+        .hub
+        .create_room("discord", actor("100"), "Open", None)
+        .await;
+    assert_eq!(reason(r), "password_required");
+    f.hub
+        .create_room("discord", actor("100"), "One", Some("pw"))
+        .await
+        .unwrap();
+    let r = f
+        .hub
+        .create_room("discord", actor("100"), "Two", Some("pw"))
+        .await;
+    assert_eq!(reason(r), "room_limit");
+
+    configure(&f.hub, |s| s.max_rooms_total = 1);
+    link(&f.hub, "200", "bob", BOB).await;
+    let r = f
+        .hub
+        .create_room("discord", actor("200"), "Bob", None)
+        .await;
+    assert_eq!(reason(r), "room_limit");
+}
+
+#[tokio::test]
+async fn kicking_a_participant() {
+    let f = fixture().await;
+    let room = owner_and_guest(&f).await;
+    f.hub
+        .join_room("discord", actor("200"), &room, Some("pw"))
+        .await
+        .unwrap();
+    f.hub
+        .kick(
+            "discord",
+            actor("100"),
+            &room,
+            KickTarget::User("200".into()),
+        )
+        .await
+        .unwrap();
+    let r = f.hub.leave_room("discord", actor("200"), &room).await;
+    assert_eq!(reason(r), "not_participant");
+    let r = f
+        .hub
+        .kick(
+            "discord",
+            actor("100"),
+            &room,
+            KickTarget::User("100".into()),
+        )
+        .await;
+    assert_eq!(reason(r), "is_owner");
+}
+
+#[tokio::test]
+async fn devices_need_participation_and_the_right_role() {
+    let f = fixture().await;
+    let room = owner_and_guest(&f).await;
+    let r = f
+        .hub
+        .add_device("discord", actor("200"), &room, "s1", DeviceRole::Receiver)
+        .await;
+    assert_eq!(reason(r), "not_participant");
+    f.hub
+        .join_room("discord", actor("200"), &room, Some("pw"))
+        .await
+        .unwrap();
+
+    // A web client is host now: a participant may not take over.
+    {
+        let mut rooms = f.hub.0.rooms.write().await;
+        let mut clients = f.hub.0.clients.write().await;
+        let (c, _rx) = test_helpers::create_client_with_rx("w", "Web", true);
+        clients.insert("web-1".into(), c);
+        room_ops::add_member(
+            &room,
+            "web-1",
+            &mut rooms,
+            &mut clients,
+            AddOptions {
+                by_admin: false,
+                promote_if_hostless: true,
+            },
+        )
+        .unwrap();
+    }
+    let r = f
+        .hub
+        .add_device("discord", actor("200"), &room, "s1", DeviceRole::Host)
+        .await;
+    assert_eq!(reason(r), "not_owner");
+    // Participants can't remove others' members.
+    let r = f
+        .hub
+        .remove_device("discord", actor("200"), &room, "web-1")
+        .await;
+    assert_eq!(reason(r), "not_your_device");
+
+    configure(&f.hub, |s| s.allow_receiver = false);
+    let r = f
+        .hub
+        .add_device("discord", actor("200"), &room, "s1", DeviceRole::Receiver)
+        .await;
+    assert_eq!(reason(r), "role_not_allowed");
+    configure(&f.hub, |_| {});
+
+    // Past the checks, the device is looked up in Jellyfin (unreachable here).
+    let r = f
+        .hub
+        .add_device("discord", actor("200"), &room, "s1", DeviceRole::Receiver)
+        .await;
+    assert_eq!(reason(r), "jellyfin_unavailable");
+
+    // The owner may remove anyone; the room stays open and hostless.
+    f.hub
+        .remove_device("discord", actor("100"), &room, "web-1")
+        .await
+        .unwrap();
+    let rooms = f.hub.0.rooms.read().await;
+    assert!(rooms[&room].is_hostless());
+}
+
+#[tokio::test]
+async fn other_rooms_are_out_of_reach() {
+    let f = fixture().await;
+    link(&f.hub, "100", "alice", ALICE).await;
+    {
+        let mut rooms = f.hub.0.rooms.write().await;
+        let mut clients = f.hub.0.clients.write().await;
+        let _rx = test_helpers::setup_room_with_host(&mut clients, &mut rooms, "h");
+    }
+    let r = f
+        .hub
+        .join_room("discord", actor("100"), "room-1", None)
+        .await;
+    assert_eq!(reason(r), "not_found");
+    let r = f.hub.close_room("discord", actor("100"), "room-1").await;
+    assert_eq!(reason(r), "not_found");
+}
+
+#[tokio::test]
+async fn empty_chat_rooms_wait_then_close() {
+    let f = fixture().await;
+    link(&f.hub, "100", "alice", ALICE).await;
+    let room = f
+        .hub
+        .create_room("discord", actor("100"), "Later", None)
+        .await
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let now = crate::utils::now_ms();
+    assert!(f.hub.close_idle_rooms(now).await.is_empty());
+    let later = now + 31 * 60_000;
+    assert_eq!(f.hub.close_idle_rooms(later).await, vec![room.clone()]);
+    assert!(f.hub.0.rooms.read().await.is_empty());
+}
+
+#[tokio::test]
+async fn the_room_view_names_owner_participants_and_members() {
+    let f = fixture().await;
+    let room = owner_and_guest(&f).await;
+    f.hub
+        .join_room("discord", actor("200"), &room, Some("pw"))
+        .await
+        .unwrap();
+    let list = {
+        let rooms = f.hub.0.rooms.read().await;
+        let clients = f.hub.0.clients.read().await;
+        f.hub
+            .store()
+            .read(|d| view::rooms_json("discord", &rooms, &clients, &HashMap::new(), d))
+    };
+    assert_eq!(list.len(), 1);
+    let r = &list[0];
+    assert_eq!(r["name"], "Movie night");
+    assert_eq!(r["has_password"], true);
+    assert_eq!(r["owner"]["external_id"], "100");
+    assert_eq!(r["participants"][1]["name"], "Bob");
+    assert_eq!(r["participants"][1]["external_id"], "200");
+    assert!(r["host"].is_null());
+
+    // The sidecar's fixture must stay in step with what the server sends.
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../integrations/fixtures/rooms.json")).unwrap();
+    assert_keys_subset(&fixture["rooms"][0], r, "room");
+    assert_keys_subset(
+        &fixture["rooms"][0]["members"][0],
+        &serde_json::json!({
+            "id": "", "name": "", "kind": "", "is_host": false, "status": "",
+            "owner_user_id": null, "owner_external_id": null
+        }),
+        "member",
+    );
+}
+
+/// Every key in `expected` (recursively for objects) exists in `actual`.
+fn assert_keys_subset(expected: &serde_json::Value, actual: &serde_json::Value, path: &str) {
+    if let (Some(e), Some(a)) = (expected.as_object(), actual.as_object()) {
+        for (k, v) in e {
+            assert!(
+                a.contains_key(k),
+                "{}.{} missing from the server's output",
+                path,
+                k
+            );
+            if v.is_object() && a[k].is_object() {
+                assert_keys_subset(v, &a[k], &format!("{}.{}", path, k));
+            }
+        }
+    }
+}
+
 // --- HTTP ------------------------------------------------------------------
 
 async fn http(
@@ -385,7 +745,7 @@ async fn the_api_needs_the_token() {
 }
 
 #[tokio::test]
-async fn the_api_links_and_reports_reasons() {
+async fn the_api_runs_actions_and_reports_reasons() {
     let f = fixture().await;
     let code = f.hub.assign_code(ALICE).await.unwrap();
     let a = serde_json::json!({ "id": "100", "name": "al", "guild_id": "1", "channel_id": "10" });
@@ -402,23 +762,50 @@ async fn the_api_links_and_reports_reasons() {
     let (s, j) = http(
         &f,
         "POST",
-        "/v1/me",
+        "/v1/rooms",
         Some(TOKEN),
-        Some(serde_json::json!({ "actor": a })),
+        Some(serde_json::json!({ "actor": a, "name": "Night" })),
     )
     .await;
     assert_eq!(s, StatusCode::OK, "{}", j);
-    assert_eq!(j["user_name"], "Alice");
+    let id = j["id"].as_str().unwrap().to_string();
+
+    let (s, j) = http(
+        &f,
+        "PUT",
+        &format!("/v1/rooms/{}/panel", id),
+        Some(TOKEN),
+        Some(serde_json::json!({ "channel_id": "10", "message_id": "99" })),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{}", j);
+
+    let (s, j) = http(&f, "GET", "/v1/rooms?since=0", Some(TOKEN), None).await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(j["rooms"][0]["panel"]["message_id"], "99");
+    assert!(j["version"].as_u64().is_some());
 
     let (s, j) = http(
         &f,
         "POST",
-        "/v1/heartbeat",
+        &format!("/v1/rooms/{}/kick", id),
         Some(TOKEN),
-        Some(serde_json::json!({ "bot_name": "Bot" })),
+        Some(serde_json::json!({ "actor": a })),
     )
     .await;
-    assert_eq!(s, StatusCode::OK, "{}", j);
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    assert_eq!(j["reason"], "invalid");
+
+    let (s, j) = http(
+        &f,
+        "POST",
+        "/v1/rooms/missing/close",
+        Some(TOKEN),
+        Some(serde_json::json!({ "actor": a })),
+    )
+    .await;
+    assert_eq!(s, StatusCode::NOT_FOUND);
+    assert_eq!(j["reason"], "not_found");
 
     let (s, j) = http(
         &f,
@@ -443,7 +830,28 @@ async fn the_api_links_and_reports_reasons() {
     assert_eq!(s, StatusCode::PAYLOAD_TOO_LARGE);
 }
 
+#[tokio::test]
+async fn long_poll_answers_at_once_when_behind() {
+    let f = fixture().await;
+    let start = std::time::Instant::now();
+    let (s, j) = http(&f, "GET", "/v1/rooms?since=0", Some(TOKEN), None).await;
+    assert_eq!(s, StatusCode::OK);
+    assert!(start.elapsed() < std::time::Duration::from_secs(2));
+    assert!(j["rooms"].as_array().unwrap().is_empty());
+}
+
 // --- admin -----------------------------------------------------------------
+
+#[tokio::test]
+async fn blank_room_names_are_refused() {
+    let f = fixture().await;
+    link(&f.hub, "100", "alice", ALICE).await;
+    let r = f
+        .hub
+        .create_room("discord", actor("100"), "  \u{7} ", None)
+        .await;
+    assert_eq!(reason(r), "invalid");
+}
 
 async fn admin_call(
     router: &axum::Router,
@@ -489,8 +897,8 @@ async fn admin_call(
 async fn admins_manage_codes_and_settings_in_the_panel() {
     let f = fixture().await;
     let state = crate::admin::AdminState::new(
-        f.clients.clone(),
-        f.rooms.clone(),
+        f.hub.0.clients.clone(),
+        f.hub.0.rooms.clone(),
         crate::admin::config::AdminConfig {
             addr: "127.0.0.1:0".parse().unwrap(),
             username: "admin".into(),
@@ -501,7 +909,7 @@ async fn admins_manage_codes_and_settings_in_the_panel() {
             trust_forwarded_for: false,
         },
         false,
-        crate::admin::JellyfinStatus::Enabled(f.bridges.clone()),
+        crate::admin::JellyfinStatus::Enabled(f.hub.bridges().clone()),
         IntegrationStatus::Enabled(f.hub.clone()),
     );
     let router = crate::admin::build_router(state);

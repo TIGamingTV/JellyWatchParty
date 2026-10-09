@@ -1,5 +1,6 @@
 mod admin;
 mod auth;
+mod events;
 mod integration;
 mod jellyfin;
 mod messaging;
@@ -99,6 +100,8 @@ fn start_admin_panel(
             tasks::spawn_empty_group_reaper(clients.clone(), rooms.clone(), cfg.empty_group_ttl_ms);
             let jellyfin = start_jellyfin_bridge(clients, rooms);
             let integration = integration::start(
+                clients,
+                rooms,
                 match &jellyfin {
                     admin::JellyfinStatus::Enabled(b) => Some(b),
                     admin::JellyfinStatus::Unavailable(_) => None,
