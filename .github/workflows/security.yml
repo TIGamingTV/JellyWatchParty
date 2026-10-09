@@ -27,6 +27,10 @@ jobs:
         working-directory: src/server
         run: cargo audit
 
+      - name: Run cargo audit (Discord bot)
+        working-directory: src/integrations/discord-bot
+        run: cargo audit
+
   trivy-scan:
     name: Trivy Container Scan
     runs-on: ubuntu-latest

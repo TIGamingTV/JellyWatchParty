@@ -158,6 +158,7 @@ Set plugin **Session Server URL** to `wss://jwp.example.com/ws`. If `cloudflared
 - **Use internal networks** — don't expose the session server port externally; put it on the same Docker network as the reverse proxy and `expose` (not `ports`) it
 - **Set the Session Server URL** in plugin settings to the reverse-proxy hostname (e.g. `wss://jellyfin.example.com/ws`) — without this, the client defaults to `ws://<current-host>:3000/ws`, which isn't reachable through a proxy
 - **Keep the admin panel private** — it listens on its own port (3001) and only starts when `ADMIN_PASSWORD` is set. Don't route it through the public `/ws` proxy rule. Publish it on `127.0.0.1`, keep it on the LAN, or proxy it under HTTPS with `ADMIN_COOKIE_SECURE=true` (see [Admin Panel]({{ '/admin-panel/' | relative_url }}#behind-a-reverse-proxy)). Set `ADMIN_ENABLED=false` if you don't use it.
+- **Keep the integration API internal** — with the Discord bot, port 3002 must only be reachable from the bot container (the compose files don't publish it)
 - **Use read-only volumes** for the plugin DLL and media directory
 - **Drop capabilities:**
   ```yaml
@@ -274,9 +275,9 @@ services:
 
 ## Backup Strategy
 
-**Back up:** Jellyfin `/config` directory (includes plugin config), Docker Compose files, `.env` files with secrets.
+**Back up:** Jellyfin `/config` directory (includes plugin config), Docker Compose files, `.env` files with secrets, and the `jwp-data` volume if you use the [Discord bot]({{ '/discord-bot/' | relative_url }}) (bot settings, link codes, linked accounts).
 
-**Don't back up:** session server state (ephemeral, in-memory) or cache directories.
+**Don't back up:** session server rooms (ephemeral, in-memory) or cache directories.
 
 ```bash
 #!/bin/bash

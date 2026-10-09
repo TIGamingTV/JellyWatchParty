@@ -1,0 +1,37 @@
+[package]
+name = "jwp-discord-bot"
+version = "0.1.0"
+edition = "2021"
+description = "JellyWatchParty Discord bot: runs watch parties for linked users' own devices"
+publish = false
+
+[profile.release]
+codegen-units = 16
+opt-level = 3
+strip = true
+
+[dependencies]
+# Discord gateway (interactions arrive over it) + REST. twilight rather than
+# serenity: serenity 0.12's gateway pins tokio-tungstenite 0.21 / rustls 0.22
+# / rustls-webpki 0.102, which has open advisories (RUSTSEC-2026-0049,
+# -0098, -0099, -0104). twilight 0.16 uses rustls 0.23 (ring) and
+# webpki 0.103. No default features: no zlib (C), no native-tls, no
+# aws-lc-rs; webpki roots so the image needs no CA bundle for Discord.
+twilight-gateway = { version = "0.16", default-features = false, features = ["rustls-ring", "rustls-webpki-roots"] }
+twilight-http = { version = "0.16", default-features = false, features = ["rustls-ring", "rustls-webpki-roots", "decompression"] }
+twilight-model = "0.16"
+twilight-util = { version = "0.16", features = ["builder"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "signal"] }
+# Talks to the session server's integration API. Same choices as the
+# server: rustls (ring), no http2.
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "rustls-tls-native-roots"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+env_logger = "0.10"
+log = "0.4"
+
+[dev-dependencies]
+# A raw socket server stands in for the session server in the API tests.
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util"] }
+# Checks the command definition the way Discord will.
+twilight-validate = "0.16"

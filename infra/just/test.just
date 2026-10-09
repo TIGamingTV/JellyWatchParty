@@ -8,13 +8,19 @@ import "common.just"
 
 [default]
 [doc('Run all tests (Rust + .NET + JS)')]
-default: server plugin client
+default: server discord plugin client
 
 [doc('Run Rust server tests')]
 server:
     @echo -e "{{GREEN}}▶ Running server tests...{{RESET}}"
     @cd {{server_dir}} && cargo test
     @echo -e "{{GREEN}}✓ Tests passed{{RESET}}"
+
+[doc('Run Discord bot tests')]
+discord:
+    @echo -e "{{GREEN}}▶ Running Discord bot tests...{{RESET}}"
+    @cd {{discord_dir}} && cargo test
+    @echo -e "{{GREEN}}✓ Discord bot tests passed{{RESET}}"
 
 [doc('Run .NET plugin tests (net10.0/Jellyfin 12.x)')]
 plugin:

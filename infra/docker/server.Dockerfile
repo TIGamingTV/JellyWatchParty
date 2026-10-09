@@ -47,13 +47,17 @@ RUN apk add --no-cache ca-certificates curl && \
     adduser -D -u 1000 appuser
 
 COPY --from=builder /usr/local/bin/session-server /usr/local/bin/session-server
-RUN chown appuser:appuser /usr/local/bin/session-server
+# /data: DATA_DIR for chat integrations. Owned by appuser so a named volume
+# mounted there starts out writable.
+RUN chown appuser:appuser /usr/local/bin/session-server && \
+    mkdir -p /data && chown appuser:appuser /data && chmod 700 /data
 
 # Switch to non-root user
 USER appuser
 
-# 3000: websocket server; 3001: admin panel (only with ADMIN_PASSWORD set)
-EXPOSE 3000 3001
+# 3000: websocket server; 3001: admin panel (only with ADMIN_PASSWORD set);
+# 3002: integration API for chat bots (keep it unpublished)
+EXPOSE 3000 3001 3002
 
 # Graceful shutdown
 STOPSIGNAL SIGTERM

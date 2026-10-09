@@ -32,7 +32,19 @@ services:
       # URL the session server can reach and an API key from Dashboard > API Keys.
       - JELLYFIN_URL=${JELLYFIN_URL:-}
       - JELLYFIN_API_KEY=${JELLYFIN_API_KEY:-}
+      - JELLYFIN_API_KEY_FILE=${JELLYFIN_API_KEY_FILE:-}
       - BRIDGE_POLL_INTERVAL_MS=${BRIDGE_POLL_INTERVAL_MS:-1000}
+      - ADMIN_HOST=${ADMIN_HOST:-0.0.0.0}
+      - ADMIN_PASSWORD_FILE=${ADMIN_PASSWORD_FILE:-}
+      # Chat integrations (Discord bot). Link codes and settings are kept
+      # in DATA_DIR (the jwp-data volume). The integration API listens on
+      # INTEGRATION_PORT for the bot container only: never publish it.
+      - DATA_DIR=/data
+      - INTEGRATION_HOST=0.0.0.0
+      - INTEGRATION_PORT=${INTEGRATION_PORT:-3002}
+      - DISCORD_INTEGRATION_TOKEN=${DISCORD_INTEGRATION_TOKEN:-}
+    volumes:
+      - jwp-data:/data
     deploy:
       resources:
         limits:
@@ -46,6 +58,32 @@ services:
       timeout: 3s
       retries: 3
       start_period: 5s
+
+  # Discord bot: start with `docker compose --profile discord up -d`.
+  # Needs DISCORD_BOT_TOKEN and DISCORD_INTEGRATION_TOKEN (the same value
+  # as on the session server); the rest is set in the admin panel.
+  discord-bot:
+    build:
+      context: ../../../src/integrations/discord-bot
+      dockerfile: ../../../infra/docker/discord-bot.Dockerfile
+      args:
+        BUILD_MODE: release
+    container_name: jwp-discord-bot
+    profiles:
+      - discord
+    restart: unless-stopped
+    depends_on:
+      - session-server
+    environment:
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
+      - JWP_INTEGRATION_URL=http://session-server:${INTEGRATION_PORT:-3002}
+      - JWP_INTEGRATION_TOKEN=${DISCORD_INTEGRATION_TOKEN:-}
+      - RUST_LOG=${RUST_LOG:-info}
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.25'
 
   plugin-builder:
     image: mcr.microsoft.com/dotnet/sdk:10.0
@@ -61,3 +99,7 @@ services:
     # The plugin project targets net10.0 (Jellyfin 12.x only - Jellyfin
     # 10.11.x support has been dropped).
     command: dotnet publish -c Release -f net10.0 -o /src/dist JellyWatchPartyPlugin.csproj
+
+volumes:
+  # Chat integration data: settings, link codes, linked accounts.
+  jwp-data:

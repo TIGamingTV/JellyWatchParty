@@ -8,13 +8,19 @@ import "common.just"
 
 [default]
 [doc('Run all linters (Rust + JS)')]
-default: server client
+default: server discord client
 
 [doc('Lint Rust code with clippy')]
 server:
     @echo -e "{{CYAN}}▶ Linting Rust code...{{RESET}}"
     @cd {{server_dir}} && cargo clippy -- -D warnings
     @echo -e "{{GREEN}}✓ Rust lint passed{{RESET}}"
+
+[doc('Lint the Discord bot with clippy')]
+discord:
+    @echo -e "{{CYAN}}▶ Linting the Discord bot...{{RESET}}"
+    @cd {{discord_dir}} && cargo clippy --all-targets -- -D warnings
+    @echo -e "{{GREEN}}✓ Discord bot lint passed{{RESET}}"
 
 [doc('Lint JavaScript code (requires eslint)')]
 client:
