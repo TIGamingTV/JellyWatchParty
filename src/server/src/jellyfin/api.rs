@@ -48,6 +48,32 @@ pub struct JfSession {
     pub last_activity_date: Option<String>,
 }
 
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "PascalCase", default)]
+pub struct JfUserPolicy {
+    pub is_administrator: bool,
+    pub is_disabled: bool,
+}
+
+/// The parts of a Jellyfin `UserDto` the chat integration uses.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "PascalCase", default)]
+pub struct JfUser {
+    pub id: String,
+    pub name: String,
+    pub policy: Option<JfUserPolicy>,
+}
+
+impl JfUser {
+    pub fn is_admin(&self) -> bool {
+        self.policy.as_ref().is_some_and(|p| p.is_administrator)
+    }
+
+    pub fn is_disabled(&self) -> bool {
+        self.policy.as_ref().is_some_and(|p| p.is_disabled)
+    }
+}
+
 /// Jellyfin writes GUIDs as 32 lowercase hex chars ("N" format); compare
 /// them in that one canonical form whatever a client sent.
 pub fn normalize_id(id: &str) -> String {
@@ -186,6 +212,23 @@ impl JellyfinApi {
         Ok(parse_sessions(raw))
     }
 
+    /// Every Jellyfin user (`GET /Users`; needs an admin API key).
+    pub async fn users(&self) -> Result<Vec<JfUser>, String> {
+        let res = self
+            .http
+            .get(format!("{}/Users", self.base))
+            .header(reqwest::header::AUTHORIZATION, &self.auth)
+            .send()
+            .await
+            .map_err(Self::err)?;
+        let raw = Self::check(res)
+            .await?
+            .json::<Vec<serde_json::Value>>()
+            .await
+            .map_err(|e| format!("Unexpected /Users response: {}", e))?;
+        Ok(parse_users(raw))
+    }
+
     /// `Pause`, `Unpause` or `Seek` (with `seek_ticks`).
     pub async fn playstate(
         &self,
@@ -251,6 +294,18 @@ pub fn parse_sessions(raw: Vec<serde_json::Value>) -> Vec<JfSession> {
         .collect()
 }
 
+/// Parses users one by one, skipping odd entries; ids are normalized.
+pub fn parse_users(raw: Vec<serde_json::Value>) -> Vec<JfUser> {
+    raw.into_iter()
+        .filter_map(|v| serde_json::from_value::<JfUser>(v).ok())
+        .filter(|u| !u.id.is_empty() && !u.name.is_empty())
+        .map(|mut u| {
+            u.id = normalize_id(&u.id);
+            u
+        })
+        .collect()
+}
+
 /// Percent-encodes a path segment (session ids are hex, but be safe).
 fn urlencode(s: &str) -> String {
     s.bytes()
@@ -311,6 +366,23 @@ mod tests {
         let sessions = parse_sessions(raw);
         assert_eq!(sessions.len(), 1);
         assert_eq!(sessions[0].id, "ok");
+    }
+
+    #[test]
+    fn parses_users_and_policies() {
+        let raw: Vec<serde_json::Value> = serde_json::from_str(
+            r#"[{"Name": "Alice", "Id": "6A1B2C3D-4E5F-6071-8293-A4B5C6D7E8F9",
+                 "Policy": {"IsAdministrator": true, "IsDisabled": false, "Other": 1}},
+                {"Name": "Bob", "Id": "00000000000000000000000000000001",
+                 "Policy": {"IsDisabled": true}},
+                {"Name": "", "Id": "x"}, {"Id": 5}]"#,
+        )
+        .unwrap();
+        let users = parse_users(raw);
+        assert_eq!(users.len(), 2);
+        assert_eq!(users[0].id, "6a1b2c3d4e5f60718293a4b5c6d7e8f9");
+        assert!(users[0].is_admin() && !users[0].is_disabled());
+        assert!(!users[1].is_admin() && users[1].is_disabled());
     }
 
     #[test]

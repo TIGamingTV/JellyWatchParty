@@ -270,6 +270,11 @@ impl Bridges {
         self.entries().get(client_id).map(|e| e.info.clone())
     }
 
+    /// The Jellyfin REST client (shared with the chat integration).
+    pub fn api(&self) -> &JellyfinApi {
+        &self.0.api
+    }
+
     /// Puts a Jellyfin session into a room. `Host` also makes it the host;
     /// `Receiver` needs a device that accepts remote control.
     pub async fn add(

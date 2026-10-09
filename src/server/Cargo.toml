@@ -32,6 +32,10 @@ env_logger = "0.10"
 log = "0.4"
 jsonwebtoken = "9"
 sha2 = "0.10"
+# Chat integrations (Discord sidecar): link codes are stored as
+# HMAC-SHA256(install key, user id || code), and generated from the OS CSPRNG.
+hmac = "0.12"
+getrandom = "0.3"
 # Talks to the Jellyfin REST API for the admin panel's device bridge.
 # 0.12 rather than 0.13: its rustls features use ring, which builds on the
 # musl/Alpine image as-is (0.13's rustls default pulls aws-lc-rs, which
