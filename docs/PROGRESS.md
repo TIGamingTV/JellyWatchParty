@@ -2582,3 +2582,73 @@ config properties all match. Still not run against a live Jellyfin.
 **Tests**: Rust 228, JS 184, C# 149. Admin UI driven in headless Chromium
 against a simulated Jellyfin (desktop + 400 px mobile, no console errors,
 no horizontal overflow).
+
+## Round 39 — Discord bot: shipped (PRs #92–#96) and its docs checked before merge
+
+**Trigger**: review the docs (README included) before the Discord bot goes
+to `main`. The bot docs were checked claim by claim against the code (the
+bot crate and the session server's `integration/` module), and the wrong or
+missing parts were fixed. Docs only; no code changed.
+
+**What shipped**: admin-issued 4-digit link codes (#92); chat rooms with
+owner and admin checks, long poll and the device API (#93); the twilight
+sidecar, compose profile and CI (#94); the reusable image workflow and the
+GHCR publish for `jwp-discord-bot` (#95); pre-release hardening (#96): chat
+rooms stay open when a web host starts a new room, panel fields and replies
+kept within Discord's limits, settings reloaded after a server restart, failed
+panel edits retried, no redirects in the bot, tokens redacted in `Debug`, and
+the data file's temp file created with 0600.
+
+**Wrong in the docs (fixed)**:
+
+- Lockouts were described as penalties ("waits 15 minutes"). They are fixed
+  windows that start at the first wrong code (`integration/mod.rs:190-226`).
+  Fixed in `discord-bot.md` and `security.md`.
+- Room-password throttle was described per user. It is per user **per room**
+  (`types.rs:127`).
+- README said the admin panel is at `http://<server>:3001/`, but its compose
+  file binds that port to `127.0.0.1`.
+- Bot-off message quoted as "the bot is turned off"; the real reply is
+  "Watch parties from chat are turned off on this server"
+  (`actions.rs:198`).
+- Status chip said "connected"; the UI says "Bot online" / "Bot offline"
+  (`admin/ui/app.js:612-613`).
+- `JWP_INTEGRATION_URL` default was not tied to `INTEGRATION_PORT`, which the
+  bot does not read.
+- `configuration.md` and `deployment.md` used `image: jwp-session-server`
+  instead of the published GHCR name.
+- `user-guide.md` told TV users to ask an admin for device placement; users
+  can now do it from Discord.
+
+**Missing (added)**:
+
+- `troubleshooting.md`: a Discord Bot section (commands missing, bot offline,
+  chat integration not started, lockouts, "already linked", device roles,
+  rooms closing, lost `secret.key`).
+- Setting defaults and ranges: 2 rooms per user (1–10), 20 in total (1–100),
+  30 minutes before an empty room closes (5–1440), both device roles on,
+  room passwords and the bot off by default (`store.rs:56-126`).
+- The owner cannot leave their own room (`actions.rs:600-605`).
+- Reverse link case: a Discord account that enters another user's code moves
+  its link.
+- Restart behavior: a code's lock survives a restart, the short windows do
+  not; older panels are no longer marked as replaced after a bot restart
+  (`discord-bot/src/sync.rs:38-41`).
+- Backups must include `secret.key` (`store.rs:360-369`).
+- Firewall table lists 3001 (admin, optional) and 3002 (never publish).
+- Installation env var table points to the admin, bot and `.env.example`
+  references (it lists only the core variables).
+- Discord bot linked from the docs home page.
+
+**Open code follow-ups (not changed here)**:
+
+- `/jwp device add` offers both host and receiver even when the server has
+  turned that role off; the server refuses only after the choice is made
+  (`commands.rs:90-96`, `actions.rs:943-955`).
+- Command descriptions say "Owner:" for commands admins can also run
+  (`commands.rs:52-78`).
+- The link code input accepts up to 9 characters (`handler.rs:221`); the
+  server accepts only 4 digits.
+
+**Verification**: docs only. Anchors added in this round were checked against
+the heading slugs in the target pages. The site was not built locally.

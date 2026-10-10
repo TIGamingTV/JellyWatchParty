@@ -37,7 +37,9 @@ A link stays until it is removed. The same code can be used again to link
 again later, for example after `/jwp unlink`. One Jellyfin user has at most
 one linked Discord account. If someone else enters the right code for a
 user who is already linked, the attempt is refused and shows up in the
-activity log.
+activity log. The reverse case also works: a Discord account that enters the
+right code for a *different* Jellyfin user moves its link to that user, and
+its old link is dropped.
 
 **New code** gives the user a fresh code and disconnects their current
 Discord account. **Unlink** only disconnects the account; the code still
@@ -53,7 +55,9 @@ A 4-digit code is short, so attempts are limited:
   code stops working until an admin assigns a new one. The panel marks it
   **Locked**. Someone guessing therefore has at most a 1 in 1,000 chance
   per assigned code.
-- A Discord account that enters **5 wrong codes** waits 15 minutes.
+- A Discord account that enters **5 wrong codes within 15 minutes** is blocked
+  until that 15-minute window ends. The window starts with the first wrong
+  code, so the block can be shorter than 15 minutes.
 - After **50 wrong codes from everyone** within 10 minutes, linking pauses
   for everyone until that window ends.
 - A wrong user name, a wrong code and a locked code all get the same
@@ -149,7 +153,7 @@ the server user only.
 | `INTEGRATION_HOST` / `INTEGRATION_PORT` | session server | Where the integration API listens (default `127.0.0.1:3002`; compose sets `0.0.0.0` inside the Docker network). **Never publish this port.** |
 | `DISCORD_BOT_TOKEN` (`_FILE`) | bot | The bot's Discord token. |
 | `JWP_INTEGRATION_TOKEN` (`_FILE`) | bot | The same value as `DISCORD_INTEGRATION_TOKEN`. |
-| `JWP_INTEGRATION_URL` | bot | Integration API address (default `http://session-server:3002`). |
+| `JWP_INTEGRATION_URL` | bot | Integration API address (default `http://session-server:3002`, which only works if the session server's service is named `session-server`; the compose files set it). The bot ignores `INTEGRATION_PORT`, so if you change that port, change this URL too. |
 
 ### 3. Turn it on in the admin panel
 
@@ -157,18 +161,19 @@ Under **Discord bot**:
 
 | Setting | Meaning |
 |---|---|
-| Bot enabled | Off: every command answers that the bot is turned off. |
+| Bot enabled | Off by default. While off, every command answers "Watch parties from chat are turned off on this server". Needs a Server ID first. |
 | Server ID | The one Discord server the bot works in. Turn on Developer Mode in Discord, then right-click the server > **Copy Server ID**. `/jwp` is registered there within about 30 seconds. |
 | Channel IDs | Only accept commands in these channels (empty: any channel). |
 | Required role ID | Only members with this role may use the bot (empty: everyone in the server). |
 | Admin role ID | Members with this role can manage every bot room. By default only Jellyfin administrators can. |
-| Rooms per user / in total | Limits for rooms created from Discord. |
-| Close empty rooms after | A bot room with nobody watching closes after this many minutes. |
-| Rooms need a password | Refuse rooms without a password. |
-| Devices may be added as host / receiver | Which roles users may give their devices. |
+| Rooms per user / in total | Limits for rooms created from Discord: rooms per person (default 2, 1 to 10) and across the server (default 20, 1 to 100). |
+| Close empty rooms after | A bot room with nobody in it closes after this many minutes (default 30, 5 to 1440). |
+| Rooms need a password | Refuse rooms without a password. Off by default. |
+| Devices may be added as host / receiver | Which roles users may give their devices. Both are on by default. Turn one off to refuse it for everyone. |
 
-The status chips show whether the bot is connected (it checks in every 30
-seconds).
+The status chip reads **Bot online** while the bot checks in (every 30
+seconds). It reads **Bot offline** if nothing has been heard for 90 seconds,
+and **No bot token** if `DISCORD_INTEGRATION_TOKEN` is not set.
 
 ## Using it
 
@@ -177,10 +182,10 @@ seconds).
 | `/jwp link` | Link your account (form: Jellyfin user name + code). |
 | `/jwp unlink`, `/jwp whoami` | Unlink; show your linked account and rooms. |
 | `/jwp room create` | Form: name + optional password. Posts the room's panel in the channel. |
-| `/jwp room join` / `leave` / `list` | Join (form asks for the password), leave (your devices leave too), list. |
+| `/jwp room join` / `leave` / `list` | Join (form asks for the password), leave (your devices leave too), list. An owner can't leave their own room: hand it over with `transfer` or close it. |
 | `/jwp device add` / `remove` | Put one of your devices into a room as receiver or host; take it out. |
 | `/jwp room host` / `kick` / `rename` / `password` / `transfer` / `close` | Owner and admins only. |
-| `/jwp room panel` | Owner: post the room's panel again in this channel (the old one is marked as replaced). |
+| `/jwp room panel` | Owner and admins: post the room's panel again in this channel (the old one is marked as replaced). After a bot restart, older panels are no longer marked, so delete any stale ones by hand. |
 
 Each room gets a **panel** message that stays up to date. It shows the
 owner, the host, everyone watching with their sync status, and who joined
@@ -201,7 +206,9 @@ you**. While a room has no host, anyone who joined it may add a device as host
 only the owner (or an admin) can change the host.
 
 Rooms live in the session server's memory: a server restart closes them.
-Links, codes and settings are kept.
+Links, codes and settings are kept. A code's own lock (after 10 wrong tries)
+also survives a restart, but the short per-account and global windows
+(see [Limits on guessing codes](#limits-on-guessing-codes)) start over.
 
 ## Security notes
 
@@ -219,11 +226,15 @@ Links, codes and settings are kept.
   if the bot runs on another machine, put TLS in between and use an
   `https://` `JWP_INTEGRATION_URL`.
 - Each Discord account may make 30 requests per minute.
-- Wrong room passwords count against the same limit as in the Watch Party
-  panel: 5 per minute per Jellyfin user.
+- Wrong room passwords are throttled as in the Watch Party panel: 5 wrong
+  attempts per user, per room, per minute.
 - The admin role setting trusts Discord's role list as passed on by the bot.
   Leave it empty to rely on Jellyfin administrator rights only.
 - Codes are never stored, only an HMAC of them. They are never logged and
   are shown to the admin once.
 - Names from users (rooms, devices) are shown as plain text, and the bot
   never pings anyone.
+
+## Problems?
+
+See [Troubleshooting]({{ '/troubleshooting/' | relative_url }}#discord-bot).
