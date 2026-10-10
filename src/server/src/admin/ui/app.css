@@ -167,8 +167,10 @@ td.actions select { max-width: 200px; }
 .note { margin: 0 0 10px; padding: 8px 12px; border-radius: 7px; background: var(--card-2); color: var(--muted); }
 .note.problem { color: var(--bad); background: #f851491a; }
 
-/* --- Discord bot -------------------------------------------------------- */
+/* --- Chat bots (Discord, Telegram) ---------------------------------------- */
 .badge-discord { border-color: #5865f288; color: #8f98ff; }
+.badge-telegram { border-color: #2aabee88; color: #6cc6f4; }
+.link-cell { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .chips-inline { display: inline-flex; flex: none; vertical-align: middle; margin-left: 6px; }
 .settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px 16px; align-items: end; }
 .settings .wide { grid-column: 1 / -1; }
