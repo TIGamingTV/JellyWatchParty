@@ -94,11 +94,48 @@ DISCORD_INTEGRATION_TOKEN=$(openssl rand -hex 32)
 DISCORD_BOT_TOKEN=...
 ```
 
-Then start the bot, which is in the compose files' `discord` profile:
+The bot is published as `ghcr.io/tigamingtv/jwp-discord-bot`, with the same
+tags as the session server (`latest`, `X.Y.Z`, `X.Y`, `beta`, `dev`). Keep
+both on the same tag. If you use your own compose file, add the bot next to
+the session server (the [Installation]({{ '/installation/' | relative_url }}#quick-start-docker-compose)
+quick start already has it):
+
+```yaml
+services:
+  jwp-session:
+    image: ghcr.io/tigamingtv/jwp-session-server:latest
+    environment:
+      # ... your existing settings, plus:
+      - DATA_DIR=/data
+      - INTEGRATION_HOST=0.0.0.0          # inside the Docker network only
+      - DISCORD_INTEGRATION_TOKEN=${DISCORD_INTEGRATION_TOKEN}
+    volumes:
+      - jwp-data:/data
+    # Do not add 3002 to ports.
+
+  jwp-discord-bot:
+    image: ghcr.io/tigamingtv/jwp-discord-bot:latest
+    restart: unless-stopped
+    profiles: [discord]
+    depends_on: [jwp-session]
+    environment:
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
+      - JWP_INTEGRATION_TOKEN=${DISCORD_INTEGRATION_TOKEN}
+      # Service name of the session server above, port INTEGRATION_PORT
+      - JWP_INTEGRATION_URL=http://jwp-session:3002
+
+volumes:
+  jwp-data:
+```
+
+Then start the bot, which is in the `discord` profile (also in the repository's
+compose files):
 
 ```bash
 docker compose --profile discord up -d
 ```
+
+For the develop builds, use the `dev` tag on both images.
 
 The session server keeps settings and link codes in `DATA_DIR`, which is the
 `jwp-data` volume (`/data`) in the compose files. Back that volume up like any
