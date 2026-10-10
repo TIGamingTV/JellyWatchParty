@@ -1,10 +1,11 @@
 //! Chat integrations: lets people run third-party-client watch parties
-//! from a chat platform (Discord now) without an admin, through a bot that
-//! runs as a separate sidecar.
+//! from a chat platform (Discord, Telegram) without an admin, through a bot
+//! that runs as a separate sidecar.
 //!
 //! - The sidecar only reports who is asking (their chat account, the
-//!   server/channel and roles the request came from) over a token-protected
-//!   API on its own port (`api.rs`). Every decision is made here.
+//!   server or group, channel and roles the request came from) over a
+//!   token-protected API on its own port (`api.rs`). Every decision is
+//!   made here.
 //! - A chat account acts as a Jellyfin user once linked with a 4-digit code
 //!   an admin assigned to that user in the admin UI (`store.rs`).
 //! - Rooms created from a chat have an owner and participants (`actions.rs`,
@@ -135,23 +136,32 @@ pub type IntResult = Result<serde_json::Value, IntError>;
 /// sidecar; the server decides what they may do.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct Actor {
-    /// The chat account id (Discord: user snowflake).
+    /// The chat account id (Discord: user snowflake; Telegram: user id).
     pub id: String,
     #[serde(default)]
     pub name: String,
-    /// Server/guild the request came from.
+    /// The server (Discord guild) or group (Telegram chat id) the request
+    /// is about.
     #[serde(default)]
     pub guild_id: String,
     #[serde(default)]
     pub channel_id: String,
-    /// Role ids the account has in that guild.
+    /// Role ids the account has there (Telegram: `admin` for group
+    /// administrators).
     #[serde(default)]
     pub roles: Vec<String>,
 }
 
-/// A chat account id: Discord snowflakes (and Telegram ids) are numbers.
+/// A chat account id: Discord snowflakes and Telegram user ids are
+/// positive numbers.
 pub fn valid_external_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= 20 && id.bytes().all(|b| b.is_ascii_digit())
+}
+
+/// A chat (channel) id: like an account id, but Telegram groups are
+/// negative.
+pub fn valid_chat_id(id: &str) -> bool {
+    valid_external_id(id.strip_prefix('-').unwrap_or(id))
 }
 
 /// Strips control characters and caps the length of a display name.
@@ -167,7 +177,7 @@ pub fn clean_display_name(raw: &str) -> String {
 pub struct AuditEntry {
     pub ts: u64,
     pub kind: &'static str,
-    /// `admin`, or `discord:<id> (<name>)`.
+    /// `admin`, or `<provider>:<id> (<name>)`.
     pub actor: String,
     pub detail: String,
     pub warn: bool,
@@ -513,9 +523,11 @@ pub fn start(
     };
     hub.spawn_reaper();
     if cfg.tokens.is_empty() {
+        let vars: Vec<&str> = config::PROVIDERS.iter().map(|(_, v)| *v).collect();
         info!(
-            "Chat integrations: data in {}; no sidecar token set (DISCORD_INTEGRATION_TOKEN), so the integration API is not started",
-            cfg.data_dir.display()
+            "Chat integrations: data in {}; no sidecar token set ({}), so the integration API is not started",
+            cfg.data_dir.display(),
+            vars.join(" / ")
         );
     } else {
         let state = api::ApiState::new(hub.clone(), &cfg.tokens);

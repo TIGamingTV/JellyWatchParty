@@ -10,7 +10,7 @@
   let chat = null; // last api/integrations answer
   let users = null; // last api/users answer
   let audit = null; // last api/audit answer
-  let formDirty = false; // unsaved edits in the Discord settings form
+  const formDirty = {}; // platform -> unsaved edits in its settings form
 
   // --- tiny DOM helper: never uses innerHTML, so names can't inject markup.
   const el = (tag, props = {}, ...children) => {
@@ -326,7 +326,7 @@
     const title = el('div', { className: 'room-title' },
       el('h3', { text: room.name }),
       room.chat
-        ? el('span', { className: 'badge badge-discord', text: 'Discord room' })
+        ? el('span', { className: `badge badge-${room.chat.provider}`, text: `${platformLabel(room.chat.provider)} room` })
         : room.admin_created ? el('span', { className: 'badge badge-admin', text: 'Group' }) : el('span', { className: 'badge', text: 'User room' }),
       el('span', { className: 'badge', text: room.has_password ? 'Password' : 'Open' }));
 
@@ -375,7 +375,7 @@
       el('span', { text: plural(room.members.length, 'member') }),
       room.chat ? el('span', {
         title: room.chat.participants.join(', '),
-        text: `Owner ${room.chat.owner_name}, ${plural(room.chat.participants.length, 'participant')} on Discord`
+        text: `Owner ${room.chat.owner_name}, ${plural(room.chat.participants.length, 'participant')} on ${platformLabel(room.chat.provider)}`
       }) : null,
       room.host_id ? null : pill('No host yet', 'warn'));
 
@@ -552,58 +552,102 @@
     }
   };
 
-  // --- Discord bot ---------------------------------------------------------
-  const DC_FIELDS = {
-    enabled: ['dc-enabled', 'bool'],
-    guild_id: ['dc-guild', 'text'],
-    required_role_id: ['dc-role', 'text'],
-    admin_role_id: ['dc-admin-role', 'text'],
-    max_rooms_per_user: ['dc-per-user', 'int'],
-    max_rooms_total: ['dc-total', 'int'],
-    empty_room_minutes: ['dc-empty', 'int'],
-    require_password: ['dc-require-pw', 'bool'],
-    allow_host: ['dc-host', 'bool'],
-    allow_receiver: ['dc-receiver', 'bool']
-  };
+  // --- chat bots -----------------------------------------------------------
+  // One settings card per platform; `fields` maps settings keys to inputs.
+  const PLATFORMS = [
+    {
+      id: 'discord',
+      label: 'Discord',
+      prefix: 'dc',
+      linkHow: 'run /jwp link in Discord',
+      fields: {
+        enabled: ['dc-enabled', 'bool'],
+        guild_id: ['dc-guild', 'text'],
+        required_role_id: ['dc-role', 'text'],
+        admin_role_id: ['dc-admin-role', 'text'],
+        max_rooms_per_user: ['dc-per-user', 'int'],
+        max_rooms_total: ['dc-total', 'int'],
+        empty_room_minutes: ['dc-empty', 'int'],
+        require_password: ['dc-require-pw', 'bool'],
+        allow_host: ['dc-host', 'bool'],
+        allow_receiver: ['dc-receiver', 'bool']
+      },
+      fill: (s) => { $('dc-channels').value = (s.channel_ids || []).join(', '); },
+      read: (out) => { out.channel_ids = $('dc-channels').value.split(/[\s,]+/).filter(Boolean); }
+    },
+    {
+      id: 'telegram',
+      label: 'Telegram',
+      prefix: 'tg',
+      linkHow: 'send /link to the Telegram bot in a private chat',
+      fields: {
+        enabled: ['tg-enabled', 'bool'],
+        guild_id: ['tg-group', 'text'],
+        max_rooms_per_user: ['tg-per-user', 'int'],
+        max_rooms_total: ['tg-total', 'int'],
+        empty_room_minutes: ['tg-empty', 'int'],
+        require_password: ['tg-require-pw', 'bool'],
+        allow_host: ['tg-host', 'bool'],
+        allow_receiver: ['tg-receiver', 'bool']
+      },
+      // Telegram has no roles: the bot reports group administrators as "admin".
+      fill: (s) => { $('tg-admins').checked = s.admin_role_id === 'admin'; },
+      read: (out) => {
+        out.admin_role_id = $('tg-admins').checked ? 'admin' : '';
+        out.channel_ids = [];
+        out.required_role_id = '';
+      }
+    }
+  ];
+  const PLATFORM = Object.fromEntries(PLATFORMS.map((p) => [p.id, p]));
+  const platformLabel = (id) => (PLATFORM[id] ? PLATFORM[id].label : id);
 
-  const fillDiscordForm = (s) => {
-    for (const [key, [id, type]] of Object.entries(DC_FIELDS)) {
+  const fillForm = (pf, s) => {
+    for (const [key, [id, type]] of Object.entries(pf.fields)) {
       if (type === 'bool') $(id).checked = !!s[key];
       else $(id).value = s[key] ?? '';
     }
-    $('dc-channels').value = (s.channel_ids || []).join(', ');
+    pf.fill(s);
   };
 
-  const readDiscordForm = () => {
+  const readForm = (pf) => {
     const out = {};
-    for (const [key, [id, type]] of Object.entries(DC_FIELDS)) {
+    for (const [key, [id, type]] of Object.entries(pf.fields)) {
       out[key] = type === 'bool' ? $(id).checked : type === 'int' ? parseInt($(id).value, 10) : $(id).value.trim();
     }
-    out.channel_ids = $('dc-channels').value.split(/[\s,]+/).filter(Boolean);
+    pf.read(out);
     return out;
   };
 
-  const setDirty = (dirty) => {
-    formDirty = dirty;
-    $('dc-dirty').classList.toggle('hidden', !dirty);
+  const setDirty = (pf, dirty) => {
+    formDirty[pf.id] = dirty;
+    $(`${pf.prefix}-dirty`).classList.toggle('hidden', !dirty);
   };
 
-  const discord = () => chat && chat.available && chat.providers.find((p) => p.provider === 'discord');
+  const chatReady = () => !!(chat && chat.available);
+  const provider = (id) => chatReady() && chat.providers.find((p) => p.provider === id);
 
-  const renderChat = () => {
-    const note = $('chat-note');
-    const status = $('chat-status');
-    const form = $('discord-form');
+  // Platforms worth a column in the users table: set up, or someone is
+  // still linked on them.
+  const linkPlatforms = () => PLATFORMS.filter((pf) => {
+    const p = provider(pf.id);
+    if (p && (p.token_set || (p.settings && p.settings.enabled))) return true;
+    return !!(users && users.users.some((u) => u.links && u.links[pf.id]));
+  });
+
+  const renderPlatform = (pf) => {
+    const note = $(`${pf.id}-note`);
+    const status = $(`${pf.id}-status`);
+    const form = $(`${pf.id}-form`);
     note.replaceChildren();
     status.replaceChildren();
-    const p = discord();
-    for (const id of ['users-section', 'activity']) $(id).classList.toggle('hidden', !p);
+    const p = provider(pf.id);
     if (!p) {
       form.classList.add('hidden');
       status.append(pill('Not set up', 'muted'));
       note.append(el('p', { className: 'note' },
-        chat ? chat.reason : 'Could not load the bot settings.',
-        ' The bot needs DATA_DIR, the Jellyfin devices settings and DISCORD_INTEGRATION_TOKEN on the session server, plus the bot container.'));
+        chat ? (chat.reason || `This server doesn't know ${pf.label} yet.`) : 'Could not load the bot settings.',
+        ` The bot needs DATA_DIR, the Jellyfin devices settings and ${pf.id.toUpperCase()}_INTEGRATION_TOKEN on the session server, plus the bot container.`));
       return;
     }
     const s = p.settings || {};
@@ -613,37 +657,66 @@
     else status.append(pill(p.sidecar ? `Bot offline since ${fmtAgo(p.sidecar.seen_at)}` : 'Bot not connected', 'bad'));
     if (!p.token_set) {
       note.append(el('p', { className: 'note' },
-        `Set ${p.token_var} (the same long random value) on the session server and on the bot so they can talk.`));
+        `Set ${p.token_var} (a long random value) on the session server and the bot container so they can talk.`));
     } else if (!chat.listening) {
       note.append(el('p', { className: 'note problem', text: 'The integration API is not listening; check the server log.' }));
     }
     form.classList.remove('hidden');
     const editing = form.contains(document.activeElement);
-    if (!formDirty && !editing) fillDiscordForm(s);
+    if (!formDirty[pf.id] && !editing) fillForm(pf, s);
   };
 
+  const renderChat = () => {
+    for (const id of ['users-section', 'activity']) $(id).classList.toggle('hidden', !chatReady());
+    for (const pf of PLATFORMS) renderPlatform(pf);
+  };
+
+  const linkedAccounts = (u) => PLATFORMS
+    .filter((pf) => u.links && u.links[pf.id])
+    .map((pf) => `${u.links[pf.id].display_name || 'their account'} on ${pf.label}`);
+
   const assignCode = async (u) => {
-    const link = u.links && u.links.discord;
+    const linked = linkedAccounts(u);
     if (u.code) {
       const ok = await ask({
         title: `New code for ${u.name}?`,
-        message: `The current code stops working${link ? ` and ${link.display_name || 'their Discord account'} is disconnected` : ''}. Rooms they own stay theirs.`,
+        message: `The current code stops working${linked.length ? ` and ${linked.join(' and ')} ${linked.length === 1 ? 'is' : 'are'} disconnected` : ''}. Rooms they own stay theirs.`,
         okLabel: 'New code'
       });
       if (!ok) return;
     }
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    const shown = linkPlatforms();
+    const how = (shown.length ? shown : PLATFORMS).map((pf) => pf.linkHow).join(', or ');
     try {
       const r = await api('POST', `api/users/${enc(u.id)}/code`);
-      toast(`Code for ${u.name}. They run /jwp link in Discord and type "${u.name}" and this code. It is not shown again:`, { secret: r.code });
+      toast(`Code for ${u.name}. To link, they ${how}, and type "${u.name}" and this code. It is not shown again:`, { secret: r.code });
     } catch (e) {
       toast(e.message, { kind: 'error' });
     }
     await refresh(true);
   };
 
-  const userRow = (u) => {
-    const link = u.links && u.links.discord;
+  const linkCell = (u, pf) => {
+    const link = u.links && u.links[pf.id];
+    if (!link) return el('td', {}, el('span', { className: 'muted', text: 'Not linked' }));
+    return el('td', {}, el('div', { className: 'link-cell' },
+      el('span', {}, el('div', { text: link.display_name || link.external_id }), el('div', { className: 'sub', text: `Linked ${fmtAgo(link.linked_at)}` })),
+      el('button', {
+        className: 'btn btn-ghost btn-small', type: 'button', text: 'Unlink',
+        title: `Unlink ${u.name}'s ${pf.label} account`,
+        onclick: async () => {
+          const ok = await ask({
+            title: `Unlink ${u.name} on ${pf.label}?`,
+            message: `${link.display_name || `Their ${pf.label} account`} can't act as ${u.name} anymore. They can link again with the same code.`,
+            okLabel: 'Unlink'
+          });
+          if (ok) act(`Unlinked on ${pf.label}`, () => api('DELETE', `api/users/${enc(u.id)}/links/${enc(pf.id)}`));
+        }
+      })));
+  };
+
+  const userRow = (u, shown) => {
     const c = u.code;
     const actions = el('td', { className: 'actions' });
     if (!u.missing && !u.disabled) {
@@ -653,26 +726,13 @@
         onclick: () => assignCode(u)
       }));
     }
-    if (link) {
-      actions.append(el('button', {
-        className: 'btn btn-ghost btn-small', type: 'button', text: 'Unlink',
-        onclick: async () => {
-          const ok = await ask({
-            title: `Unlink ${u.name}?`,
-            message: `${link.display_name || 'Their Discord account'} can't act as ${u.name} anymore. They can link again with the same code.`,
-            okLabel: 'Unlink'
-          });
-          if (ok) act('Unlinked', () => api('DELETE', `api/users/${enc(u.id)}/links/discord`));
-        }
-      }));
-    }
     if (c) {
       actions.append(el('button', {
         className: 'btn btn-danger btn-small', type: 'button', text: 'Remove code',
         onclick: async () => {
           const ok = await ask({
             title: `Remove ${u.name}'s code?`,
-            message: 'The code stops working and any linked Discord account is disconnected.',
+            message: 'The code stops working and every linked chat account is disconnected.',
             okLabel: 'Remove code', danger: true
           });
           if (ok) act('Code removed', () => api('DELETE', `api/users/${enc(u.id)}/code`));
@@ -690,16 +750,14 @@
         u.disabled ? el('span', { className: 'badge', text: 'Disabled' }) : null,
         u.missing ? el('span', { className: 'badge', text: 'Not in Jellyfin anymore' }) : null),
       el('td', {}, codeCell),
-      el('td', {}, link
-        ? el('span', {}, el('div', { text: link.display_name || link.external_id }), el('div', { className: 'sub', text: `Linked ${fmtAgo(link.linked_at)}` }))
-        : el('span', { className: 'muted', text: 'Not linked' })),
+      shown.map((pf) => linkCell(u, pf)),
       actions);
   };
 
   const renderUsers = () => {
     const box = $('users');
     box.replaceChildren();
-    if (!discord()) return;
+    if (!chatReady()) return;
     if (!users) {
       box.append(el('p', { className: 'note problem', text: 'Could not load the users.' }));
       return;
@@ -710,9 +768,11 @@
       box.append(el('p', { className: 'empty', text: 'No Jellyfin users found.' }));
       return;
     }
+    const shown = linkPlatforms();
     box.append(el('div', { className: 'table-wrap' }, el('table', { className: 'stack' },
-      el('thead', {}, el('tr', {}, el('th', { text: 'Jellyfin user' }), el('th', { text: 'Code' }), el('th', { text: 'Discord' }), el('th', {}))),
-      el('tbody', {}, users.users.map(userRow)))));
+      el('thead', {}, el('tr', {}, el('th', { text: 'Jellyfin user' }), el('th', { text: 'Code' }),
+        shown.map((pf) => el('th', { text: pf.label })), el('th', {}))),
+      el('tbody', {}, users.users.map((u) => userRow(u, shown))))));
   };
 
   const renderAudit = () => {
@@ -812,15 +872,17 @@
       try { localStorage.setItem('jwp-admin-help', help.open ? 'open' : 'closed'); } catch (e) { /* no storage */ }
     });
 
-    const form = $('discord-form');
-    form.addEventListener('input', () => setDirty(true));
-    form.addEventListener('submit', (e) => {
-      e.preventDefault();
-      act('Discord settings saved', async () => {
-        await api('PUT', 'api/integrations/discord', readDiscordForm());
-        setDirty(false);
+    for (const pf of PLATFORMS) {
+      const form = $(`${pf.id}-form`);
+      form.addEventListener('input', () => setDirty(pf, true));
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        act(`${pf.label} settings saved`, async () => {
+          await api('PUT', `api/integrations/${pf.id}`, readForm(pf));
+          setDirty(pf, false);
+        });
       });
-    });
+    }
     $('activity').addEventListener('toggle', () => { if ($('activity').open) refresh(true); });
 
     $('create-form').addEventListener('submit', (e) => {

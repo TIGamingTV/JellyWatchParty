@@ -24,10 +24,11 @@ Admins can use it to:
   can't show the Watch Party panel (official Android TV app, Fladder,
   Swiftfin, Infuse, ...), as **host** or **receiver**. See
   [Jellyfin devices](#jellyfin-devices);
-- **let users do this themselves from Discord**: set up the
-  [Discord bot]({{ '/discord-bot/' | relative_url }}) and give users a
-  4-digit link code under **Users and link codes**. Linked users can
-  create rooms and put their *own* devices in them, without an admin.
+- **let users do this themselves from Discord or Telegram**: set up the
+  [Discord bot]({{ '/discord-bot/' | relative_url }}) or the Telegram bot
+  and give users a 4-digit link code under **Users and link codes**.
+  Linked users can create rooms and put their *own* devices in them,
+  without an admin.
 
 This works for every room, including rooms that users created.
 
@@ -212,23 +213,29 @@ waiting for a scheduled play), `idle` (not in the player), or
 connection is up; a disconnected member keeps their place for 90 seconds
 in case they come back.
 
-## Discord bot
+## Chat bots
 
-When the [Discord bot]({{ '/discord-bot/' | relative_url }}) is set up,
-three more sections appear:
+When chat integrations are set up (see the
+[Discord bot]({{ '/discord-bot/' | relative_url }})), these sections
+appear:
 
 - **Discord bot**: turns the bot on, and sets its server, allowed channels,
   roles and limits. The chips show whether the bot container is connected.
-- **Users and link codes**: every Jellyfin user, with their code and linked
-  Discord account. **Assign code** / **New code** show a 4-digit code once.
-  **Unlink** disconnects the Discord account; **Remove code** also removes
-  the code. A code marked **Locked** got too many wrong tries; assign a new
-  one.
-- **Bot activity**: links, wrong codes (with the Discord account id) and
-  room changes. Kept until the server restarts.
+- **Telegram bot**: turns the bot on, and sets its group (a negative id;
+  send `/groupid` in the group to see it) and limits. **Group
+  administrators manage all rooms** lets the group's admins act as owners
+  of every room. Telegram has no roles or channel list.
+- **Users and link codes**: every Jellyfin user, with their code and a
+  column for each platform in use with the linked account. **Assign code**
+  / **New code** show a 4-digit code once; the same code links one account
+  on each platform. **Unlink** disconnects one platform's account; **New
+  code** and **Remove code** disconnect all of them. A code marked
+  **Locked** got too many wrong tries; assign a new one.
+- **Bot activity**: links, wrong codes (with the platform and account id)
+  and room changes. Kept until the server restarts.
 
-Rooms created on Discord show a *Discord room* badge with their owner. You
-can manage them like any other room.
+Rooms created from a chat show a *Discord room* or *Telegram room* badge
+with their owner. You can manage them like any other room.
 
 ## Security
 
