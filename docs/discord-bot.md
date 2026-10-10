@@ -196,8 +196,9 @@ All replies are private (only you see them). Passwords and codes are only
 typed into forms, never into visible command options.
 
 A device only shows up while its Jellyfin app is open and signed in **as
-you**. The first device added to an empty room becomes the host. After
-that, only the owner (or an admin) can change the host.
+you**. While a room has no host, anyone who joined it may add a device as host
+(a device added as receiver never becomes host by itself). After that,
+only the owner (or an admin) can change the host.
 
 Rooms live in the session server's memory: a server restart closes them.
 Links, codes and settings are kept.
@@ -211,9 +212,12 @@ Links, codes and settings are kept.
   it. Ownership is checked against Jellyfin's own session list at the
   moment of adding.
 - `DISCORD_INTEGRATION_TOKEN` only works on the integration API, never on
-  the admin panel. Someone holding it can act as any **linked** user, so
-  keep it as secret as the bot token, and keep port 3002 inside the Docker
-  network.
+  the admin panel. Someone holding it can act as any **linked** user (and,
+  if an admin role is set, claim that role), so keep it as secret as the bot
+  token, and keep port 3002 inside the Docker network. The bot talks to the
+  session server over plain HTTP, which is fine inside one Docker network;
+  if the bot runs on another machine, put TLS in between and use an
+  `https://` `JWP_INTEGRATION_URL`.
 - Each Discord account may make 30 requests per minute.
 - Wrong room passwords count against the same limit as in the Watch Party
   panel: 5 per minute per Jellyfin user.
