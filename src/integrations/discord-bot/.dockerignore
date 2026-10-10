@@ -1,0 +1,5 @@
+target/
+*.md
+.cargo/
+.env
+.env.*

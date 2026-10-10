@@ -19,6 +19,7 @@ compose_prod      := "docker compose -f " + compose_prod_file
 plugin_dir  := "src/plugins/jellyfin/JellyWatchParty"
 client_dir  := "src/clients/jellyfin-web"
 server_dir  := "src/server"
+discord_dir := "src/integrations/discord-bot"
 
 # -- Containers --------------------------------------------------------------
 

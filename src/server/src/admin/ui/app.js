@@ -7,6 +7,10 @@
   let pollTimer = null;
   let overview = null;
   let devices = null; // last api/jellyfin/sessions answer
+  let chat = null; // last api/integrations answer
+  let users = null; // last api/users answer
+  let audit = null; // last api/audit answer
+  let formDirty = false; // unsaved edits in the Discord settings form
 
   // --- tiny DOM helper: never uses innerHTML, so names can't inject markup.
   const el = (tag, props = {}, ...children) => {
@@ -128,6 +132,16 @@
   const fmtDrift = (d) => `${d > 0 ? '+' : ''}${d.toFixed(1)}s`;
 
   const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+  const fmtAgo = (ms) => {
+    const s = Math.max(0, Math.floor((Date.now() - ms) / 1000));
+    if (s < 60) return 'just now';
+    if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+    if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+    return `${Math.floor(s / 86400)} d ago`;
+  };
+
+  const fmtClock = (ms) => new Date(ms).toLocaleString([], { dateStyle: 'short', timeStyle: 'medium' });
 
   const KIND_BADGE = {
     web: ['Watch Party', 'badge'],
@@ -311,7 +325,9 @@
   const roomCard = (ov, room) => {
     const title = el('div', { className: 'room-title' },
       el('h3', { text: room.name }),
-      room.admin_created ? el('span', { className: 'badge badge-admin', text: 'Group' }) : el('span', { className: 'badge', text: 'User room' }),
+      room.chat
+        ? el('span', { className: 'badge badge-discord', text: 'Discord room' })
+        : room.admin_created ? el('span', { className: 'badge badge-admin', text: 'Group' }) : el('span', { className: 'badge', text: 'User room' }),
       el('span', { className: 'badge', text: room.has_password ? 'Password' : 'Open' }));
 
     const actions = el('div', { className: 'room-actions' },
@@ -357,6 +373,10 @@
       playbackPill(room),
       room.media_name ? el('span', { text: room.media_name }) : null,
       el('span', { text: plural(room.members.length, 'member') }),
+      room.chat ? el('span', {
+        title: room.chat.participants.join(', '),
+        text: `Owner ${room.chat.owner_name}, ${plural(room.chat.participants.length, 'participant')} on Discord`
+      }) : null,
       room.host_id ? null : pill('No host yet', 'warn'));
 
     const body = el('div', { className: 'room-body' },
@@ -504,7 +524,7 @@
   // The lists are rebuilt on every poll. Don't do that while the admin has a
   // dropdown in them focused (it would snap shut), but only for a while, so
   // a select that simply kept focus doesn't freeze the dashboard.
-  const LIVE_AREAS = ['rooms', 'unassigned', 'devices'];
+  const LIVE_AREAS = ['rooms', 'unassigned', 'devices', 'users'];
   let focusedAt = 0;
   document.addEventListener('focusin', () => { focusedAt = Date.now(); });
   const isInteracting = () => {
@@ -532,23 +552,215 @@
     }
   };
 
+  // --- Discord bot ---------------------------------------------------------
+  const DC_FIELDS = {
+    enabled: ['dc-enabled', 'bool'],
+    guild_id: ['dc-guild', 'text'],
+    required_role_id: ['dc-role', 'text'],
+    admin_role_id: ['dc-admin-role', 'text'],
+    max_rooms_per_user: ['dc-per-user', 'int'],
+    max_rooms_total: ['dc-total', 'int'],
+    empty_room_minutes: ['dc-empty', 'int'],
+    require_password: ['dc-require-pw', 'bool'],
+    allow_host: ['dc-host', 'bool'],
+    allow_receiver: ['dc-receiver', 'bool']
+  };
+
+  const fillDiscordForm = (s) => {
+    for (const [key, [id, type]] of Object.entries(DC_FIELDS)) {
+      if (type === 'bool') $(id).checked = !!s[key];
+      else $(id).value = s[key] ?? '';
+    }
+    $('dc-channels').value = (s.channel_ids || []).join(', ');
+  };
+
+  const readDiscordForm = () => {
+    const out = {};
+    for (const [key, [id, type]] of Object.entries(DC_FIELDS)) {
+      out[key] = type === 'bool' ? $(id).checked : type === 'int' ? parseInt($(id).value, 10) : $(id).value.trim();
+    }
+    out.channel_ids = $('dc-channels').value.split(/[\s,]+/).filter(Boolean);
+    return out;
+  };
+
+  const setDirty = (dirty) => {
+    formDirty = dirty;
+    $('dc-dirty').classList.toggle('hidden', !dirty);
+  };
+
+  const discord = () => chat && chat.available && chat.providers.find((p) => p.provider === 'discord');
+
+  const renderChat = () => {
+    const note = $('chat-note');
+    const status = $('chat-status');
+    const form = $('discord-form');
+    note.replaceChildren();
+    status.replaceChildren();
+    const p = discord();
+    for (const id of ['users-section', 'activity']) $(id).classList.toggle('hidden', !p);
+    if (!p) {
+      form.classList.add('hidden');
+      status.append(pill('Not set up', 'muted'));
+      note.append(el('p', { className: 'note' },
+        chat ? chat.reason : 'Could not load the bot settings.',
+        ' The bot needs DATA_DIR, the Jellyfin devices settings and DISCORD_INTEGRATION_TOKEN on the session server, plus the bot container.'));
+      return;
+    }
+    const s = p.settings || {};
+    status.append(s.enabled ? pill('On', 'good') : pill('Off', 'muted'));
+    if (!p.token_set) status.append(pill('No bot token', 'warn'));
+    else if (p.sidecar && p.sidecar.online) status.append(pill(`Bot online${p.sidecar.bot_name ? `: ${p.sidecar.bot_name}` : ''}`, 'good'));
+    else status.append(pill(p.sidecar ? `Bot offline since ${fmtAgo(p.sidecar.seen_at)}` : 'Bot not connected', 'bad'));
+    if (!p.token_set) {
+      note.append(el('p', { className: 'note' },
+        `Set ${p.token_var} (the same long random value) on the session server and on the bot so they can talk.`));
+    } else if (!chat.listening) {
+      note.append(el('p', { className: 'note problem', text: 'The integration API is not listening; check the server log.' }));
+    }
+    form.classList.remove('hidden');
+    const editing = form.contains(document.activeElement);
+    if (!formDirty && !editing) fillDiscordForm(s);
+  };
+
+  const assignCode = async (u) => {
+    const link = u.links && u.links.discord;
+    if (u.code) {
+      const ok = await ask({
+        title: `New code for ${u.name}?`,
+        message: `The current code stops working${link ? ` and ${link.display_name || 'their Discord account'} is disconnected` : ''}. Rooms they own stay theirs.`,
+        okLabel: 'New code'
+      });
+      if (!ok) return;
+    }
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    try {
+      const r = await api('POST', `api/users/${enc(u.id)}/code`);
+      toast(`Code for ${u.name}. They run /jwp link in Discord and type "${u.name}" and this code. It is not shown again:`, { secret: r.code });
+    } catch (e) {
+      toast(e.message, { kind: 'error' });
+    }
+    await refresh(true);
+  };
+
+  const userRow = (u) => {
+    const link = u.links && u.links.discord;
+    const c = u.code;
+    const actions = el('td', { className: 'actions' });
+    if (!u.missing && !u.disabled) {
+      actions.append(el('button', {
+        className: c ? 'btn btn-ghost btn-small' : 'btn btn-small', type: 'button',
+        text: c ? 'New code' : 'Assign code',
+        onclick: () => assignCode(u)
+      }));
+    }
+    if (link) {
+      actions.append(el('button', {
+        className: 'btn btn-ghost btn-small', type: 'button', text: 'Unlink',
+        onclick: async () => {
+          const ok = await ask({
+            title: `Unlink ${u.name}?`,
+            message: `${link.display_name || 'Their Discord account'} can't act as ${u.name} anymore. They can link again with the same code.`,
+            okLabel: 'Unlink'
+          });
+          if (ok) act('Unlinked', () => api('DELETE', `api/users/${enc(u.id)}/links/discord`));
+        }
+      }));
+    }
+    if (c) {
+      actions.append(el('button', {
+        className: 'btn btn-danger btn-small', type: 'button', text: 'Remove code',
+        onclick: async () => {
+          const ok = await ask({
+            title: `Remove ${u.name}'s code?`,
+            message: 'The code stops working and any linked Discord account is disconnected.',
+            okLabel: 'Remove code', danger: true
+          });
+          if (ok) act('Code removed', () => api('DELETE', `api/users/${enc(u.id)}/code`));
+        }
+      }));
+    }
+    const codeCell = !c ? el('span', { className: 'muted', text: 'No code' })
+      : c.frozen ? pill('Locked: too many wrong tries', 'bad')
+        : el('span', {}, el('span', { text: `Assigned ${fmtAgo(c.assigned_at)}` }),
+          c.failed ? el('div', { className: 'sub problem', text: `${plural(c.failed, 'wrong try')} so far` }) : null);
+    return el('tr', {},
+      el('td', {},
+        el('div', { className: 'name' }, u.name),
+        u.is_admin ? el('span', { className: 'badge badge-admin', text: 'Admin' }) : null,
+        u.disabled ? el('span', { className: 'badge', text: 'Disabled' }) : null,
+        u.missing ? el('span', { className: 'badge', text: 'Not in Jellyfin anymore' }) : null),
+      el('td', {}, codeCell),
+      el('td', {}, link
+        ? el('span', {}, el('div', { text: link.display_name || link.external_id }), el('div', { className: 'sub', text: `Linked ${fmtAgo(link.linked_at)}` }))
+        : el('span', { className: 'muted', text: 'Not linked' })),
+      actions);
+  };
+
+  const renderUsers = () => {
+    const box = $('users');
+    box.replaceChildren();
+    if (!discord()) return;
+    if (!users) {
+      box.append(el('p', { className: 'note problem', text: 'Could not load the users.' }));
+      return;
+    }
+    if (users.error) box.append(el('p', { className: 'note problem', text: `Can't read the Jellyfin users: ${users.error}` }));
+    $('users-count').textContent = String(users.users.length);
+    if (!users.users.length) {
+      box.append(el('p', { className: 'empty', text: 'No Jellyfin users found.' }));
+      return;
+    }
+    box.append(el('div', { className: 'table-wrap' }, el('table', { className: 'stack' },
+      el('thead', {}, el('tr', {}, el('th', { text: 'Jellyfin user' }), el('th', { text: 'Code' }), el('th', { text: 'Discord' }), el('th', {}))),
+      el('tbody', {}, users.users.map(userRow)))));
+  };
+
+  const renderAudit = () => {
+    const box = $('audit');
+    if (!$('activity').open) return;
+    box.replaceChildren();
+    const entries = (audit && audit.entries) || [];
+    if (!entries.length) {
+      box.append(el('p', { className: 'empty', text: 'Nothing yet. Links, failed codes and room changes from the bot show up here (kept until the server restarts).' }));
+      return;
+    }
+    box.append(el('ul', { className: 'audit-list' }, entries.slice(0, 200).map((e) =>
+      el('li', { className: e.warn ? 'problem' : '' },
+        el('time', { text: fmtClock(e.ts) }),
+        el('span', { className: 'audit-actor', text: e.actor }),
+        el('span', { text: e.detail })))));
+  };
+
   const render = (ov) => {
     const saved = saveChoices();
     renderServerInfo(ov);
     renderRooms(ov);
     renderUnassigned(ov);
     renderDevices(ov);
+    renderChat();
+    renderUsers();
+    renderAudit();
     restoreChoices(saved);
   };
 
   const refresh = async (force = false) => {
     try {
-      const [ov, dev] = await Promise.all([
+      const [ov, dev, ch] = await Promise.all([
         api('GET', 'api/overview'),
-        api('GET', 'api/jellyfin/sessions').catch(() => null)
+        api('GET', 'api/jellyfin/sessions').catch(() => null),
+        api('GET', 'api/integrations').catch(() => null)
       ]);
       overview = ov;
       devices = dev;
+      chat = ch;
+      if (chat && chat.available) {
+        const [us, au] = await Promise.all([
+          api('GET', 'api/users').catch(() => null),
+          $('activity').open ? api('GET', 'api/audit').catch(() => audit) : audit
+        ]);
+        users = us;
+        audit = au;
+      }
       if (force || !isInteracting()) render(overview);
     } catch (e) {
       if (!$('app-view').classList.contains('hidden')) toast(e.message, { kind: 'error' });
@@ -599,6 +811,17 @@
     help.addEventListener('toggle', () => {
       try { localStorage.setItem('jwp-admin-help', help.open ? 'open' : 'closed'); } catch (e) { /* no storage */ }
     });
+
+    const form = $('discord-form');
+    form.addEventListener('input', () => setDirty(true));
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      act('Discord settings saved', async () => {
+        await api('PUT', 'api/integrations/discord', readDiscordForm());
+        setDirty(false);
+      });
+    });
+    $('activity').addEventListener('toggle', () => { if ($('activity').open) refresh(true); });
 
     $('create-form').addEventListener('submit', (e) => {
       e.preventDefault();

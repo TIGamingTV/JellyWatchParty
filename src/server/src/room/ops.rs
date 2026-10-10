@@ -10,7 +10,7 @@ use crate::messaging::{
     broadcast_participants, broadcast_to_room, build_room_state_payload, send_to_client,
 };
 use crate::password::hash_password;
-use crate::types::{Client, PlaybackState, Room, WsMessage};
+use crate::types::{ChatRoom, Client, PlaybackState, Room, WsMessage};
 use crate::utils::now_ms;
 use log::info;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -85,6 +85,9 @@ pub fn add_member(
         room.clients.push(client_id.to_string());
     }
     room.ready_clients.remove(client_id);
+    if let Some(chat) = room.chat.as_mut() {
+        chat.empty_since = None;
+    }
     if let Some(client) = clients.get_mut(client_id) {
         client.room_id = Some(room_id.to_string());
     }
@@ -256,10 +259,51 @@ pub fn create_group(
     password: Option<&str>,
     rooms: &mut Rooms,
 ) -> Result<String, OpError> {
+    let room = empty_room(name, password)?;
+    let room_id = room.room_id.clone();
+    info!(
+        "Admin created group '{}' ({}) (has_password: {})",
+        room.name,
+        room_id,
+        room.password_hash.is_some()
+    );
+    rooms.insert(room_id.clone(), room);
+    Ok(room_id)
+}
+
+/// Creates an empty, hostless room owned by a chat integration user. It
+/// behaves like an admin group (first member becomes host, no start
+/// countdown) but is kept open while empty; see `ChatRoom`.
+pub fn create_chat_room(
+    name: &str,
+    password: Option<&str>,
+    chat: ChatRoom,
+    rooms: &mut Rooms,
+) -> Result<String, OpError> {
+    let mut room = empty_room(name, password)?;
+    room.admin_created = false;
+    let room_id = room.room_id.clone();
+    info!(
+        "{} user {} created room '{}' ({}) (has_password: {})",
+        chat.provider,
+        chat.owner,
+        room.name,
+        room_id,
+        room.password_hash.is_some()
+    );
+    room.chat = Some(ChatRoom {
+        empty_since: Some(room.created_at),
+        ..chat
+    });
+    rooms.insert(room_id.clone(), room);
+    Ok(room_id)
+}
+
+fn empty_room(name: &str, password: Option<&str>) -> Result<Room, OpError> {
     let name = clean_room_name(name)?;
     let room_id = uuid::Uuid::new_v4().to_string();
     let now = now_ms();
-    let room = Room {
+    Ok(Room {
         room_id: room_id.clone(),
         name,
         host_id: String::new(),
@@ -282,15 +326,8 @@ pub fn create_group(
         started: true,
         admin_created: true,
         created_at: now,
-    };
-    info!(
-        "Admin created group '{}' ({}) (has_password: {})",
-        room.name,
-        room_id,
-        room.password_hash.is_some()
-    );
-    rooms.insert(room_id.clone(), room);
-    Ok(room_id)
+        chat: None,
+    })
 }
 
 /// Renames a room and/or sets (`Some(Some(pw))`), clears (`Some(None)` or

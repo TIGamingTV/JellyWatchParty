@@ -18,6 +18,7 @@ JellyWatchParty is a Jellyfin plugin that enables synchronized media playback ac
 - **[Features]({{ '/features/' | relative_url }})** - What JellyWatchParty does, compatibility, and the roadmap
 - **[Core Structure]({{ '/core-structure/' | relative_url }})** - How the plugin, session server, and web client fit together
 - **[User Guide]({{ '/user-guide/' | relative_url }})** - Creating and joining watch parties
+- **[Discord Bot]({{ '/discord-bot/' | relative_url }})** - Optional: let linked Discord users run watch parties without an admin
 - **[Troubleshooting & FAQ]({{ '/troubleshooting/' | relative_url }})** - Common issues and questions
 
 Contributing code instead? See [Development Setup]({{ '/development/setup/' | relative_url }}) to

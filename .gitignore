@@ -19,6 +19,7 @@ src/plugins/jellyfin/JellyWatchParty/Web/*
 
 # Rust build artifacts
 src/server/target/
+src/integrations/*/target/
 
 # Jekyll
 docs/_site/

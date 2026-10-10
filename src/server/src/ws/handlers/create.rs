@@ -92,6 +92,7 @@ fn build_room(client_id: &str, host_name: &str, payload: Option<&serde_json::Val
         started,
         admin_created: false,
         created_at: now_ms(),
+        chat: None,
     }
 }
 
@@ -161,11 +162,14 @@ pub(in crate::ws) async fn handle_create_room(
         return;
     }
 
+    // A host starting a new room closes its old one - unless that is a chat
+    // room: only its owner (or an admin) may close it, so the host just
+    // leaves it below (the next member takes over).
     let existing_room_id = {
         let locked_rooms = rooms.read().await;
         locked_rooms
             .values()
-            .find(|r| r.host_id == client_id)
+            .find(|r| r.host_id == client_id && r.chat.is_none())
             .map(|r| r.room_id.clone())
     };
     if let Some(room_id) = existing_room_id {
@@ -319,6 +323,68 @@ mod tests {
         );
         assert_eq!(name, "Custom");
         assert_eq!(payload_name, Some("Custom".to_string()));
+    }
+
+    fn create_msg() -> IncomingMessage {
+        IncomingMessage {
+            msg_type: crate::types::ClientMessageType::CreateRoom,
+            room: None,
+            client: None,
+            payload: Some(serde_json::json!({})),
+            ts: 0,
+            server_ts: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn creating_a_room_closes_the_hosts_old_room() {
+        let clients = test_helpers::create_clients();
+        let rooms = test_helpers::create_rooms();
+        let _rx = {
+            let mut lc = clients.write().await;
+            let mut lr = rooms.write().await;
+            test_helpers::setup_room_with_host(&mut lc, &mut lr, "host")
+        };
+        handle_create_room("host", &create_msg(), &clients, &rooms).await;
+        let lr = rooms.read().await;
+        assert!(!lr.contains_key("room-1"));
+        assert_eq!(lr.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_web_host_cannot_close_a_chat_room_by_starting_another() {
+        // Only a chat room's owner (or an admin) may close it. A panel user
+        // who became its host just leaves it.
+        let clients = test_helpers::create_clients();
+        let rooms = test_helpers::create_rooms();
+        let _rx = {
+            let mut lc = clients.write().await;
+            let mut lr = rooms.write().await;
+            let rx = test_helpers::setup_room_with_host(&mut lc, &mut lr, "host");
+            let (mut guest, _) = test_helpers::create_client_with_rx("ug", "Guest", true);
+            guest.room_id = Some("room-1".into());
+            lc.insert("guest".into(), guest);
+            let room = lr.get_mut("room-1").unwrap();
+            room.clients.push("guest".into());
+            room.chat = Some(crate::types::ChatRoom {
+                provider: "discord".into(),
+                owner: "owner".into(),
+                owner_name: "Owner".into(),
+                participants: Vec::new(),
+                panel: None,
+                empty_since: None,
+            });
+            rx
+        };
+        handle_create_room("host", &create_msg(), &clients, &rooms).await;
+        let lr = rooms.read().await;
+        let chat_room = lr.get("room-1").expect("the chat room stays open");
+        assert!(!chat_room.clients.contains(&"host".to_string()));
+        assert_eq!(chat_room.host_id, "guest");
+        let lc = clients.read().await;
+        let new_room = lc["host"].room_id.clone().unwrap();
+        assert_ne!(new_room, "room-1");
+        assert_eq!(lr[&new_room].host_id, "host");
     }
 
     #[test]

@@ -59,6 +59,7 @@ pub fn create_room(room_id: &str, host_id: &str) -> Room {
         started: true,
         admin_created: false,
         created_at: 0,
+        chat: None,
     }
 }
 

@@ -58,6 +58,7 @@ session server, web client) work together to make this happen.
 - **Participant list with status** - See who is in the room, who hosts, and whether each person is in sync, catching up, buffering, loading or not watching
 - **Automatic host transfer** - If the host leaves with others still in the room, the earliest-joined remaining participant is promoted to host instead of the room closing
 - **Admin panel** - A separate web UI on the session server where admins see every room, its members and their sync status, create password-protected groups, add or move people between rooms, change the host, and remove people or close rooms (see [Admin Panel]({{ '/admin-panel/' | relative_url }}))
+- **Discord bot** - Linked users create rooms, join them with a password and put their own TV apps and other Jellyfin clients in as host or receiver from Discord, without an admin; the room owner picks the host. Users link once with a 4-digit code from the admin panel (see [Discord Bot]({{ '/discord-bot/' | relative_url }}))
 - **Jellyfin devices in rooms (admin)** - From the admin panel, put TV apps and other Jellyfin clients that can't show the Watch Party panel into any room as host or receiver; the session server drives them over the Jellyfin API and starts playback on receivers itself (see [Admin Panel: Jellyfin devices]({{ '/admin-panel/' | relative_url }}#jellyfin-devices))
 
 ### Playback Synchronization

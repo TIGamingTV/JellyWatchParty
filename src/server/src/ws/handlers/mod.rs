@@ -11,6 +11,7 @@ pub(in crate::ws) use auth::handle_auth;
 pub(in crate::ws) use chat::handle_chat_message;
 pub(in crate::ws) use create::handle_create_room;
 pub(in crate::ws) use join::handle_join_room;
+pub(crate) use join::{lockout_remaining_ms, record_failed_join};
 pub(in crate::ws) use media::handle_set_media;
 pub(in crate::ws) use misc::{
     handle_client_log, handle_leave_room, handle_ping, handle_ready, handle_unknown,

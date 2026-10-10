@@ -11,7 +11,7 @@ use std::collections::HashMap;
 
 /// If `user_id` has used up its wrong-password budget for this room and the
 /// window hasn't expired yet, returns how many ms until it may try again.
-fn lockout_remaining_ms(
+pub(crate) fn lockout_remaining_ms(
     failed_joins: &HashMap<String, (u32, u64)>,
     user_id: &str,
     now: u64,
@@ -25,7 +25,11 @@ fn lockout_remaining_ms(
 /// Counts one wrong password for `user_id`, starting a fresh window if the
 /// previous one expired. Expired entries for other users are pruned at the
 /// same time so the map stays bounded by recently-active guessers.
-fn record_failed_join(failed_joins: &mut HashMap<String, (u32, u64)>, user_id: &str, now: u64) {
+pub(crate) fn record_failed_join(
+    failed_joins: &mut HashMap<String, (u32, u64)>,
+    user_id: &str,
+    now: u64,
+) {
     failed_joins.retain(|_, &mut (_, start)| now.saturating_sub(start) < FAILED_JOIN_WINDOW_MS);
     let entry = failed_joins.entry(user_id.to_string()).or_insert((0, now));
     entry.0 += 1;

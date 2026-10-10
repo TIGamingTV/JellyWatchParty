@@ -21,17 +21,17 @@ See [Release]({{ '/development/release/' | relative_url }}) for the full flow.
 Runs on every push and pull request to `main` and `develop` branches.
 
 ```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   Rust Tests    │     │   .NET Tests    │     │   JS Lint       │
-│  (formatting,   │     │  (build, test)  │     │  (syntax check) │
-│  clippy, test)  │     │                 │     │                 │
-└────────┬────────┘     └─────────────────┘     └─────────────────┘
-         │
-         ▼
-┌─────────────────┐
-│  Build Server   │
-│  (Docker image) │
-└─────────────────┘
+┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
+│   Rust Tests    │  │ Discord Bot     │  │   .NET Tests    │  │   JS Lint       │
+│  (formatting,   │  │ Tests (fmt,     │  │  (build, test)  │  │  (syntax check) │
+│  clippy, test)  │  │ clippy, test)   │  │                 │  │                 │
+└────────┬────────┘  └────────┬────────┘  └─────────────────┘  └─────────────────┘
+         │                    │
+         ▼                    ▼
+┌─────────────────┐  ┌─────────────────┐
+│  Build Server   │  │ Build Discord   │
+│  (Docker image) │  │ Bot (Docker)    │
+└─────────────────┘  └─────────────────┘
 ```
 
 #### Jobs
@@ -39,9 +39,11 @@ Runs on every push and pull request to `main` and `develop` branches.
 | Job | Steps | Duration |
 |-----|-------|----------|
 | **Rust Tests** | Format check, Clippy, Unit tests | ~3 min |
+| **Discord Bot Tests** | Format check, Clippy, Unit tests (`src/integrations/discord-bot`) | ~2 min |
 | **.NET Tests** | Build, Unit tests | ~2 min |
 | **JavaScript Lint** | Syntax validation | ~30s |
-| **Build Server** | Docker multi-stage build | ~5 min |
+| **Build Server** | Docker multi-stage build (not pushed) | ~5 min |
+| **Build Discord Bot Image** | Docker build of `discord-bot.Dockerfile` (not pushed) | ~3 min |
 
 ### Security Workflow (`security.yml`)
 
@@ -58,27 +60,35 @@ Results are uploaded to the GitHub Security tab.
 ### Publish Workflow (`publish.yml`)
 
 Handles Docker image publishing to GHCR and release artifacts. A `changes`
-job (via `dorny/paths-filter`) detects whether `src/server/**` or the plugin
-(`src/plugins/jellyfin/**`, `src/clients/jellyfin-web/**`) changed, so each
-push only rebuilds the components that actually changed.
+job (via `dorny/paths-filter`) detects whether the server (`src/server/**`,
+`infra/docker/server.Dockerfile`), the Discord bot
+(`src/integrations/discord-bot/**`, `infra/docker/discord-bot.Dockerfile`)
+or the plugin (`src/plugins/jellyfin/**`, `src/clients/jellyfin-web/**`)
+changed, so each push only rebuilds the components that actually changed.
+A change to `docker-image.yml` rebuilds both images.
+
+Both images are built by the reusable workflow `docker-image.yml`: one native
+runner per platform (amd64, arm64) pushes by digest, then a merge job creates
+the multi-arch manifest and its tags.
 
 #### Triggers
 
 | Event | Condition | Result |
 |-------|-----------|--------|
-| Push to `main` | Server changed | Docker image tagged `beta` |
-| Push to `develop` | Server changed | Docker image tagged `dev` |
+| Push to `main` | Server / bot changed | That image tagged `beta` |
+| Push to `develop` | Server / bot changed | That image tagged `dev` |
 | Push to `develop` | Plugin/client changed | Plugin rebuilt (Jellyfin 12.x), rolling `develop-latest` pre-release updated with the zip, `manifest-dev.json` updated with the `targetAbi` entry |
-| GitHub Release | Published | Docker image tagged `vX.Y.Z`, `vX.Y`, `latest`; plugin built for Jellyfin 12.x, zip attached to the release, `manifest.json` updated with the `targetAbi` entry |
+| GitHub Release | Published | Both images tagged `X.Y.Z`, `X.Y`, `latest`; plugin built for Jellyfin 12.x, zip attached to the release, `manifest.json` updated with the `targetAbi` entry |
 
 #### Jobs
 
 | Job | Trigger | Description |
 |-----|---------|--------------|
-| **Detect Changes** | Push only | Computes `server`/`plugin` path-filter outputs used to gate the jobs below |
-| **Build & Push Docker Image** | Server changed, or release | Builds multi-platform image (amd64, arm64) and pushes to GHCR |
+| **Detect Changes** | Push only | Computes `server`/`bot`/`plugin` path-filter outputs used to gate the jobs below |
+| **Session Server Image** | Server changed, or release | Builds `jwp-session-server` (amd64, arm64) and pushes to GHCR |
+| **Discord Bot Image** | Bot changed, or release | Builds `jwp-discord-bot` (amd64, arm64) and pushes to GHCR |
 | **Build Jellyfin Plugin** | Release only | Builds the plugin for `net10.0`/Jellyfin 12.x and creates a zip archive |
-| **Upload Release Assets** | Release only | Attaches the plugin zip to GitHub Release |
+| **Upload Release Assets** | Release only | Attaches the plugin zip and Windows server to the GitHub Release (needs the server image, not the bot image) |
 | **Update Plugin Manifest** | Release only | Adds the `targetAbi 12.0.0.0` entry to `manifest.json` |
 | **Build Develop Plugin** | Push to `develop`, plugin/client changed | Same build as the release job |
 | **Publish Develop Plugin & Manifest** | After the job above | Publishes the zip as an asset on the rolling `develop-latest` pre-release and updates the `targetAbi` entry in `manifest-dev.json` |
@@ -104,21 +114,28 @@ thing happens against a separate develop channel — see
 [Release: Develop Plugin Channel]({{ '/development/release/' | relative_url }}#develop-plugin-channel) for how
 testers install it.
 
-#### Docker Image
+#### Docker Images
+
+Same tags for `jwp-session-server` and `jwp-discord-bot`:
 
 ```bash
 # Latest stable release
 docker pull ghcr.io/tigamingtv/jwp-session-server:latest
+docker pull ghcr.io/tigamingtv/jwp-discord-bot:latest
 
-# Specific version
-docker pull ghcr.io/tigamingtv/jwp-session-server:v0.1.0
+# Specific version (release v0.1.0)
+docker pull ghcr.io/tigamingtv/jwp-session-server:0.1.0
 
 # Latest build from main (pre-release)
 docker pull ghcr.io/tigamingtv/jwp-session-server:beta
 
 # Latest build from develop
 docker pull ghcr.io/tigamingtv/jwp-session-server:dev
+docker pull ghcr.io/tigamingtv/jwp-discord-bot:dev
 ```
+
+A new GHCR package starts out private; see
+[Release: Package Visibility]({{ '/development/release/' | relative_url }}#package-visibility).
 
 ## Build Configuration
 
@@ -187,7 +204,8 @@ cd src/server && cargo clippy -- -D warnings
 **Docker build fails:**
 ```bash
 # Test locally
-docker build -t test ./src/server
+docker build -f infra/docker/server.Dockerfile -t test ./src/server
+docker build -f infra/docker/discord-bot.Dockerfile -t test-bot ./src/integrations/discord-bot
 ```
 
 ## Badges

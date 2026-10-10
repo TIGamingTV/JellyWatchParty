@@ -59,11 +59,13 @@ hit that symptom on an older version, check your Jellyfin server logs for
 The admin panel has its own `ADMIN_*` variables (port, login, cookie
 options), and `JELLYFIN_URL` / `JELLYFIN_API_KEY` for putting Jellyfin
 devices into rooms. See [Admin Panel]({{ '/admin-panel/' | relative_url }}#environment-variables).
+The Discord bot adds `DATA_DIR`, `DISCORD_INTEGRATION_TOKEN` and
+`INTEGRATION_HOST` / `INTEGRATION_PORT`; see [Discord Bot]({{ '/discord-bot/' | relative_url }}#2-configure-the-containers).
 
 ```yaml
 services:
   session-server:
-    image: jwp-session-server
+    image: ghcr.io/tigamingtv/jwp-session-server:latest
     ports:
       - "3000:3000"
     environment:
@@ -123,7 +125,7 @@ authoritative list of constants rather than repeating it here.
 ```yaml
 services:
   session-server:
-    image: jwp-session-server
+    image: ghcr.io/tigamingtv/jwp-session-server:latest
     ports:
       - "3000:3000"
 ```
@@ -135,7 +137,7 @@ Plugin settings: JWT Secret empty, Session Server URL empty.
 ```yaml
 services:
   session-server:
-    image: jwp-session-server
+    image: ghcr.io/tigamingtv/jwp-session-server:latest
     ports:
       - "127.0.0.1:3000:3000"  # Only localhost
     environment:
@@ -159,7 +161,7 @@ across multiple Jellyfin instances pointed at the same server, just set
 ```yaml
 services:
   session-server:
-    image: jwp-session-server
+    image: ghcr.io/tigamingtv/jwp-session-server:latest
     environment:
       - ALLOWED_ORIGINS=https://jellyfin1.example.com,https://jellyfin2.example.com
 ```

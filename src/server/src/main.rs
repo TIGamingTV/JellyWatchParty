@@ -1,5 +1,7 @@
 mod admin;
 mod auth;
+mod events;
+mod integration;
 mod jellyfin;
 mod messaging;
 mod password;
@@ -97,8 +99,23 @@ fn start_admin_panel(
             }
             tasks::spawn_empty_group_reaper(clients.clone(), rooms.clone(), cfg.empty_group_ttl_ms);
             let jellyfin = start_jellyfin_bridge(clients, rooms);
-            let state =
-                admin::AdminState::new(clients.clone(), rooms.clone(), cfg, jwt_enabled, jellyfin);
+            let integration = integration::start(
+                clients,
+                rooms,
+                match &jellyfin {
+                    admin::JellyfinStatus::Enabled(b) => Some(b),
+                    admin::JellyfinStatus::Unavailable(_) => None,
+                },
+                tasks::wait_for_shutdown(shutdown_rx.clone()),
+            );
+            let state = admin::AdminState::new(
+                clients.clone(),
+                rooms.clone(),
+                cfg,
+                jwt_enabled,
+                jellyfin,
+                integration,
+            );
             tokio::spawn(admin::serve(state, tasks::wait_for_shutdown(shutdown_rx)));
         }
     }

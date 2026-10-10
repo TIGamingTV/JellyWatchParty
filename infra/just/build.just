@@ -41,6 +41,12 @@ server:
     @cd {{server_dir}} && cargo build --release
     @echo -e "{{GREEN}}✓ Server built: {{server_dir}}/target/release/{{RESET}}"
 
+[doc('Build the Discord bot locally (Rust)')]
+discord:
+    @echo -e "{{GREEN}}▶ Building Discord bot...{{RESET}}"
+    @cd {{discord_dir}} && cargo build --release
+    @echo -e "{{GREEN}}✓ Bot built: {{discord_dir}}/target/release/{{RESET}}"
+
 [doc('Rebuild session server Docker image')]
 image:
     @echo -e "{{GREEN}}▶ Building session server Docker image...{{RESET}}"

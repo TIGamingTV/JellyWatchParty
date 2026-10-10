@@ -2,9 +2,9 @@ name: Security
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main, develop]
   pull_request:
-    branches: [main, dev]
+    branches: [main, develop]
   schedule:
     # Run weekly on Monday at 00:00 UTC
     - cron: '0 0 * * 1'
@@ -27,19 +27,33 @@ jobs:
         working-directory: src/server
         run: cargo audit
 
+      - name: Run cargo audit (Discord bot)
+        working-directory: src/integrations/discord-bot
+        run: cargo audit
+
   trivy-scan:
-    name: Trivy Container Scan
+    name: Trivy Container Scan (${{ matrix.name }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: session-server
+            dockerfile: infra/docker/server.Dockerfile
+            context: ./src/server
+          - name: discord-bot
+            dockerfile: infra/docker/discord-bot.Dockerfile
+            context: ./src/integrations/discord-bot
     steps:
       - uses: actions/checkout@v4
 
       - name: Build Docker image
-        run: docker build -f infra/docker/server.Dockerfile -t jwp-session-server:scan ./src/server
+        run: docker build -f ${{ matrix.dockerfile }} -t jwp-${{ matrix.name }}:scan ${{ matrix.context }}
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: 'jwp-session-server:scan'
+          image-ref: 'jwp-${{ matrix.name }}:scan'
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH'
@@ -49,6 +63,7 @@ jobs:
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'
+          category: trivy-${{ matrix.name }}
 
   codeql:
     name: CodeQL Analysis

@@ -22,10 +22,13 @@ As the host, you control playback for everyone. When you play, pause, or seek, a
 ### Watching on a TV App
 
 If you're watching on a native/TV client that can't run the Watch Party
-UI at all (e.g. the official Android TV app or Fladder), ask an admin:
-they can put your device into a room from the session server's
-[admin panel]({{ '/admin-panel/' | relative_url }}#jellyfin-devices), as host or receiver. A receiver TV
-is started on the room's item automatically.
+UI at all (e.g. the official Android TV app or Fladder), you can put your
+device into a room yourself if your server has the
+[Discord bot]({{ '/discord-bot/' | relative_url }}): in Discord, run
+`/jwp device add` while the app is open and signed in as you. Otherwise, ask
+an admin: they can put your device into a room from the session server's
+[admin panel]({{ '/admin-panel/' | relative_url }}#jellyfin-devices). Either way, the device joins as host or
+receiver, and a receiver TV is started on the room's item automatically.
 
 On servers where the admin allows it, you can also bridge your own
 device yourself from a browser signed in to your account — see

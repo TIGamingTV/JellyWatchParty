@@ -23,7 +23,11 @@ Admins can use it to:
 - **put Jellyfin devices into rooms**: TV apps and other clients that
   can't show the Watch Party panel (official Android TV app, Fladder,
   Swiftfin, Infuse, ...), as **host** or **receiver**. See
-  [Jellyfin devices](#jellyfin-devices).
+  [Jellyfin devices](#jellyfin-devices);
+- **let users do this themselves from Discord**: set up the
+  [Discord bot]({{ '/discord-bot/' | relative_url }}) and give users a
+  4-digit link code under **Users and link codes**. Linked users can
+  create rooms and put their *own* devices in them, without an admin.
 
 This works for every room, including rooms that users created.
 
@@ -207,6 +211,24 @@ waiting for a scheduled play), `idle` (not in the player), or
 `playing`/`paused` for the host. The dot shows whether the member's
 connection is up; a disconnected member keeps their place for 90 seconds
 in case they come back.
+
+## Discord bot
+
+When the [Discord bot]({{ '/discord-bot/' | relative_url }}) is set up,
+three more sections appear:
+
+- **Discord bot**: turns the bot on, and sets its server, allowed channels,
+  roles and limits. The chips show whether the bot container is connected.
+- **Users and link codes**: every Jellyfin user, with their code and linked
+  Discord account. **Assign code** / **New code** show a 4-digit code once.
+  **Unlink** disconnects the Discord account; **Remove code** also removes
+  the code. A code marked **Locked** got too many wrong tries; assign a new
+  one.
+- **Bot activity**: links, wrong codes (with the Discord account id) and
+  room changes. Kept until the server restarts.
+
+Rooms created on Discord show a *Discord room* badge with their owner. You
+can manage them like any other room.
 
 ## Security
 

@@ -22,6 +22,20 @@ fn detach_client_from_room(
     }
 
     if room.clients.is_empty() {
+        if let Some(chat) = room.chat.as_mut() {
+            // A chat-created room outlives its devices: its participants
+            // are still around in the chat and may add another one. It
+            // waits, hostless, until the integration's empty-room timeout.
+            chat.empty_since = Some(now_ms());
+            room.host_id.clear();
+            room.pending_play = None;
+            room.ready_clients.clear();
+            info!(
+                "Room {} is empty; kept open for its chat participants",
+                room_id
+            );
+            return None;
+        }
         let clients_to_notify = room.clients.clone();
         return Some((room_id, clients_to_notify));
     }
@@ -250,6 +264,28 @@ mod tests {
         // Only devices left: the earliest one takes over.
         detach_client_from_room("person", &mut clients, &mut rooms);
         assert_eq!(rooms["room-1"].host_id, "tv");
+    }
+
+    #[test]
+    fn an_emptied_chat_room_stays_open_and_hostless() {
+        let mut clients = HashMap::new();
+        let mut rooms = HashMap::new();
+        let _rx = test_helpers::setup_room_with_host(&mut clients, &mut rooms, "host-1");
+        rooms.get_mut("room-1").unwrap().chat = Some(crate::types::ChatRoom {
+            provider: "discord".into(),
+            owner: "u".into(),
+            owner_name: "U".into(),
+            participants: Vec::new(),
+            panel: None,
+            empty_since: None,
+        });
+
+        handle_leave("host-1", &mut clients, &mut rooms);
+
+        let room = &rooms["room-1"];
+        assert!(room.is_hostless());
+        assert!(room.clients.is_empty());
+        assert!(room.chat.as_ref().unwrap().empty_since.is_some());
     }
 
     #[test]
