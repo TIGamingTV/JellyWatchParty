@@ -1,8 +1,9 @@
 //! What chat users can do, and who may do it.
 //!
-//! Every action first passes `caller` (platform enabled, right server and
-//! channel, required role, per-account rate limit), then - except linking -
-//! `me` (the chat account is linked to an existing, enabled Jellyfin user).
+//! Every action first passes `caller` (platform enabled, right server or
+//! group and channel, required role, per-account rate limit), then - except
+//! linking - `me` (the chat account is linked to an existing, enabled
+//! Jellyfin user).
 //!
 //! Permissions in a chat room:
 //! - participants (joined through the chat, with the password if any) may
@@ -13,7 +14,9 @@
 //!   password, hand the room over and close it.
 
 use super::store::{clean_code, ChatSettings, CodeCheck, Link};
-use super::{clean_display_name, valid_external_id, Actor, IntError, IntResult, Integration};
+use super::{
+    clean_display_name, valid_chat_id, valid_external_id, Actor, IntError, IntResult, Integration,
+};
 use crate::jellyfin::api::normalize_id;
 use crate::jellyfin::bridge::{AddError, Role};
 use crate::messaging::broadcast_room_list;
@@ -201,7 +204,7 @@ impl Integration {
         if settings.guild_id.is_empty() || settings.guild_id != actor.guild_id {
             return Err(IntError::forbidden(
                 "wrong_guild",
-                "This bot only works in its own server",
+                "This bot only works in its own server or group",
             ));
         }
         if !settings.channel_ids.is_empty() && !settings.channel_ids.contains(&actor.channel_id) {
@@ -1040,7 +1043,7 @@ impl Integration {
         channel_id: &str,
         message_id: &str,
     ) -> IntResult {
-        if !valid_external_id(channel_id) || !valid_external_id(message_id) {
+        if !valid_chat_id(channel_id) || !valid_external_id(message_id) {
             return Err(IntError::invalid("Invalid channel or message id"));
         }
         {

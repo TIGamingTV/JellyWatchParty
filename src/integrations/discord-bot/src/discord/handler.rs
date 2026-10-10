@@ -2,15 +2,16 @@
 //! modals. Every reply is ephemeral (only the clicker sees it) and sent
 //! without mentions; the public room panels are handled in `sync.rs`.
 
-use crate::api::{room_path, Actor, Api, ApiError, Device, Room, Settings};
-use crate::commands::{self, Invocation};
-use crate::ids::{self, Id};
-use crate::panel::{self, Style};
-use crate::sync::Panels;
-use crate::text::{escape, fit, join_within, label, MESSAGE_MAX};
+use super::commands::{self, Invocation};
+use super::flush::{self, DiscordPanels};
+use super::ids::{self, Id};
+use super::panel::{self, Style};
+use super::text::{escape, fit, join_within, label, MESSAGE_MAX};
+use crate::api::{room_path, Actor, Api, ApiError, Device, Room};
+use crate::core::{Core, Platform};
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use twilight_http::Client;
 use twilight_model::application::command::{CommandOptionChoice, CommandOptionChoiceValue};
@@ -28,49 +29,51 @@ use twilight_model::id::Id as DcId;
 const DEVICE_CACHE: Duration = Duration::from_secs(15);
 
 /// State shared by the interaction handler and the background loops.
+/// Derefs to the platform-independent `Core` (API, settings, rooms).
 pub struct Shared {
-    pub api: Api,
+    pub core: Core,
     pub http: Arc<Client>,
     pub app_id: DcId<ApplicationMarker>,
-    pub settings: RwLock<Option<Settings>>,
-    pub rooms: RwLock<Vec<Room>>,
-    pub panels: Mutex<Panels>,
-    pub bot_name: RwLock<String>,
+    pub panels: Mutex<DiscordPanels>,
     pub registered_guild: tokio::sync::Mutex<Option<u64>>,
     devices: Mutex<HashMap<String, (Instant, Vec<Device>)>>,
+}
+
+impl std::ops::Deref for Shared {
+    type Target = Core;
+
+    fn deref(&self) -> &Core {
+        &self.core
+    }
+}
+
+impl Platform for Shared {
+    fn core(&self) -> &Core {
+        &self.core
+    }
+
+    fn rooms_changed(&self, rooms: &[Room]) {
+        flush::apply(&mut self.panels(), rooms);
+    }
+
+    async fn settings_checked(&self) {
+        self.sync_commands().await;
+    }
 }
 
 impl Shared {
     pub fn new(api: Api, http: Arc<Client>, app_id: DcId<ApplicationMarker>) -> Self {
         Self {
-            api,
+            core: Core::new("Discord", api),
             http,
             app_id,
-            settings: RwLock::new(None),
-            rooms: RwLock::new(Vec::new()),
-            panels: Mutex::new(Panels::default()),
-            bot_name: RwLock::new(String::new()),
+            panels: Mutex::new(flush::new_panels()),
             registered_guild: tokio::sync::Mutex::new(None),
             devices: Mutex::new(HashMap::new()),
         }
     }
 
-    pub fn settings(&self) -> Option<Settings> {
-        self.settings
-            .read()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone()
-    }
-
-    pub fn rooms(&self) -> Vec<Room> {
-        self.rooms.read().unwrap_or_else(|e| e.into_inner()).clone()
-    }
-
-    pub fn room(&self, id: &str) -> Option<Room> {
-        self.rooms().into_iter().find(|r| r.id == id)
-    }
-
-    pub fn panels(&self) -> std::sync::MutexGuard<'_, Panels> {
+    pub fn panels(&self) -> std::sync::MutexGuard<'_, DiscordPanels> {
         self.panels.lock().unwrap_or_else(|e| e.into_inner())
     }
 
@@ -1164,7 +1167,7 @@ impl Bot {
             .map_err(|e| e.to_string())?;
         self.shared
             .panels()
-            .posted(channel.get(), msg.id.get(), &room.name, view);
+            .posted((channel.get(), msg.id.get()), &room.name, view);
         self.api()
             .set_panel(
                 room_id,
