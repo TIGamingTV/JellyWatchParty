@@ -13,12 +13,24 @@ pub const MIN_TOKEN_LEN: usize = 32;
 /// Platforms with a sidecar, and the env var holding each one's token.
 pub const PROVIDERS: &[(&str, &str)] = &[("discord", "DISCORD_INTEGRATION_TOKEN")];
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct IntegrationConfig {
     pub data_dir: PathBuf,
     pub addr: SocketAddr,
     /// `(provider, token)` for every sidecar that is set up.
     pub tokens: Vec<(String, String)>,
+}
+
+// Never print the tokens.
+impl std::fmt::Debug for IntegrationConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let providers: Vec<&str> = self.tokens.iter().map(|(p, _)| p.as_str()).collect();
+        f.debug_struct("IntegrationConfig")
+            .field("data_dir", &self.data_dir)
+            .field("addr", &self.addr)
+            .field("tokens_for", &providers)
+            .finish()
+    }
 }
 
 #[derive(Debug)]
@@ -174,6 +186,10 @@ mod tests {
             panic!("expected enabled")
         };
         assert_eq!(c.tokens, vec![("discord".to_string(), TOKEN.to_string())]);
+        assert!(
+            !format!("{:?}", c).contains(TOKEN),
+            "tokens are not printed"
+        );
     }
 
     #[test]
