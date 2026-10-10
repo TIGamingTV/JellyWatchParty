@@ -13,6 +13,7 @@ nav_order: 7
 4. [ ] Browser cache cleared? (Ctrl+F5)
 5. [ ] Correct WebSocket URL configured?
 6. [ ] Firewall allowing the session server port (default 3000)?
+7. [ ] Using the Discord bot? See [Discord Bot](#discord-bot) below.
 
 Related: [Core Structure]({{ '/core-structure/' | relative_url }}) for expected system behavior,
 [Security]({{ '/security/' | relative_url }}) for authentication/CORS issues, [Configuration]({{ '/configuration/' | relative_url }})
@@ -86,6 +87,62 @@ Usually caused by rapid page refreshes/reconnection attempts (token limit) or sp
 ### Panel Opens But Empty
 
 Wait for the WebSocket to finish connecting ("Connecting..." status), check the browser console (F12) for JavaScript/script-loading errors, and clear the browser cache in case an old script version is cached.
+
+### Discord Bot
+
+Setup is in the [Discord Bot guide]({{ '/discord-bot/' | relative_url }}).
+Work through these in order:
+
+1. **`/jwp` doesn't appear in Discord.** In the admin panel, check that
+   **Bot enabled** is on and **Server ID** is the server's number (right-click
+   the server > Copy Server ID, with Developer Mode on). Check that the bot
+   was invited with the `applications.commands` scope. After you save the
+   Server ID, allow up to 30 seconds. If it still doesn't appear, check
+   `docker logs jwp-discord-bot`.
+2. **"Watch parties from chat are turned off on this server".** **Bot
+   enabled** is off in the admin panel.
+3. **The chip reads "No bot token" or "Bot offline".** Run
+   `docker ps` and check that `jwp-discord-bot` is up. It only starts with
+   `--profile discord`. Both containers need the same token: the session
+   server's `DISCORD_INTEGRATION_TOKEN` and the bot's `JWP_INTEGRATION_TOKEN`.
+   The token must be at least 32 characters (`openssl rand -hex 32`). If
+   Discord rejects `DISCORD_BOT_TOKEN`, the bot log says
+   `Discord connection ended for good (bad token or intents?)`.
+4. **The session server logs `Chat integrations: NOT started - ...`.** The
+   reason follows the dash. Common causes: `DATA_DIR` is unset (the compose
+   files set `/data`); `DISCORD_INTEGRATION_TOKEN` is missing or too short;
+   `INTEGRATION_HOST` is a name rather than an IP address (`localhost` is not
+   accepted); `INTEGRATION_PORT` equals `PORT` or `ADMIN_PORT`. The bot also
+   needs the admin panel running (`ADMIN_PASSWORD` set, `ADMIN_ENABLED` not
+   `false`) and the Jellyfin devices settings (`JELLYFIN_URL`,
+   `JELLYFIN_API_KEY`).
+5. **The bot's `JWP_INTEGRATION_URL` can't reach the session server.** The
+   bot's default is `http://session-server:3002`. The quick-start compose uses
+   `jwp-session`, which sets the URL explicitly. If you changed
+   `INTEGRATION_PORT`, the URL must change too.
+6. **A user gets "wrong name or code" with the right code.** The bot gives
+   the same answer for a wrong name, a wrong code and a locked code, on
+   purpose. Check the Jellyfin user name, then the admin panel: a code marked
+   **Locked: too many wrong tries** needs **New code**. If the Discord account
+   was blocked for too many wrong codes, wait for the 15-minute window to end.
+   **Bot activity** lists the attempts with the Discord account id.
+7. **A correct code is refused with "already linked".** The Jellyfin user is
+   linked to a different Discord account. An admin unlinks the old account
+   under **Users and link codes**, or assigns a new code.
+8. **`/jwp device add` says "Devices can't be added as host/receiver on this
+   server".** That role is turned off in **Devices may be added as host /
+   receiver**. The device list only shows devices that are open in a Jellyfin
+   app signed in as you.
+9. **"The room already has a host; only its owner can change that".** Anyone
+   can add a device as host only while a room has no host. After that, only
+   the owner or an admin can change it. Add the device as receiver instead.
+10. **A Discord room disappeared.** Rooms close when the session server
+    restarts, and when nobody is in them for **Close empty rooms after**
+    minutes (default 30). Links and settings survive a restart.
+11. **Codes stop working after you move or restore the data.** The
+    `secret.key` file in `DATA_DIR` is missing or was replaced. A new key is
+    created silently, and every existing code stops matching. Restore the
+    whole `jwp-data` volume, or assign new codes.
 
 ## Log Analysis
 

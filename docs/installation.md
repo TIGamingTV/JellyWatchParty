@@ -260,6 +260,11 @@ curl http://localhost:3000/health
 
 ## Environment Variables
 
+This is the core list. The admin panel and Jellyfin device variables are in
+the [Admin Panel]({{ '/admin-panel/' | relative_url }}#environment-variables) reference, the Discord bot
+variables are in the [Discord Bot]({{ '/discord-bot/' | relative_url }}#2-configure-the-containers) guide, and
+[`.env.example`](https://github.com/TIGamingTV/JellyWatchParty/blob/main/.env.example) lists all of them.
+
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` | `3000` | Server port |
@@ -284,6 +289,8 @@ docker run -d \
 | 8096 | Jellyfin HTTP | Inbound |
 | 8920 | Jellyfin HTTPS | Inbound (if using SSL) |
 | 3000 | Session Server | Inbound |
+| 3001 | Admin panel | Only if you use it; keep it private (see [Admin Panel]({{ '/admin-panel/' | relative_url }})) |
+| 3002 | Discord integration API | Never publish. Stays inside the Docker network |
 
 ```bash
 # UFW (Ubuntu)

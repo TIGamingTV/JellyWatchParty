@@ -65,7 +65,7 @@ The Discord bot adds `DATA_DIR`, `DISCORD_INTEGRATION_TOKEN` and
 ```yaml
 services:
   session-server:
-    image: jwp-session-server
+    image: ghcr.io/tigamingtv/jwp-session-server:latest
     ports:
       - "3000:3000"
     environment:
@@ -125,7 +125,7 @@ authoritative list of constants rather than repeating it here.
 ```yaml
 services:
   session-server:
-    image: jwp-session-server
+    image: ghcr.io/tigamingtv/jwp-session-server:latest
     ports:
       - "3000:3000"
 ```
@@ -137,7 +137,7 @@ Plugin settings: JWT Secret empty, Session Server URL empty.
 ```yaml
 services:
   session-server:
-    image: jwp-session-server
+    image: ghcr.io/tigamingtv/jwp-session-server:latest
     ports:
       - "127.0.0.1:3000:3000"  # Only localhost
     environment:
@@ -161,7 +161,7 @@ across multiple Jellyfin instances pointed at the same server, just set
 ```yaml
 services:
   session-server:
-    image: jwp-session-server
+    image: ghcr.io/tigamingtv/jwp-session-server:latest
     environment:
       - ALLOWED_ORIGINS=https://jellyfin1.example.com,https://jellyfin2.example.com
 ```

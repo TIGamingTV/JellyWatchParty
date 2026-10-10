@@ -88,7 +88,11 @@ docker compose up -d                     # session server only
 docker compose --profile discord up -d   # session server + Discord bot
 ```
 
-The admin panel is at `http://<server>:3001/`. To set up the bot, see the
+The admin panel is at `http://localhost:3001/` on the server itself. The
+compose file publishes it on `127.0.0.1` only; to reach it from another
+machine, use an SSH tunnel, or publish it on `3001:3001` and put it behind
+HTTPS (see the [Admin Panel guide](https://tigamingtv.github.io/JellyWatchParty/admin-panel/)).
+To set up the bot, see the
 [Discord Bot guide](https://tigamingtv.github.io/JellyWatchParty/discord-bot/).
 
 **2. Add the plugin repository** in Jellyfin: **Dashboard > Plugins > Repositories > Add**

@@ -45,7 +45,7 @@ services:
       - internal
 
   session-server:
-    image: jwp-session-server
+    image: ghcr.io/tigamingtv/jwp-session-server:latest
     container_name: jwp-session
     environment:
       - ALLOWED_ORIGINS=https://jellyfin.example.com
@@ -275,7 +275,7 @@ services:
 
 ## Backup Strategy
 
-**Back up:** Jellyfin `/config` directory (includes plugin config), Docker Compose files, `.env` files with secrets, and the `jwp-data` volume if you use the [Discord bot]({{ '/discord-bot/' | relative_url }}) (bot settings, link codes, linked accounts).
+**Back up:** Jellyfin `/config` directory (includes plugin config), Docker Compose files, `.env` files with secrets, and the `jwp-data` volume if you use the [Discord bot]({{ '/discord-bot/' | relative_url }}) (bot settings, link codes, linked accounts). Back up the whole volume, including `secret.key`: without that key, every link code stops matching, and you have to assign new codes.
 
 **Don't back up:** session server rooms (ephemeral, in-memory) or cache directories.
 
