@@ -4,7 +4,7 @@
 
 use crate::api::Room;
 use crate::ids::Id;
-use crate::text::{escape, mention, status};
+use crate::text::{escape, join_within, mention, status};
 use twilight_model::channel::message::component::{
     ActionRow, Button as DcButton, ButtonStyle, Component,
 };
@@ -15,6 +15,8 @@ const COLOR_PLAYING: u32 = 0x3fb950;
 const COLOR_IDLE: u32 = 0x00a4dc;
 const COLOR_CLOSED: u32 = 0x6e7681;
 const MAX_LISTED: usize = 15;
+/// Discord's limit for an embed field's value.
+const FIELD_MAX: usize = 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Style {
@@ -61,7 +63,7 @@ pub fn render(room: &Room) -> PanelView {
     );
     if room.members.is_empty() {
         description.push_str(
-            "\n\nNobody is watching yet. Join, then **Add my device**: the first device becomes the host everyone follows.",
+            "\n\nNobody is watching yet. Join, then **Add my device**: add one as host, and everyone follows what it plays.",
         );
     }
 
@@ -73,7 +75,7 @@ pub fn render(room: &Room) -> PanelView {
     let members = if room.members.is_empty() {
         "-".to_string()
     } else {
-        let mut lines: Vec<String> = room
+        let lines: Vec<String> = room
             .members
             .iter()
             .take(MAX_LISTED)
@@ -91,21 +93,18 @@ pub fn render(room: &Room) -> PanelView {
                 )
             })
             .collect();
-        if room.members.len() > MAX_LISTED {
-            lines.push(format!("and {} more", room.members.len() - MAX_LISTED));
-        }
-        lines.join("\n")
+        // Escaped names can be twice as long as typed: keep the field
+        // within Discord's limit, or every edit of the panel is refused.
+        join_within(&lines, "\n", room.members.len(), FIELD_MAX)
     };
 
-    let mut people: Vec<String> = room
+    let people: Vec<String> = room
         .participants
         .iter()
         .take(MAX_LISTED)
         .map(|p| mention(p.external_id.as_deref(), &p.name))
         .collect();
-    if room.participants.len() > MAX_LISTED {
-        people.push(format!("and {} more", room.participants.len() - MAX_LISTED));
-    }
+    let people = join_within(&people, ", ", room.participants.len(), FIELD_MAX);
 
     let id = &room.id;
     PanelView {
@@ -116,7 +115,7 @@ pub fn render(room: &Room) -> PanelView {
             (format!("Watching ({})", room.members.len()), members),
             (
                 format!("Joined on Discord ({})", room.participants.len()),
-                if people.is_empty() { "-".into() } else { people.join(", ") },
+                if people.is_empty() { "-".into() } else { people },
             ),
         ],
         footer: "Only your own Jellyfin devices can be added. The owner picks the host and can close the room. Jellyfin web users join from their Watch Party panel.".into(),
@@ -270,6 +269,39 @@ mod tests {
         assert!(c
             .iter()
             .all(|r| matches!(r, Component::ActionRow(a) if a.components.len() <= 5)));
+    }
+
+    #[test]
+    fn a_full_room_with_awkward_names_still_fits() {
+        // Every character of these names gets escaped, doubling their length.
+        let awkward = "*_~`|>#[]()-:".repeat(10);
+        let mut r = room();
+        r.name = awkward.clone();
+        r.owner.external_id = None;
+        r.owner.name = awkward.clone();
+        let member = r.members[1].clone();
+        r.members = (0..20)
+            .map(|i| crate::api::Member {
+                id: format!("c{}", i),
+                name: awkward.clone(),
+                kind: "plugin_bridge".into(),
+                status: "buffering".into(),
+                ..member.clone()
+            })
+            .collect();
+        let person = r.participants[0].clone();
+        r.participants = (0..50)
+            .map(|i| crate::api::Person {
+                user_id: format!("u{}", i),
+                name: awkward.clone(),
+                external_id: None,
+            })
+            .chain(std::iter::once(person))
+            .collect();
+        let v = render(&r);
+        twilight_validate::embed::embed(&embed(&v)).unwrap();
+        assert!(v.fields[1].1.ends_with("more"), "{}", v.fields[1].1);
+        assert!(v.fields[2].1.ends_with("more"), "{}", v.fields[2].1);
     }
 
     #[test]

@@ -111,8 +111,9 @@ platform, an owner and participants. All of them are Jellyfin users,
 identified by their normalized id (32 lowercase hex characters).
 
 - **Like an admin group:** it starts empty and hostless, with no start
-  countdown. The first member to join becomes host, whether a device or a
-  Watch Party panel user.
+  countdown. While it has no host, the next Watch Party panel user to join,
+  or the next device added with `role: "host"`, becomes host. A device
+  added as receiver doesn't.
 - **Stays open when empty:** when the last member leaves, the room stays
   open without a host (`room/leave.rs`). The integration's reaper closes it
   after the platform's `empty_room_minutes`.

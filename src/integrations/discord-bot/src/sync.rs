@@ -108,8 +108,9 @@ impl Panels {
         }
     }
 
-    /// Edits that are due now. Marks them as done.
-    fn due(&mut self, now: Instant) -> Vec<(u64, u64, PanelView)> {
+    /// Edits that are due now: `(channel, message, view, retiring)`. Marks
+    /// them as done (see `retry` for when one fails).
+    fn due(&mut self, now: Instant) -> Vec<(u64, u64, PanelView, bool)> {
         let mut out = Vec::new();
         for t in self.tracked.values_mut() {
             let ready = t
@@ -119,7 +120,7 @@ impl Panels {
                 if let Some(v) = t.pending.take() {
                     t.last = Some(v.clone());
                     t.last_edit = Some(now);
-                    out.push((t.msg.channel, t.msg.message, v));
+                    out.push((t.msg.channel, t.msg.message, v, t.retire));
                 }
             }
         }
@@ -131,6 +132,25 @@ impl Panels {
     fn forget(&mut self, channel: u64, message: u64) {
         self.tracked.remove(&Msg { channel, message });
     }
+
+    /// An edit didn't go through: try `view` again later, unless something
+    /// newer is already waiting. A final edit of a retired panel is kept
+    /// until it goes through.
+    fn retry(&mut self, channel: u64, message: u64, view: PanelView, retire: bool) {
+        let msg = Msg { channel, message };
+        let t = self.tracked.entry(msg).or_insert_with(|| Tracked {
+            msg,
+            name: String::new(),
+            last: None,
+            pending: None,
+            last_edit: Some(Instant::now()),
+            retire,
+        });
+        t.last = None;
+        if t.pending.is_none() {
+            t.pending = Some(view);
+        }
+    }
 }
 
 /// Discord says the message (or our access to it) is gone.
@@ -138,12 +158,26 @@ fn gone(e: &twilight_http::Error) -> bool {
     matches!(e.kind(), ErrorType::Response { status, .. } if matches!(status.get(), 403 | 404))
 }
 
+/// A failure that may well go away by itself (network, Discord trouble).
+fn transient(e: &twilight_http::Error) -> bool {
+    match e.kind() {
+        ErrorType::Response { status, .. } => status.get() == 429 || status.get() >= 500,
+        ErrorType::RequestError
+        | ErrorType::RequestTimedOut
+        | ErrorType::RequestCanceled
+        | ErrorType::ServiceUnavailable { .. }
+        | ErrorType::RatelimiterTicket
+        | ErrorType::ChunkingResponse => true,
+        _ => false,
+    }
+}
+
 /// Edits due panels, every second.
 pub async fn flush_loop(shared: Arc<Shared>) {
     loop {
         tokio::time::sleep(Duration::from_secs(1)).await;
         let due = shared.panels().due(Instant::now());
-        for (channel, message, view) in due {
+        for (channel, message, view, retiring) in due {
             let (Some(ch), Some(msg)) = (
                 Id::<ChannelMarker>::new_checked(channel),
                 Id::<MessageMarker>::new_checked(message),
@@ -167,6 +201,9 @@ pub async fn flush_loop(shared: Arc<Shared>) {
                         channel
                     );
                     shared.panels().forget(channel, message);
+                } else if transient(&e) {
+                    log::warn!("could not update panel {} (will retry): {}", message, e);
+                    shared.panels().retry(channel, message, view, retiring);
                 } else {
                     log::warn!("could not update panel {}: {}", message, e);
                 }
@@ -200,7 +237,10 @@ pub async fn config_loop(shared: Arc<Shared>) {
     loop {
         match shared.api.config().await {
             Ok(c) => {
-                if version != Some(c.version) {
+                // The version restarts at 1 with the server: compare the
+                // settings too, or a change made just before a restart is
+                // missed until the next one.
+                if version != Some(c.version) || shared.settings() != c.settings {
                     version = Some(c.version);
                     let enabled = c.settings.as_ref().is_some_and(|s| s.enabled);
                     log::info!(
@@ -276,6 +316,33 @@ mod tests {
         assert!(due[0].2.rows.is_empty());
         assert!(due[0].2.description.contains("closed"));
         assert!(p.tracked.is_empty());
+    }
+
+    #[test]
+    fn a_failed_edit_is_tried_again() {
+        let mut p = Panels::default();
+        p.apply(&rooms());
+        let t0 = Instant::now();
+        let (ch, msg, view, retiring) = p.due(t0).remove(0);
+        assert!(!retiring);
+        p.retry(ch, msg, view.clone(), retiring);
+        assert!(
+            p.due(t0 + Duration::from_millis(500)).is_empty(),
+            "throttled"
+        );
+        let again = p.due(Instant::now() + Duration::from_secs(3));
+        assert_eq!(again.len(), 1);
+        assert_eq!(again[0].2, view);
+
+        // The final "closed" edit of a retired panel survives a failure too.
+        p.apply(&[]);
+        let (ch, msg, closed, retiring) = p.due(Instant::now() + Duration::from_secs(6)).remove(0);
+        assert!(retiring && p.tracked.is_empty());
+        p.retry(ch, msg, closed.clone(), retiring);
+        let last = p.due(Instant::now() + Duration::from_secs(9));
+        assert_eq!(last.len(), 1);
+        assert_eq!(last[0].2, closed);
+        assert!(p.tracked.is_empty(), "dropped once sent");
     }
 
     #[test]

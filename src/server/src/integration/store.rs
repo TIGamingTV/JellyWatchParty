@@ -334,15 +334,10 @@ fn unhex(s: &str) -> Option<Vec<u8>> {
         .collect()
 }
 
-/// Creates `path` readable by the owner only.
-fn create_private(path: &Path, truncate: bool) -> std::io::Result<std::fs::File> {
+/// Creates `path`, which must not exist yet, readable by the owner only.
+fn create_private(path: &Path) -> std::io::Result<std::fs::File> {
     let mut opts = std::fs::OpenOptions::new();
-    opts.write(true);
-    if truncate {
-        opts.create(true).truncate(true);
-    } else {
-        opts.create_new(true);
-    }
+    opts.write(true).create_new(true);
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
@@ -365,7 +360,7 @@ fn load_or_create_key(dir: &Path) -> Result<[u8; 32], String> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             let mut key = [0u8; 32];
             getrandom::fill(&mut key).map_err(|e| format!("random key: {}", e))?;
-            let mut f = create_private(&path, false)
+            let mut f = create_private(&path)
                 .map_err(|e| format!("cannot create {}: {}", path.display(), e))?;
             f.write_all(hex(&key).as_bytes())
                 .and_then(|_| f.sync_all())
@@ -450,8 +445,11 @@ impl Store {
     fn write(&self, data: &StoreData) -> Result<(), String> {
         let json = serde_json::to_vec_pretty(data).map_err(|e| e.to_string())?;
         let tmp = self.path.with_extension("json.tmp");
-        let mut f = create_private(&tmp, true)
-            .map_err(|e| format!("cannot write {}: {}", tmp.display(), e))?;
+        // A leftover temp file (crash, older version) would keep its own
+        // permissions when reopened: start from a fresh, private one.
+        let _ = std::fs::remove_file(&tmp);
+        let mut f =
+            create_private(&tmp).map_err(|e| format!("cannot write {}: {}", tmp.display(), e))?;
         f.write_all(&json)
             .and_then(|_| f.sync_all())
             .map_err(|e| format!("cannot write {}: {}", tmp.display(), e))?;
@@ -650,6 +648,25 @@ mod tests {
             assert_eq!(d.users["u1"].code_hmac.as_deref(), Some(mac.as_str()));
             assert_eq!(d.settings.discord.guild_id, "42");
         });
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_leftover_temp_file_does_not_widen_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = temp_dir();
+        std::fs::create_dir_all(&dir).unwrap();
+        let tmp = dir.join(DATA_FILE).with_extension("json.tmp");
+        std::fs::write(&tmp, "stale").unwrap();
+        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let _store = Store::open(&dir).unwrap();
+        let mode = std::fs::metadata(dir.join(DATA_FILE))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o077, 0, "data file is private");
+        assert!(!tmp.exists());
         let _ = std::fs::remove_dir_all(dir);
     }
 
