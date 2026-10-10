@@ -227,15 +227,14 @@ pub struct Api {
     http: reqwest::Client,
     base: String,
     auth: String,
+    /// The env var the token came from, for the error log.
+    token_var: &'static str,
 }
 
 impl Api {
-    pub fn new(base: &str, token: &str) -> Result<Self, String> {
+    pub fn new(base: &str, token: &str, token_var: &'static str) -> Result<Self, String> {
         let http = reqwest::Client::builder()
-            .user_agent(concat!(
-                "JellyWatchParty-DiscordBot/",
-                env!("CARGO_PKG_VERSION")
-            ))
+            .user_agent(concat!("JellyWatchParty-Bot/", env!("CARGO_PKG_VERSION")))
             // The integration API never redirects; don't carry the token
             // (or room passwords and link codes) anywhere else.
             .redirect(reqwest::redirect::Policy::none())
@@ -245,6 +244,7 @@ impl Api {
             http,
             base: format!("{}/v1", base.trim_end_matches('/')),
             auth: format!("Bearer {}", token),
+            token_var,
         })
     }
 
@@ -267,7 +267,7 @@ impl Api {
         if !(200..300).contains(&status) {
             let err = ApiError::from_body(status, &body);
             if status == 401 {
-                log::error!("session server refused our token: check JWP_INTEGRATION_TOKEN");
+                log::error!("session server refused our token: check {}", self.token_var);
             }
             return Err(err);
         }
@@ -473,7 +473,7 @@ mod tests {
             ),
         ])
         .await;
-        let api = Api::new(&url, "secret-token").unwrap();
+        let api = Api::new(&url, "secret-token", "T").unwrap();
         let actor = Actor {
             id: "42".into(),
             name: "al".into(),
@@ -510,7 +510,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_unreachable_server_is_reported_plainly() {
-        let api = Api::new("http://127.0.0.1:9", "t").unwrap();
+        let api = Api::new("http://127.0.0.1:9", "t", "T").unwrap();
         let e = api.config().await.unwrap_err();
         assert_eq!(e.reason, "unreachable");
         assert_eq!(e.status, 0);
