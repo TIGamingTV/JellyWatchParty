@@ -7,7 +7,7 @@ use crate::commands::{self, Invocation};
 use crate::ids::{self, Id};
 use crate::panel::{self, Style};
 use crate::sync::Panels;
-use crate::text::{escape, label};
+use crate::text::{escape, fit, join_within, label, MESSAGE_MAX};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
@@ -319,12 +319,14 @@ impl Ix<'_> {
 
     async fn edit(&self, out: Out) {
         let mentions = no_mentions();
+        // Longer text is refused, which would leave "thinking..." forever.
+        let text = fit(&out.text, MESSAGE_MAX);
         let res = self
             .shared
             .http
             .interaction(self.shared.app_id)
             .update_response(&self.ix.token)
-            .content(Some(&out.text))
+            .content(Some(&text))
             .components(Some(&out.components))
             .allowed_mentions(Some(&mentions))
             .await;
@@ -335,7 +337,7 @@ impl Ix<'_> {
 
     async fn reply_now(&self, out: Out) {
         let data = InteractionResponseData {
-            content: Some(out.text),
+            content: Some(fit(&out.text, MESSAGE_MAX)),
             components: Some(out.components),
             ..Self::ephemeral()
         };
@@ -802,6 +804,7 @@ impl Bot {
         match self.api().me(actor).await {
             Ok(me) => {
                 let rooms = self.shared.rooms();
+                // An admin may own many rooms: keep the reply within limits.
                 let names = |ids: &[String]| {
                     let list: Vec<String> = ids
                         .iter()
@@ -811,7 +814,7 @@ impl Bot {
                     if list.is_empty() {
                         "none".into()
                     } else {
-                        list.join(", ")
+                        join_within(&list, ", ", list.len(), 800)
                     }
                 };
                 format!(
@@ -828,29 +831,7 @@ impl Bot {
     }
 
     fn list_rooms(&self, actor: &Actor) -> Out {
-        let rooms = self.shared.rooms();
-        if rooms.is_empty() {
-            return "No rooms right now. Start one with `/jwp room create`.".into();
-        }
-        let lines: Vec<String> = rooms
-            .iter()
-            .take(20)
-            .map(|r| {
-                format!(
-                    "- **{}** by {}: {} watching{}{}",
-                    escape(&r.name, 60),
-                    escape(&r.owner.name, 40),
-                    r.members.len(),
-                    if r.has_password { ", password" } else { "" },
-                    if r.is_participant(&actor.id) {
-                        ", you're in"
-                    } else {
-                        ""
-                    }
-                )
-            })
-            .collect();
-        lines.join("\n").into()
+        rooms_text(&self.shared.rooms(), &actor.id).into()
     }
 
     async fn create(
@@ -1196,19 +1177,43 @@ impl Bot {
     }
 }
 
+/// `/jwp room list`: one line per room, within one message.
+fn rooms_text(rooms: &[Room], actor_id: &str) -> String {
+    if rooms.is_empty() {
+        return "No rooms right now. Start one with `/jwp room create`.".into();
+    }
+    let lines: Vec<String> = rooms
+        .iter()
+        .map(|r| {
+            format!(
+                "- **{}** by {}: {} watching{}{}",
+                escape(&r.name, 60),
+                escape(&r.owner.name, 40),
+                r.members.len(),
+                if r.has_password { ", password" } else { "" },
+                if r.is_participant(actor_id) {
+                    ", you're in"
+                } else {
+                    ""
+                }
+            )
+        })
+        .collect();
+    join_within(&lines, "\n", lines.len(), MESSAGE_MAX)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn modals_fit_discords_limits() {
-        let room = Room {
-            id: "7b0d3c1e-0c39-4a43-9a0e-2f1f3a3e9d10".into(),
-            name: "A very long room name that goes on and on and on".into(),
+    fn room(i: usize, name: &str) -> Room {
+        Room {
+            id: format!("7b0d3c1e-0c39-4a43-9a0e-2f1f3a3e{:04}", i),
+            name: name.into(),
             has_password: true,
             owner: crate::api::Person {
                 user_id: "u".into(),
-                name: "U".into(),
+                name: name.into(),
                 external_id: None,
             },
             participants: vec![],
@@ -1219,7 +1224,24 @@ mod tests {
             panel: None,
             created_at: 0,
             empty_since: None,
-        };
+        }
+    }
+
+    #[test]
+    fn the_room_list_fits_one_message() {
+        let name = "-_*".repeat(40);
+        let rooms: Vec<Room> = (0..100).map(|i| room(i, &name)).collect();
+        let text = rooms_text(&rooms, "1");
+        assert!(text.chars().count() <= MESSAGE_MAX, "{}", text.len());
+        assert!(text.ends_with("more"), "{}", text);
+        twilight_validate::message::content(&text).unwrap();
+        assert!(rooms_text(&rooms[..2], "1").starts_with("- **"));
+        assert!(rooms_text(&[], "1").starts_with("No rooms"));
+    }
+
+    #[test]
+    fn modals_fit_discords_limits() {
+        let room = room(1, "A very long room name that goes on and on and on");
         for m in [
             link_modal(),
             create_modal(true),
