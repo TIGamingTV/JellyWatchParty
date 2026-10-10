@@ -120,11 +120,11 @@ services:
   jwp-discord-bot:
     image: ghcr.io/tigamingtv/jwp-discord-bot:latest
     restart: unless-stopped
-    profiles: [discord]
+    profiles: [discord, telegram]
     depends_on: [jwp-session]
     environment:
       - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
-      - JWP_INTEGRATION_TOKEN=${DISCORD_INTEGRATION_TOKEN}
+      - DISCORD_INTEGRATION_TOKEN=${DISCORD_INTEGRATION_TOKEN}
       # Service name of the session server above, port INTEGRATION_PORT
       - JWP_INTEGRATION_URL=http://jwp-session:3002
 
@@ -132,8 +132,9 @@ volumes:
   jwp-data:
 ```
 
-Then start the bot, which is in the `discord` profile (also in the repository's
-compose files):
+The same container also runs the [Telegram bot]({{ '/telegram-bot/' | relative_url }})
+when its tokens are set. Then start the bot, which is in the `discord`
+profile (also in the repository's compose files):
 
 ```bash
 docker compose --profile discord up -d
@@ -149,10 +150,10 @@ the server user only.
 | Variable | Where | Meaning |
 |---|---|---|
 | `DATA_DIR` | session server | Directory for `integrations.json` and `secret.key`. Without it, chat integrations are off. |
-| `DISCORD_INTEGRATION_TOKEN` (`_FILE`) | session server | Token the bot must present. Without it, the integration API doesn't start. |
+| `DISCORD_INTEGRATION_TOKEN` (`_FILE`) | session server and bot | The same value on both: the token the bot presents for Discord. Without it, the integration API doesn't start (unless the Telegram one is set). |
 | `INTEGRATION_HOST` / `INTEGRATION_PORT` | session server | Where the integration API listens (default `127.0.0.1:3002`; compose sets `0.0.0.0` inside the Docker network). **Never publish this port.** |
-| `DISCORD_BOT_TOKEN` (`_FILE`) | bot | The bot's Discord token. |
-| `JWP_INTEGRATION_TOKEN` (`_FILE`) | bot | The same value as `DISCORD_INTEGRATION_TOKEN`. |
+| `DISCORD_BOT_TOKEN` (`_FILE`) | bot | The bot's Discord token. The Discord part of the bot only runs when it is set. |
+| `JWP_INTEGRATION_TOKEN` (`_FILE`) | bot | Deprecated name of the bot's `DISCORD_INTEGRATION_TOKEN`; still read (with a warning) when that is unset. |
 | `JWP_INTEGRATION_URL` | bot | Integration API address (default `http://session-server:3002`, which only works if the session server's service is named `session-server`; the compose files set it). The bot ignores `INTEGRATION_PORT`, so if you change that port, change this URL too. |
 
 ### 3. Turn it on in the admin panel

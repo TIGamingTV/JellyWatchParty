@@ -25,7 +25,8 @@ Admins can use it to:
   Swiftfin, Infuse, ...), as **host** or **receiver**. See
   [Jellyfin devices](#jellyfin-devices);
 - **let users do this themselves from Discord or Telegram**: set up the
-  [Discord bot]({{ '/discord-bot/' | relative_url }}) or the Telegram bot
+  [Discord bot]({{ '/discord-bot/' | relative_url }}) or the
+  [Telegram bot]({{ '/telegram-bot/' | relative_url }})
   and give users a 4-digit link code under **Users and link codes**.
   Linked users can create rooms and put their *own* devices in them,
   without an admin.
@@ -216,7 +217,8 @@ in case they come back.
 ## Chat bots
 
 When chat integrations are set up (see the
-[Discord bot]({{ '/discord-bot/' | relative_url }})), these sections
+[Discord bot]({{ '/discord-bot/' | relative_url }}) and the
+[Telegram bot]({{ '/telegram-bot/' | relative_url }})), these sections
 appear:
 
 - **Discord bot**: turns the bot on, and sets its server, allowed channels,
