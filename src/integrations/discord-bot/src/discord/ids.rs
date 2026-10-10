@@ -26,10 +26,7 @@ pub enum Id {
     PasswordModal(String),
 }
 
-/// Server room ids are UUIDs.
-pub fn valid_room_id(id: &str) -> bool {
-    id.len() == 36 && id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-')
-}
+pub use crate::api::valid_room_id;
 
 impl Id {
     pub fn encode(&self) -> String {

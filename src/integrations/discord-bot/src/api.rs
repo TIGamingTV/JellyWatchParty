@@ -172,7 +172,7 @@ pub struct Me {
     pub joined: Vec<String>,
 }
 
-/// Who is asking: what Discord told us about them.
+/// Who is asking: what the chat platform told us about them.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct Actor {
     pub id: String,
@@ -352,10 +352,15 @@ impl Api {
     }
 }
 
+/// Server room ids are UUIDs.
+pub fn valid_room_id(id: &str) -> bool {
+    id.len() == 36 && id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-')
+}
+
 /// A room id as a path segment (server ids are UUIDs; anything else is
 /// refused before it reaches a URL).
 pub fn path(room_id: &str) -> &str {
-    if crate::ids::valid_room_id(room_id) {
+    if valid_room_id(room_id) {
         room_id
     } else {
         "invalid"
