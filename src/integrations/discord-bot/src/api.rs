@@ -236,6 +236,9 @@ impl Api {
                 "JellyWatchParty-DiscordBot/",
                 env!("CARGO_PKG_VERSION")
             ))
+            // The integration API never redirects; don't carry the token
+            // (or room passwords and link codes) anywhere else.
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(|e| format!("HTTP client: {}", e))?;
         Ok(Self {
