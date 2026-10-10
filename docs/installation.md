@@ -18,23 +18,69 @@ serves the UI and talks to the session server). Both are required.
 
 ## Quick Start (Docker Compose)
 
-The fastest way to get running:
+The fastest way to get running. The [admin panel]({{ '/admin-panel/' | relative_url }})
+and the [Discord bot]({{ '/discord-bot/' | relative_url }}) are optional:
+the panel only starts when `ADMIN_PASSWORD` is set, and the bot only with the
+`discord` profile.
 
 ```yaml
 # docker-compose.yml
 services:
   jwp-session:
-    image: ghcr.io/tigamingtv/jwp-session-server:latest
+    image: ghcr.io/tigamingtv/jwp-session-server:${JWP_TAG:-latest}
     container_name: jwp-session
     restart: unless-stopped
     ports:
       - "3000:3000"
+      # Admin panel; only starts when ADMIN_PASSWORD is set.
+      - "127.0.0.1:3001:3001"
+      # Never publish 3002 (integration API for the Discord bot).
     environment:
       - ALLOWED_ORIGINS=http://your-jellyfin:8096
+      - JWT_SECRET=${JWT_SECRET:-}            # same value as in the plugin settings
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      # Jellyfin devices (TV apps, Fladder, ...) in the admin panel and the bot
+      - JELLYFIN_URL=${JELLYFIN_URL:-}        # as seen from this container
+      - JELLYFIN_API_KEY=${JELLYFIN_API_KEY:-}
+      # Discord bot: settings and link codes are kept in /data
+      - DATA_DIR=/data
+      - INTEGRATION_HOST=0.0.0.0
+      - DISCORD_INTEGRATION_TOKEN=${DISCORD_INTEGRATION_TOKEN:-}
+    volumes:
+      - jwp-data:/data
+
+  # Optional: docker compose --profile discord up -d
+  jwp-discord-bot:
+    image: ghcr.io/tigamingtv/jwp-discord-bot:${JWP_TAG:-latest}
+    container_name: jwp-discord-bot
+    restart: unless-stopped
+    profiles: [discord]
+    depends_on: [jwp-session]
+    environment:
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
+      - JWP_INTEGRATION_TOKEN=${DISCORD_INTEGRATION_TOKEN:-}
+      - JWP_INTEGRATION_URL=http://jwp-session:3002
+
+volumes:
+  jwp-data:
 ```
 
 ```bash
-docker compose up -d
+# .env next to docker-compose.yml
+JWT_SECRET=<openssl rand -base64 32>
+ADMIN_PASSWORD=<openssl rand -base64 18>
+JELLYFIN_URL=http://your-jellyfin:8096
+JELLYFIN_API_KEY=<Dashboard > API Keys>
+# Only for the Discord bot:
+DISCORD_INTEGRATION_TOKEN=<openssl rand -hex 32>
+DISCORD_BOT_TOKEN=<Discord Developer Portal > Bot > Reset Token>
+# Image channel for both containers: latest (default), dev, beta or 1.2.3
+# JWP_TAG=latest
+```
+
+```bash
+docker compose up -d                     # session server only
+docker compose --profile discord up -d   # session server + Discord bot
 ```
 
 Then install the plugin via the [repository method](#plugin-install) below,
@@ -55,19 +101,28 @@ docker run -d \
   -e ALLOWED_ORIGINS="http://localhost:8096" \
   ghcr.io/tigamingtv/jwp-session-server:latest
 
-# Or a specific version
+# Or a specific version (release v0.1.0)
 docker run -d --name jwp-session -p 3000:3000 \
-  ghcr.io/tigamingtv/jwp-session-server:v0.1.0
+  ghcr.io/tigamingtv/jwp-session-server:0.1.0
 
 # Or the beta channel (latest build from main)
 docker run -d --name jwp-session -p 3000:3000 \
   ghcr.io/tigamingtv/jwp-session-server:beta
+
+# Or the develop channel (latest build from develop, for testing)
+docker run -d --name jwp-session -p 3000:3000 \
+  ghcr.io/tigamingtv/jwp-session-server:dev
 ```
+
+The Discord bot is published the same way as
+`ghcr.io/tigamingtv/jwp-discord-bot`, with the same tags. Run it on the same
+tag as the server.
 
 ### Docker: Build from Source
 
 ```bash
-docker build -t jwp-session-server ./src/server
+docker build -f infra/docker/server.Dockerfile --build-arg BUILD_MODE=release \
+  -t jwp-session-server ./src/server
 
 docker run -d \
   --name jwp-session \

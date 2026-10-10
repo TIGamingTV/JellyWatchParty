@@ -18,9 +18,9 @@ described below can still land).
 ```
 feature/fix branches ──PR──> develop ──PR──> main ──tag──> GitHub Release
                                 │
-                                └─ every push (that touches server or
-                                   plugin/client code) publishes a
-                                   rolling "dev" build of both
+                                └─ every push (that touches server, bot
+                                   or plugin/client code) publishes a
+                                   rolling "dev" build of what changed
 ```
 
 ## Versioning
@@ -54,7 +54,7 @@ tagged as a release themselves.
 
 Update version in:
 
-1. **Rust (`Cargo.toml`)**:
+1. **Rust (`src/server/Cargo.toml`, `src/integrations/discord-bot/Cargo.toml`)**:
    ```toml
    [package]
    version = "0.2.0"
@@ -117,6 +117,7 @@ dotnet build -c Release
 |-----------|-----------------|
 | Session Server | `src/server/target/release/session-server` |
 | Session Server (Windows) | `jwp-session-server-windows-vX.Y.Z.zip` (CI-built, attached to GitHub Release) |
+| Discord Bot | `src/integrations/discord-bot/target/release/jwp-discord-bot` |
 | Plugin DLL (Jellyfin 12.x) | `src/plugins/jellyfin/JellyWatchParty/bin/Release/net10.0/JellyWatchParty.dll` |
 
 ## Release Steps
@@ -177,7 +178,8 @@ Or via GitHub UI:
 5. Click **Publish release**
 
 The workflow will automatically:
-- Build and push Docker images to GHCR
+- Build and push the session server and Discord bot Docker images to GHCR
+  (`latest`, `X.Y.Z`, `X.Y`)
 - Build and attach a Jellyfin plugin zip (targeting Jellyfin 12.x)
 - Build and attach a standalone Windows session server binary
 - Update `manifest.json` with the new `targetAbi 12.0.0.0` entry
@@ -202,49 +204,87 @@ git branch -d release/v0.2.0
 
 ## Docker Images
 
-Docker images are automatically built and pushed to GitHub Container Registry (GHCR).
+Docker images are automatically built (linux/amd64 and linux/arm64) and
+pushed to GitHub Container Registry (GHCR) by `.github/workflows/publish.yml`,
+which runs `.github/workflows/docker-image.yml` once per image:
+
+| Image | Built from | Rebuilt on push when these change |
+|-------|------------|-----------------------------------|
+| `ghcr.io/tigamingtv/jwp-session-server` | `src/server`, `infra/docker/server.Dockerfile` | `src/server/**`, the Dockerfile, `docker-image.yml` |
+| `ghcr.io/tigamingtv/jwp-discord-bot` | `src/integrations/discord-bot`, `infra/docker/discord-bot.Dockerfile` | `src/integrations/discord-bot/**`, the Dockerfile, `docker-image.yml` |
+
+A release always rebuilds both.
 
 ### Available Tags
+
+Both images get the same tags, so the bot can be pinned to the server's
+version.
 
 | Tag | Description | Updated |
 |-----|-------------|---------|
 | `latest` | Latest stable release | On release |
-| `vX.Y.Z` | Specific version (e.g., `v0.1.0`) | On release |
-| `vX.Y` | Minor version (e.g., `v0.1`) | On release |
-| `beta` | Latest build from `main` | On push to `main` (server changed) |
-| `dev` | Latest build from `develop` | On push to `develop` (server changed) |
+| `X.Y.Z` | Specific version (release `v0.1.0` -> `0.1.0`) | On release |
+| `X.Y` | Minor version (e.g., `0.1`) | On release |
+| `beta` | Latest build from `main` | On push to `main` (image's code changed) |
+| `dev` | Latest build from `develop` | On push to `develop` (image's code changed) |
+
+The `v` of the release tag is dropped from image tags.
 
 ### Pull Images
 
 ```bash
 # Latest stable
 docker pull ghcr.io/tigamingtv/jwp-session-server:latest
+docker pull ghcr.io/tigamingtv/jwp-discord-bot:latest
 
 # Specific version
-docker pull ghcr.io/tigamingtv/jwp-session-server:v0.1.0
+docker pull ghcr.io/tigamingtv/jwp-session-server:0.1.0
+docker pull ghcr.io/tigamingtv/jwp-discord-bot:0.1.0
 
 # Latest from main
 docker pull ghcr.io/tigamingtv/jwp-session-server:beta
+docker pull ghcr.io/tigamingtv/jwp-discord-bot:beta
 
 # Latest from develop
 docker pull ghcr.io/tigamingtv/jwp-session-server:dev
+docker pull ghcr.io/tigamingtv/jwp-discord-bot:dev
 ```
+
+`infra/docker/prod/docker-compose.yml` uses these images; `JWP_TAG` picks the
+tag for both (default `latest`):
+
+```bash
+JWP_TAG=dev docker compose -f infra/docker/prod/docker-compose.yml --profile discord pull
+JWP_TAG=dev docker compose -f infra/docker/prod/docker-compose.yml --profile discord up -d
+```
+
+### Package Visibility
+
+GHCR creates a package as **private** the first time it is pushed. After the
+first publish of a new image (for `jwp-discord-bot`, the first push to
+`develop` with this workflow), open the repository's **Packages** >
+the package > **Package settings** > **Change visibility** and make it
+**Public**, or nobody can pull it without logging in.
 
 ### Build Locally (optional)
 
 ```bash
-docker build -t jwp-session-server:local ./src/server
+docker build -f infra/docker/server.Dockerfile --build-arg BUILD_MODE=release \
+  -t jwp-session-server:local ./src/server
+docker build -f infra/docker/discord-bot.Dockerfile \
+  -t jwp-discord-bot:local ./src/integrations/discord-bot
 ```
 
 ## Develop Builds
 
 Every push to `develop` that touches the relevant code publishes a rolling
-build, so testers always have the latest in-progress version of both
-components without waiting for a tagged release.
+build, so testers always have the latest in-progress version of every
+component without waiting for a tagged release.
 
 | Component | Where it lands | Version scheme |
 |-----------|-----------------|----------------|
 | Session Server | Docker image `ghcr.io/tigamingtv/jwp-session-server:dev` | Tag stays `dev`, content changes each push |
+| Discord Bot | Docker image `ghcr.io/tigamingtv/jwp-discord-bot:dev` | Tag stays `dev`, content changes each push |
 | Jellyfin Plugin | Rolling pre-release [`develop-latest`](https://github.com/TIGamingTV/JellyWatchParty/releases/tag/develop-latest), tracked via `manifest-dev.json` | `0.0.<GitHub run number>` (always increasing, always below `1.0`) |
 
 ### Develop Plugin Channel

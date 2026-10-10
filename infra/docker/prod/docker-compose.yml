@@ -1,5 +1,9 @@
+# `docker compose pull` uses the published images; `docker compose build`
+# builds them from this checkout instead. JWP_TAG picks the channel for both:
+# latest (release, default), dev (develop), beta (main) or a version (1.2.3).
 services:
   session-server:
+    image: ghcr.io/tigamingtv/jwp-session-server:${JWP_TAG:-latest}
     build:
       context: ../../../src/server
       dockerfile: ../../infra/docker/server.Dockerfile
@@ -63,6 +67,7 @@ services:
   # Needs DISCORD_BOT_TOKEN and DISCORD_INTEGRATION_TOKEN (the same value
   # as on the session server); the rest is set in the admin panel.
   discord-bot:
+    image: ghcr.io/tigamingtv/jwp-discord-bot:${JWP_TAG:-latest}
     build:
       context: ../../../src/integrations/discord-bot
       dockerfile: ../../../infra/docker/discord-bot.Dockerfile
