@@ -86,7 +86,7 @@ the multi-arch manifest and its tags.
 |-----|---------|--------------|
 | **Detect Changes** | Push only | Computes `server`/`bot`/`plugin` path-filter outputs used to gate the jobs below |
 | **Session Server Image** | Server changed, or release | Builds `jwp-session-server` (amd64, arm64) and pushes to GHCR |
-| **Discord Bot Image** | Bot changed, or release | Builds `jwp-discord-bot` (amd64, arm64) and pushes to GHCR |
+| **Discord Bot Image** | Bot changed, or release | Builds `jwp-discord-bot` (the chat bot: Discord and Telegram; amd64, arm64) and pushes to GHCR |
 | **Build Jellyfin Plugin** | Release only | Builds the plugin for `net10.0`/Jellyfin 12.x and creates a zip archive |
 | **Upload Release Assets** | Release only | Attaches the plugin zip and Windows server to the GitHub Release (needs the server image, not the bot image) |
 | **Update Plugin Manifest** | Release only | Adds the `targetAbi 12.0.0.0` entry to `manifest.json` |

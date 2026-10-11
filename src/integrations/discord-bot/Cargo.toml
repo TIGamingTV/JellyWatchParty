@@ -1,8 +1,8 @@
 [package]
 name = "jwp-discord-bot"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
-description = "JellyWatchParty Discord bot: runs watch parties for linked users' own devices"
+description = "JellyWatchParty chat bot (Discord, Telegram): runs watch parties for linked users' own devices"
 publish = false
 
 [profile.release]

@@ -1,4 +1,5 @@
-# JellyWatchParty Discord bot (sidecar of the session server).
+# JellyWatchParty chat bot: Discord and/or Telegram (sidecar of the session
+# server). The image keeps its original name, jwp-discord-bot.
 # Build context: src/integrations/discord-bot
 
 FROM rust:1.88-alpine AS builder
@@ -32,8 +33,9 @@ RUN touch src/main.rs && \
 
 FROM alpine:3.21
 
-# ca-certificates: TLS to Discord. No ports: the bot only makes outgoing
-# connections (Discord gateway/REST, the session server's integration API).
+# ca-certificates: TLS to Discord and Telegram. No ports: the bot only makes
+# outgoing connections (Discord gateway/REST, the Telegram Bot API, the
+# session server's integration API).
 RUN apk add --no-cache ca-certificates && \
     adduser -D -u 1000 appuser
 

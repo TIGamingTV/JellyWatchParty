@@ -7,7 +7,8 @@ nav_order: 7
 # Integration API (chat bots)
 
 The session server's API for chat sidecars: the
-[Discord bot]({{ '/discord-bot/' | relative_url }}) and the Telegram bot.
+[Discord bot]({{ '/discord-bot/' | relative_url }}) and the
+[Telegram bot]({{ '/telegram-bot/' | relative_url }}).
 It runs on its own
 listener (`INTEGRATION_HOST:INTEGRATION_PORT`, default `127.0.0.1:3002`)
 and only starts when the admin panel, Jellyfin devices and `DATA_DIR` are

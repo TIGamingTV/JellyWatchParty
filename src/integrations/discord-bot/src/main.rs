@@ -9,6 +9,7 @@ mod config;
 mod core;
 mod discord;
 mod panels;
+mod telegram;
 mod text;
 
 use tokio::sync::watch;
@@ -24,14 +25,17 @@ async fn main() {
             std::process::exit(2);
         }
     };
-    let api = match api::Api::new(&cfg.api_url, &cfg.api_token) {
+    for w in &cfg.warnings {
+        log::warn!("{}", w);
+    }
+    log::info!("Session server: {}", cfg.api_url);
+    let api = |token: &str, var: &'static str| match api::Api::new(&cfg.api_url, token, var) {
         Ok(a) => a,
         Err(e) => {
             log::error!("{}", e);
             std::process::exit(2);
         }
     };
-    log::info!("Session server: {}", cfg.api_url);
 
     let (stop_tx, stop) = watch::channel(false);
     tokio::spawn(async move {
@@ -40,10 +44,26 @@ async fn main() {
         let _ = stop_tx.send(true);
     });
 
-    let platforms = vec![(
-        "Discord",
-        tokio::spawn(discord::run(cfg.discord_token, api, stop.clone())),
-    )];
+    let mut platforms = Vec::new();
+    if let Some(t) = &cfg.discord {
+        let api = api(&t.integration, "DISCORD_INTEGRATION_TOKEN");
+        platforms.push((
+            "Discord",
+            tokio::spawn(discord::run(t.bot.clone(), api, stop.clone())),
+        ));
+    }
+    if let Some(t) = &cfg.telegram {
+        let api = api(&t.integration, "TELEGRAM_INTEGRATION_TOKEN");
+        platforms.push((
+            "Telegram",
+            tokio::spawn(telegram::run(
+                t.bot.clone(),
+                cfg.telegram_api_url.clone(),
+                api,
+                stop.clone(),
+            )),
+        ));
+    }
 
     // A platform that fails only stops itself; the bot exits once every
     // platform has stopped.

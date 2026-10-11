@@ -34,7 +34,7 @@ services:
       - "3000:3000"
       # Admin panel; only starts when ADMIN_PASSWORD is set.
       - "127.0.0.1:3001:3001"
-      # Never publish 3002 (integration API for the Discord bot).
+      # Never publish 3002 (integration API for the chat bots).
     environment:
       - ALLOWED_ORIGINS=http://your-jellyfin:8096
       - JWT_SECRET=${JWT_SECRET:-}            # same value as in the plugin settings
@@ -42,24 +42,28 @@ services:
       # Jellyfin devices (TV apps, Fladder, ...) in the admin panel and the bot
       - JELLYFIN_URL=${JELLYFIN_URL:-}        # as seen from this container
       - JELLYFIN_API_KEY=${JELLYFIN_API_KEY:-}
-      # Discord bot: settings and link codes are kept in /data
+      # Chat bots: settings and link codes are kept in /data
       - DATA_DIR=/data
       - INTEGRATION_HOST=0.0.0.0
       - DISCORD_INTEGRATION_TOKEN=${DISCORD_INTEGRATION_TOKEN:-}
+      - TELEGRAM_INTEGRATION_TOKEN=${TELEGRAM_INTEGRATION_TOKEN:-}
     volumes:
       - jwp-data:/data
 
-  # Optional: docker compose --profile discord up -d
+  # Optional chat bots (Discord and/or Telegram, one container):
+  # docker compose --profile discord up -d   (or --profile telegram)
   jwp-discord-bot:
     image: ghcr.io/tigamingtv/jwp-discord-bot:${JWP_TAG:-latest}
     container_name: jwp-discord-bot
     restart: unless-stopped
-    profiles: [discord]
+    profiles: [discord, telegram]
     depends_on: [jwp-session]
     environment:
-      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
-      - JWP_INTEGRATION_TOKEN=${DISCORD_INTEGRATION_TOKEN:-}
       - JWP_INTEGRATION_URL=http://jwp-session:3002
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
+      - DISCORD_INTEGRATION_TOKEN=${DISCORD_INTEGRATION_TOKEN:-}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_INTEGRATION_TOKEN=${TELEGRAM_INTEGRATION_TOKEN:-}
 
 volumes:
   jwp-data:
@@ -74,13 +78,16 @@ JELLYFIN_API_KEY=<Dashboard > API Keys>
 # Only for the Discord bot:
 DISCORD_INTEGRATION_TOKEN=<openssl rand -hex 32>
 DISCORD_BOT_TOKEN=<Discord Developer Portal > Bot > Reset Token>
+# Only for the Telegram bot (a different random value):
+TELEGRAM_INTEGRATION_TOKEN=<openssl rand -hex 32>
+TELEGRAM_BOT_TOKEN=<@BotFather > /newbot>
 # Image channel for both containers: latest (default), dev, beta or 1.2.3
 # JWP_TAG=latest
 ```
 
 ```bash
 docker compose up -d                     # session server only
-docker compose --profile discord up -d   # session server + Discord bot
+docker compose --profile discord up -d   # session server + chat bot(s)
 ```
 
 Then install the plugin via the [repository method](#plugin-install) below,

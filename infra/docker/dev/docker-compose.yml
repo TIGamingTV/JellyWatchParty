@@ -37,11 +37,13 @@ services:
       - BRIDGE_POLL_INTERVAL_MS=${BRIDGE_POLL_INTERVAL_MS:-1000}
       - ADMIN_HOST=${ADMIN_HOST:-0.0.0.0}
       - ADMIN_PASSWORD_FILE=${ADMIN_PASSWORD_FILE:-}
-      # Chat integrations (Discord bot); never publish INTEGRATION_PORT.
+      # Chat integrations (Discord and Telegram bots); never publish
+      # INTEGRATION_PORT.
       - DATA_DIR=/data
       - INTEGRATION_HOST=0.0.0.0
       - INTEGRATION_PORT=${INTEGRATION_PORT:-3002}
       - DISCORD_INTEGRATION_TOKEN=${DISCORD_INTEGRATION_TOKEN:-}
+      - TELEGRAM_INTEGRATION_TOKEN=${TELEGRAM_INTEGRATION_TOKEN:-}
     volumes:
       - jwp-data:/data
     deploy:
@@ -78,7 +80,8 @@ services:
     restart: unless-stopped
     entrypoint: /jellyfin-entrypoint.sh
 
-  # Discord bot: `docker compose --profile discord up -d discord-bot`.
+  # Chat bots (Discord and/or Telegram):
+  # `docker compose --profile discord up -d discord-bot` (or --profile telegram).
   discord-bot:
     build:
       context: ../../../src/integrations/discord-bot
@@ -88,13 +91,16 @@ services:
     container_name: jwp-discord-bot
     profiles:
       - discord
+      - telegram
     restart: unless-stopped
     depends_on:
       - session-server
     environment:
-      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
       - JWP_INTEGRATION_URL=http://session-server:${INTEGRATION_PORT:-3002}
-      - JWP_INTEGRATION_TOKEN=${DISCORD_INTEGRATION_TOKEN:-}
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
+      - DISCORD_INTEGRATION_TOKEN=${DISCORD_INTEGRATION_TOKEN:-}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_INTEGRATION_TOKEN=${TELEGRAM_INTEGRATION_TOKEN:-}
       - RUST_LOG=${RUST_LOG:-info}
 
   plugin-builder:
