@@ -10,6 +10,8 @@ use std::path::PathBuf;
 use tower::ServiceExt;
 
 const TOKEN: &str = "0123456789abcdef0123456789abcdef-test";
+const TG_TOKEN: &str = "fedcba9876543210fedcba9876543210-test";
+const TG_GROUP: &str = "-1001234567890";
 const ALICE: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const BOB: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const CAROL: &str = "cccccccccccccccccccccccccccccccc";
@@ -42,7 +44,10 @@ async fn fixture() -> Fixture {
     let cfg = config::IntegrationConfig {
         data_dir: dir.clone(),
         addr: "127.0.0.1:0".parse().unwrap(),
-        tokens: vec![("discord".into(), TOKEN.into())],
+        tokens: vec![
+            ("discord".into(), TOKEN.into()),
+            ("telegram".into(), TG_TOKEN.into()),
+        ],
     };
     let clients = test_helpers::create_clients();
     let rooms = test_helpers::create_rooms();
@@ -65,6 +70,7 @@ async fn fixture() -> Fixture {
     ])
     .await;
     configure(&hub, |_| {});
+    configure_telegram(&hub, |_| {});
     Fixture { hub, dir }
 }
 
@@ -78,6 +84,29 @@ fn configure(hub: &Integration, f: impl FnOnce(&mut ChatSettings)) {
         f(&mut s);
         d.settings.discord = s;
     });
+}
+
+fn configure_telegram(hub: &Integration, f: impl FnOnce(&mut ChatSettings)) {
+    hub.store().update(|d| {
+        let mut s = ChatSettings {
+            enabled: true,
+            guild_id: TG_GROUP.into(),
+            ..Default::default()
+        };
+        f(&mut s);
+        d.settings.telegram = s;
+    });
+}
+
+/// A Telegram user asking about the configured group.
+fn tg_actor(id: &str) -> Actor {
+    Actor {
+        id: id.into(),
+        name: format!("tg{}", id),
+        guild_id: TG_GROUP.into(),
+        channel_id: TG_GROUP.into(),
+        roles: vec![],
+    }
 }
 
 fn actor(id: &str) -> Actor {
@@ -296,7 +325,7 @@ async fn requests_must_come_from_the_configured_place() {
         "disabled"
     );
     assert_eq!(
-        reason(f.hub.whoami("telegram", actor("100")).await),
+        reason(f.hub.whoami("matrix", actor("100")).await),
         "not_configured"
     );
     assert_eq!(
@@ -322,6 +351,205 @@ async fn requests_are_rate_limited_per_account() {
         reason(f.hub.whoami("discord", actor("101")).await),
         "rate_limited"
     );
+}
+
+// --- Telegram ----------------------------------------------------------------
+
+#[tokio::test]
+async fn one_code_links_an_account_on_each_platform() {
+    let f = fixture().await;
+    let code = f.hub.assign_code(ALICE).await.unwrap();
+    f.hub
+        .link("discord", actor("100"), "alice", &code)
+        .await
+        .unwrap();
+    f.hub
+        .link("telegram", tg_actor("555"), "alice", &code)
+        .await
+        .unwrap();
+    let me = f.hub.whoami("telegram", tg_actor("555")).await.unwrap();
+    assert_eq!(me["user_id"], ALICE);
+    // The same number on the other platform is another account.
+    assert_eq!(
+        reason(f.hub.whoami("telegram", tg_actor("100")).await),
+        "not_linked"
+    );
+
+    // Unlinking on one platform keeps the other.
+    f.hub.unlink("telegram", tg_actor("555")).await.unwrap();
+    assert!(f.hub.whoami("discord", actor("100")).await.is_ok());
+
+    // A new code disconnects every platform.
+    f.hub
+        .link("telegram", tg_actor("555"), "alice", &code)
+        .await
+        .unwrap();
+    f.hub.assign_code(ALICE).await.unwrap();
+    for (p, a) in [("discord", actor("100")), ("telegram", tg_actor("555"))] {
+        assert_eq!(reason(f.hub.whoami(p, a).await), "not_linked", "{}", p);
+    }
+}
+
+#[tokio::test]
+async fn telegram_requests_must_come_from_the_group() {
+    let f = fixture().await;
+    let code = f.hub.assign_code(BOB).await.unwrap();
+    f.hub
+        .link("telegram", tg_actor("555"), "bob", &code)
+        .await
+        .unwrap();
+
+    let mut a = tg_actor("555");
+    a.guild_id = "-1009".into();
+    assert_eq!(reason(f.hub.whoami("telegram", a).await), "wrong_guild");
+    // Settings of one platform don't open the other.
+    let mut a = tg_actor("555");
+    a.guild_id = "1".into();
+    assert_eq!(reason(f.hub.whoami("telegram", a).await), "wrong_guild");
+
+    // Group administrators are admins only when the setting says so.
+    let mut boss = tg_actor("555");
+    boss.roles = vec![store::GROUP_ADMIN_ROLE.into()];
+    let me = f.hub.whoami("telegram", boss.clone()).await.unwrap();
+    assert_eq!(me["is_admin"], false);
+    configure_telegram(&f.hub, |s| s.admin_role_id = store::GROUP_ADMIN_ROLE.into());
+    let me = f.hub.whoami("telegram", boss).await.unwrap();
+    assert_eq!(me["is_admin"], true);
+    let me = f.hub.whoami("telegram", tg_actor("555")).await.unwrap();
+    assert_eq!(me["is_admin"], false);
+
+    configure_telegram(&f.hub, |s| s.enabled = false);
+    assert_eq!(
+        reason(f.hub.whoami("telegram", tg_actor("555")).await),
+        "disabled"
+    );
+    // Discord is unaffected.
+    link(&f.hub, "100", "alice", ALICE).await;
+    assert!(f.hub.whoami("discord", actor("100")).await.is_ok());
+}
+
+#[tokio::test]
+async fn platforms_do_not_see_each_others_rooms() {
+    let f = fixture().await;
+    let code = f.hub.assign_code(ALICE).await.unwrap();
+    f.hub
+        .link("discord", actor("100"), "alice", &code)
+        .await
+        .unwrap();
+    f.hub
+        .link("telegram", tg_actor("555"), "alice", &code)
+        .await
+        .unwrap();
+    let room = f
+        .hub
+        .create_room("telegram", tg_actor("555"), "Telegram night", None)
+        .await
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    assert_eq!(
+        reason(f.hub.close_room("discord", actor("100"), &room).await),
+        "not_found"
+    );
+    let me = f.hub.whoami("discord", actor("100")).await.unwrap();
+    assert!(me["owns"].as_array().unwrap().is_empty());
+    let me = f.hub.whoami("telegram", tg_actor("555")).await.unwrap();
+    assert_eq!(me["owns"][0], room.as_str());
+
+    let (tg, dc) = {
+        let rooms = f.hub.0.rooms.read().await;
+        let clients = f.hub.0.clients.read().await;
+        f.hub.store().read(|d| {
+            (
+                view::rooms_json("telegram", &rooms, &clients, &HashMap::new(), d),
+                view::rooms_json("discord", &rooms, &clients, &HashMap::new(), d),
+            )
+        })
+    };
+    assert_eq!(tg.len(), 1);
+    assert_eq!(tg[0]["owner"]["external_id"], "555");
+    assert!(dc.is_empty());
+
+    // Each platform's room limits count only its own rooms.
+    configure(&f.hub, |s| s.max_rooms_per_user = 1);
+    configure_telegram(&f.hub, |s| s.max_rooms_per_user = 1);
+    assert!(f
+        .hub
+        .create_room("discord", actor("100"), "Discord night", None)
+        .await
+        .is_ok());
+}
+
+#[tokio::test]
+async fn the_telegram_token_acts_for_telegram() {
+    let f = fixture().await;
+    let (s, j) = http(&f, "GET", "/v1/config", Some(TG_TOKEN), None).await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(j["provider"], "telegram");
+    assert_eq!(j["settings"]["guild_id"], TG_GROUP);
+
+    let code = f.hub.assign_code(ALICE).await.unwrap();
+    let a = serde_json::json!({ "id": "555", "name": "al", "guild_id": TG_GROUP, "channel_id": TG_GROUP });
+    let (s, j) = http(
+        &f,
+        "POST",
+        "/v1/link",
+        Some(TG_TOKEN),
+        Some(serde_json::json!({ "actor": a, "username": "alice", "code": code })),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{}", j);
+    let (s, j) = http(
+        &f,
+        "POST",
+        "/v1/rooms",
+        Some(TG_TOKEN),
+        Some(serde_json::json!({ "actor": a, "name": "Night" })),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{}", j);
+    let id = j["id"].as_str().unwrap().to_string();
+
+    // Telegram group ids are negative.
+    let panel =
+        |channel: &str| Some(serde_json::json!({ "channel_id": channel, "message_id": "42" }));
+    for bad in ["-", "--1", "1-2", "-12a"] {
+        let (s, _) = http(
+            &f,
+            "PUT",
+            &format!("/v1/rooms/{}/panel", id),
+            Some(TG_TOKEN),
+            panel(bad),
+        )
+        .await;
+        assert_eq!(s, StatusCode::BAD_REQUEST, "{}", bad);
+    }
+    let (s, j) = http(
+        &f,
+        "PUT",
+        &format!("/v1/rooms/{}/panel", id),
+        Some(TG_TOKEN),
+        panel(TG_GROUP),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{}", j);
+    let (_, j) = http(&f, "GET", "/v1/rooms?since=0", Some(TG_TOKEN), None).await;
+    assert_eq!(j["rooms"][0]["panel"]["channel_id"], TG_GROUP);
+
+    // The Discord bot neither sees nor reaches it.
+    let (_, j) = http(&f, "GET", "/v1/rooms?since=0", Some(TOKEN), None).await;
+    assert!(j["rooms"].as_array().unwrap().is_empty());
+    let (s, _) = http(
+        &f,
+        "PUT",
+        &format!("/v1/rooms/{}/panel", id),
+        Some(TOKEN),
+        Some(serde_json::json!({ "channel_id": "10", "message_id": "42" })),
+    )
+    .await;
+    assert_eq!(s, StatusCode::NOT_FOUND);
 }
 
 // --- rooms -----------------------------------------------------------------
@@ -701,7 +929,13 @@ async fn http(
     token: Option<&str>,
     body: Option<serde_json::Value>,
 ) -> (axum::http::StatusCode, serde_json::Value) {
-    let state = api::ApiState::new(f.hub.clone(), &[("discord".into(), TOKEN.into())]);
+    let state = api::ApiState::new(
+        f.hub.clone(),
+        &[
+            ("discord".into(), TOKEN.into()),
+            ("telegram".into(), TG_TOKEN.into()),
+        ],
+    );
     let mut req = axum::http::Request::builder().method(method).uri(path);
     if let Some(t) = token {
         req = req.header("authorization", format!("Bearer {}", t));
@@ -1030,10 +1264,37 @@ async fn admins_manage_codes_and_settings_in_the_panel() {
     assert!(f.hub.settings_version() > before);
     let (_, j, _) = admin_call(&router, "GET", "/api/integrations", t, None).await;
     assert_eq!(j["providers"][0]["settings"]["guild_id"], "42");
-    let (s, _, _) = admin_call(
+    let (s, j, _) = admin_call(
         &router,
         "PUT",
         "/api/integrations/telegram",
+        t,
+        Some(serde_json::json!({ "enabled": true, "guild_id": "42" })),
+    )
+    .await;
+    assert_eq!(
+        s,
+        StatusCode::BAD_REQUEST,
+        "a Telegram group id is negative: {}",
+        j
+    );
+    let (s, j, _) = admin_call(
+        &router,
+        "PUT",
+        "/api/integrations/telegram",
+        t,
+        Some(serde_json::json!({ "enabled": true, "guild_id": "-1009", "admin_role_id": "admin" })),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{}", j);
+    let (_, j, _) = admin_call(&router, "GET", "/api/integrations", t, None).await;
+    assert_eq!(j["providers"][1]["provider"], "telegram");
+    assert_eq!(j["providers"][1]["settings"]["guild_id"], "-1009");
+    assert_eq!(j["providers"][0]["settings"]["guild_id"], "42");
+    let (s, _, _) = admin_call(
+        &router,
+        "PUT",
+        "/api/integrations/matrix",
         t,
         Some(serde_json::json!({})),
     )
@@ -1061,4 +1322,8 @@ async fn admin_status_shows_settings_and_sidecar() {
     assert_eq!(s["providers"][0]["token_set"], true);
     assert_eq!(s["providers"][0]["sidecar"]["online"], true);
     assert_eq!(s["providers"][0]["settings"]["guild_id"], "1");
+    assert_eq!(s["providers"][1]["provider"], "telegram");
+    assert_eq!(s["providers"][1]["token_var"], "TELEGRAM_INTEGRATION_TOKEN");
+    assert_eq!(s["providers"][1]["token_set"], true);
+    assert!(s["providers"][1]["sidecar"].is_null());
 }
