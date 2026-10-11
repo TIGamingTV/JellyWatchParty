@@ -11,7 +11,10 @@ pub const DEFAULT_PORT: u16 = 3002;
 pub const MIN_TOKEN_LEN: usize = 32;
 
 /// Platforms with a sidecar, and the env var holding each one's token.
-pub const PROVIDERS: &[(&str, &str)] = &[("discord", "DISCORD_INTEGRATION_TOKEN")];
+pub const PROVIDERS: &[(&str, &str)] = &[
+    ("discord", "DISCORD_INTEGRATION_TOKEN"),
+    ("telegram", "TELEGRAM_INTEGRATION_TOKEN"),
+];
 
 #[derive(Clone)]
 pub struct IntegrationConfig {
@@ -190,6 +193,44 @@ mod tests {
             !format!("{:?}", c).contains(TOKEN),
             "tokens are not printed"
         );
+    }
+
+    #[test]
+    fn each_platform_has_its_own_token() {
+        const OTHER: &str = "fedcba9876543210fedcba9876543210";
+        let IntegrationSetup::Enabled(c) = setup(&[
+            ("DATA_DIR", "/d"),
+            ("DISCORD_INTEGRATION_TOKEN", TOKEN),
+            ("TELEGRAM_INTEGRATION_TOKEN", OTHER),
+        ]) else {
+            panic!("expected enabled")
+        };
+        assert_eq!(
+            c.tokens,
+            vec![
+                ("discord".to_string(), TOKEN.to_string()),
+                ("telegram".to_string(), OTHER.to_string())
+            ]
+        );
+        let IntegrationSetup::Enabled(c) =
+            setup(&[("DATA_DIR", "/d"), ("TELEGRAM_INTEGRATION_TOKEN", OTHER)])
+        else {
+            panic!("expected enabled")
+        };
+        assert_eq!(c.tokens, vec![("telegram".to_string(), OTHER.to_string())]);
+        // One token for both would let either bot act as the other.
+        assert!(matches!(
+            setup(&[
+                ("DATA_DIR", "/d"),
+                ("DISCORD_INTEGRATION_TOKEN", TOKEN),
+                ("TELEGRAM_INTEGRATION_TOKEN", TOKEN),
+            ]),
+            IntegrationSetup::Misconfigured(_)
+        ));
+        assert!(matches!(
+            setup(&[("DATA_DIR", "/d"), ("TELEGRAM_INTEGRATION_TOKEN", "short")]),
+            IntegrationSetup::Misconfigured(_)
+        ));
     }
 
     #[test]

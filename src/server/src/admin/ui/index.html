@@ -55,7 +55,7 @@
               <dt>Close</dt>
               <dd>Ends the room for everyone in it.</dd>
               <dt>Assign code</dt>
-              <dd>Gives a Jellyfin user a 4-digit code for the Discord bot. It is shown once. They run <code>/jwp link</code> and type their Jellyfin name and the code; after that they can create rooms and add their <i>own</i> devices from Discord. <b>New code</b> disconnects their current Discord account. After 10 wrong tries a code stops working until you assign a new one.</dd>
+              <dd>Gives a Jellyfin user a 4-digit code for the chat bots. It is shown once. They link with it (Discord: <code>/jwp link</code>; Telegram: <code>/link</code> in a private chat with the bot) by typing their Jellyfin name and the code; after that they can create rooms and add their <i>own</i> devices from the chat. One code works for each platform. <b>New code</b> disconnects all their chat accounts. After 10 wrong tries a code stops working until you assign a new one.</dd>
             </dl>
             <h3>Sync column</h3>
             <dl class="guide guide-compact">
@@ -143,12 +143,12 @@
         <div id="devices"></div>
       </section>
 
-      <section id="chat-section" class="card">
+      <section id="discord-section" class="card">
         <div class="section-head">
-          <h2>Discord bot <span id="chat-status" class="chips chips-inline"></span></h2>
+          <h2>Discord bot <span id="discord-status" class="chips chips-inline"></span></h2>
           <span class="muted small">Lets linked users run watch parties for their own devices from Discord</span>
         </div>
-        <div id="chat-note"></div>
+        <div id="discord-note"></div>
         <form id="discord-form" class="settings hidden" autocomplete="off">
           <label class="check wide"><input type="checkbox" id="dc-enabled"> Bot enabled</label>
           <label>Server ID <input id="dc-guild" inputmode="numeric" maxlength="20" placeholder="Right-click the server > Copy Server ID"></label>
@@ -170,10 +170,35 @@
         </form>
       </section>
 
+      <section id="telegram-section" class="card">
+        <div class="section-head">
+          <h2>Telegram bot <span id="telegram-status" class="chips chips-inline"></span></h2>
+          <span class="muted small">Lets linked users run watch parties for their own devices from a Telegram group</span>
+        </div>
+        <div id="telegram-note"></div>
+        <form id="telegram-form" class="settings hidden" autocomplete="off">
+          <label class="check wide"><input type="checkbox" id="tg-enabled"> Bot enabled</label>
+          <label>Group ID <input id="tg-group" maxlength="21" placeholder="Send /groupid in the group, e.g. -1001234567890"></label>
+          <label>Rooms per user <input type="number" id="tg-per-user" min="1" max="10" required></label>
+          <label>Rooms in total <input type="number" id="tg-total" min="1" max="100" required></label>
+          <label>Close empty rooms after (minutes) <input type="number" id="tg-empty" min="5" max="1440" required></label>
+          <div class="checks wide">
+            <label class="check"><input type="checkbox" id="tg-admins"> Group administrators manage all rooms</label>
+            <label class="check"><input type="checkbox" id="tg-require-pw"> Rooms need a password</label>
+            <label class="check"><input type="checkbox" id="tg-host"> Devices may be added as host</label>
+            <label class="check"><input type="checkbox" id="tg-receiver"> Devices may be added as receiver</label>
+          </div>
+          <div class="wide form-foot">
+            <span id="tg-dirty" class="muted small hidden">Unsaved changes</span>
+            <button class="btn" type="submit">Save</button>
+          </div>
+        </form>
+      </section>
+
       <section id="users-section" class="card hidden">
         <div class="section-head">
           <h2>Users and link codes <span id="users-count" class="count"></span></h2>
-          <span class="muted small">Each person links their Discord account once: <code>/jwp link</code>, then their Jellyfin name and code</span>
+          <span class="muted small">Each person links their chat account once with their Jellyfin name and code (Discord: <code>/jwp link</code>; Telegram: <code>/link</code> in a private chat with the bot)</span>
         </div>
         <div id="users"></div>
       </section>

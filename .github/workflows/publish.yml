@@ -60,7 +60,7 @@ jobs:
       cache-prefix: ''
       title: JellyWatchParty Session Server
 
-  # Discord bot image: ghcr.io/tigamingtv/jwp-discord-bot. Same tags as the
+  # Chat bot image (Discord and Telegram): ghcr.io/tigamingtv/jwp-discord-bot. Same tags as the
   # server (dev / beta / X.Y.Z / X.Y / latest) so both can be pinned to
   # one version. A failed bot build does not block the release assets.
   discord-bot-image:
@@ -77,7 +77,7 @@ jobs:
       dockerfile: ./infra/docker/discord-bot.Dockerfile
       artifact-prefix: discord-bot
       cache-prefix: discord-bot-
-      title: JellyWatchParty Discord Bot
+      title: JellyWatchParty Chat Bot (Discord, Telegram)
 
   build-plugin:
     name: Build Jellyfin Plugin

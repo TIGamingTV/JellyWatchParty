@@ -25,23 +25,30 @@ const FORMAT_VERSION: u32 = 1;
 /// stops working until an admin assigns a new one. Bounds the chance of
 /// guessing a code at 10 / 10,000 per assignment.
 pub const CODE_FAILS_BEFORE_FREEZE: u32 = 10;
-/// Max length of a Discord snowflake.
+/// Max length of a Discord snowflake (Telegram ids are shorter).
 const MAX_ID_LEN: usize = 20;
 const MAX_CHANNELS: usize = 25;
+/// Telegram has no roles: its bot reports group administrators with this
+/// one, and `admin_role_id` set to it makes them admins in every room.
+pub const GROUP_ADMIN_ROLE: &str = "admin";
 
 /// Per-platform settings, edited in the admin UI.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ChatSettings {
     pub enabled: bool,
-    /// The one server (guild) the bot works in.
+    /// The one place the bot works in: a Discord server (guild), or a
+    /// Telegram group (a negative chat id).
     pub guild_id: String,
     /// Channels the commands are accepted in (empty: any channel).
+    /// Discord only.
     pub channel_ids: Vec<String>,
     /// Only members with this role may use the bot (empty: everyone).
+    /// Discord only.
     pub required_role_id: String,
     /// Members with this role count as admins in every chat room (empty:
-    /// only Jellyfin administrators do).
+    /// only Jellyfin administrators do). On Telegram either empty or
+    /// `GROUP_ADMIN_ROLE`.
     pub admin_role_id: String,
     pub max_rooms_per_user: u32,
     pub max_rooms_total: u32,
@@ -75,9 +82,15 @@ fn is_snowflake(s: &str) -> bool {
     !s.is_empty() && s.len() <= MAX_ID_LEN && s.bytes().all(|b| b.is_ascii_digit())
 }
 
+/// A Telegram group or supergroup id: a negative number.
+fn is_group_id(s: &str) -> bool {
+    s.strip_prefix('-')
+        .is_some_and(|n| is_snowflake(n) && n.bytes().any(|b| b != b'0'))
+}
+
 impl ChatSettings {
-    /// Trims and checks admin input.
-    pub fn validate(mut self) -> Result<Self, String> {
+    /// Trims and checks admin input for `provider`'s settings.
+    pub fn validate(mut self, provider: &str) -> Result<Self, String> {
         self.guild_id = self.guild_id.trim().to_string();
         self.required_role_id = self.required_role_id.trim().to_string();
         self.admin_role_id = self.admin_role_id.trim().to_string();
@@ -90,6 +103,23 @@ impl ChatSettings {
         }
         self.channel_ids = channels;
 
+        match provider {
+            "telegram" => self.check_telegram()?,
+            _ => self.check_discord()?,
+        }
+        if !(1..=10).contains(&self.max_rooms_per_user) {
+            return Err("Rooms per user must be between 1 and 10".into());
+        }
+        if !(1..=100).contains(&self.max_rooms_total) {
+            return Err("Rooms in total must be between 1 and 100".into());
+        }
+        if !(5..=1440).contains(&self.empty_room_minutes) {
+            return Err("Empty rooms must close after 5 to 1440 minutes".into());
+        }
+        Ok(self)
+    }
+
+    fn check_discord(&self) -> Result<(), String> {
         if !self.guild_id.is_empty() && !is_snowflake(&self.guild_id) {
             return Err(
                 "Server ID must be a number (Discord: right-click the server > Copy Server ID)"
@@ -110,19 +140,34 @@ impl ChatSettings {
                 return Err(format!("{} ID must be a number", label));
             }
         }
-        if !(1..=10).contains(&self.max_rooms_per_user) {
-            return Err("Rooms per user must be between 1 and 10".into());
-        }
-        if !(1..=100).contains(&self.max_rooms_total) {
-            return Err("Rooms in total must be between 1 and 100".into());
-        }
-        if !(5..=1440).contains(&self.empty_room_minutes) {
-            return Err("Empty rooms must close after 5 to 1440 minutes".into());
-        }
         if self.enabled && self.guild_id.is_empty() {
             return Err("Set the server ID before enabling the bot".into());
         }
-        Ok(self)
+        Ok(())
+    }
+
+    fn check_telegram(&self) -> Result<(), String> {
+        if !self.guild_id.is_empty() && !is_group_id(&self.guild_id) {
+            return Err(
+                "Group ID must be a negative number (send /groupid in the group to see it)".into(),
+            );
+        }
+        if !self.channel_ids.is_empty() {
+            return Err("Telegram has no channel list: leave it empty".into());
+        }
+        if !self.required_role_id.is_empty() {
+            return Err("Telegram has no roles: leave the required role empty".into());
+        }
+        if !self.admin_role_id.is_empty() && self.admin_role_id != GROUP_ADMIN_ROLE {
+            return Err(format!(
+                "On Telegram the admin role is either empty or '{}' (group administrators)",
+                GROUP_ADMIN_ROLE
+            ));
+        }
+        if self.enabled && self.guild_id.is_empty() {
+            return Err("Set the group ID before enabling the bot".into());
+        }
+        Ok(())
     }
 }
 
@@ -130,12 +175,16 @@ impl ChatSettings {
 pub struct Settings {
     #[serde(default)]
     pub discord: ChatSettings,
+    /// Absent in data files written before Telegram support.
+    #[serde(default)]
+    pub telegram: ChatSettings,
 }
 
 impl Settings {
     pub fn for_provider(&self, provider: &str) -> Option<&ChatSettings> {
         match provider {
             "discord" => Some(&self.discord),
+            "telegram" => Some(&self.telegram),
             _ => None,
         }
     }
@@ -143,6 +192,7 @@ impl Settings {
     pub fn for_provider_mut(&mut self, provider: &str) -> Option<&mut ChatSettings> {
         match provider {
             "discord" => Some(&mut self.discord),
+            "telegram" => Some(&mut self.telegram),
             _ => None,
         }
     }
@@ -582,12 +632,16 @@ mod tests {
             channel_ids: vec!["1".into(), " 1 ".into(), "".into(), "2".into()],
             ..Default::default()
         }
-        .validate()
+        .validate("discord")
         .unwrap();
         assert_eq!(ok.guild_id, "123456789012345678");
         assert_eq!(ok.channel_ids, vec!["1".to_string(), "2".to_string()]);
 
-        let bad = |s: ChatSettings| s.validate().is_err();
+        let bad = |s: ChatSettings| s.validate("discord").is_err();
+        assert!(bad(ChatSettings {
+            guild_id: "-100123".into(),
+            ..Default::default()
+        }));
         assert!(bad(ChatSettings {
             enabled: true,
             ..Default::default()
@@ -616,6 +670,95 @@ mod tests {
             guild_id: "1".repeat(21),
             ..Default::default()
         }));
+    }
+
+    #[test]
+    fn telegram_settings_take_a_group_and_no_roles() {
+        let ok = ChatSettings {
+            enabled: true,
+            guild_id: " -1001234567890 ".into(),
+            admin_role_id: GROUP_ADMIN_ROLE.into(),
+            ..Default::default()
+        }
+        .validate("telegram")
+        .unwrap();
+        assert_eq!(ok.guild_id, "-1001234567890");
+        assert!(ChatSettings {
+            guild_id: "-4567".into(),
+            ..Default::default()
+        }
+        .validate("telegram")
+        .is_ok());
+
+        let bad = |s: ChatSettings| s.validate("telegram").is_err();
+        assert!(bad(ChatSettings {
+            enabled: true,
+            ..Default::default()
+        }));
+        // A user (positive) id, or not a number at all.
+        for g in [
+            "1234",
+            "-",
+            "-0",
+            "--1",
+            "-12a",
+            "@group",
+            &format!("-{}", "1".repeat(21)),
+        ] {
+            assert!(
+                bad(ChatSettings {
+                    guild_id: g.into(),
+                    ..Default::default()
+                }),
+                "{}",
+                g
+            );
+        }
+        assert!(bad(ChatSettings {
+            channel_ids: vec!["1".into()],
+            ..Default::default()
+        }));
+        assert!(bad(ChatSettings {
+            required_role_id: "1".into(),
+            ..Default::default()
+        }));
+        assert!(bad(ChatSettings {
+            admin_role_id: "123".into(),
+            ..Default::default()
+        }));
+        assert!(bad(ChatSettings {
+            max_rooms_total: 0,
+            ..Default::default()
+        }));
+    }
+
+    #[test]
+    fn a_data_file_from_before_telegram_still_loads() {
+        let d: StoreData = serde_json::from_str(
+            r#"{"version":1,"settings":{"discord":{"enabled":true,"guild_id":"42"}},"users":{}}"#,
+        )
+        .unwrap();
+        assert_eq!(d.settings.discord.guild_id, "42");
+        assert_eq!(d.settings.telegram, ChatSettings::default());
+        assert!(d.settings.for_provider("telegram").is_some());
+        assert!(d.settings.for_provider("matrix").is_none());
+    }
+
+    #[test]
+    fn one_jellyfin_user_links_one_account_per_platform() {
+        let mut d = StoreData::default();
+        d.assign_code("u1", "Alice", "c".into(), 1);
+        d.set_link("u1", "Alice", "discord", link("100"));
+        d.set_link("u1", "Alice", "telegram", link("100"));
+        assert_eq!(d.linked_user("discord", "100").unwrap().0, "u1");
+        assert_eq!(d.linked_user("telegram", "100").unwrap().0, "u1");
+        // Unlinking one platform keeps the other.
+        assert!(d.unlink("u1", "telegram"));
+        assert!(d.linked_user("discord", "100").is_some());
+        // A new code drops every platform's link.
+        d.set_link("u1", "Alice", "telegram", link("7"));
+        d.assign_code("u1", "Alice", "c2".into(), 2);
+        assert!(d.users["u1"].links.is_empty());
     }
 
     #[test]

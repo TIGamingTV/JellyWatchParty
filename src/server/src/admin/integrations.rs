@@ -48,7 +48,13 @@ pub async fn save_settings(
         Ok(h) => h,
         Err(r) => return r.into_response(),
     };
-    let settings = match settings.validate() {
+    let known = hub
+        .store()
+        .read(|d| d.settings.for_provider(&provider).is_some());
+    if !known {
+        return error_response(StatusCode::NOT_FOUND, "Unknown platform");
+    }
+    let settings = match settings.validate(&provider) {
         Ok(s) => s,
         Err(e) => return error_response(StatusCode::BAD_REQUEST, &e),
     };

@@ -2,9 +2,9 @@
 //! Rendering is pure (`render`) so it can be compared and tested; `embed`
 //! and `components` turn it into Discord builders.
 
+use super::ids::Id;
+use super::text::{escape, join_within, mention, status};
 use crate::api::Room;
-use crate::ids::Id;
-use crate::text::{escape, join_within, mention, status};
 use twilight_model::channel::message::component::{
     ActionRow, Button as DcButton, ButtonStyle, Component,
 };
@@ -201,7 +201,7 @@ mod tests {
 
     fn room() -> Room {
         let r: RoomsResponse =
-            serde_json::from_str(include_str!("../../fixtures/rooms.json")).unwrap();
+            serde_json::from_str(include_str!("../../../fixtures/rooms.json")).unwrap();
         r.rooms.into_iter().next().unwrap()
     }
 

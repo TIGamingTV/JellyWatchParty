@@ -13,7 +13,7 @@ nav_order: 7
 4. [ ] Browser cache cleared? (Ctrl+F5)
 5. [ ] Correct WebSocket URL configured?
 6. [ ] Firewall allowing the session server port (default 3000)?
-7. [ ] Using the Discord bot? See [Discord Bot](#discord-bot) below.
+7. [ ] Using a chat bot? See [Discord Bot](#discord-bot) or [Telegram Bot](#telegram-bot) below.
 
 Related: [Core Structure]({{ '/core-structure/' | relative_url }}) for expected system behavior,
 [Security]({{ '/security/' | relative_url }}) for authentication/CORS issues, [Configuration]({{ '/configuration/' | relative_url }})
@@ -103,8 +103,9 @@ Work through these in order:
    enabled** is off in the admin panel.
 3. **The chip reads "No bot token" or "Bot offline".** Run
    `docker ps` and check that `jwp-discord-bot` is up. It only starts with
-   `--profile discord`. Both containers need the same token: the session
-   server's `DISCORD_INTEGRATION_TOKEN` and the bot's `JWP_INTEGRATION_TOKEN`.
+   `--profile discord`. Both containers need the same
+   `DISCORD_INTEGRATION_TOKEN` (older setups named it `JWP_INTEGRATION_TOKEN`
+   on the bot; that still works, with a warning in the log).
    The token must be at least 32 characters (`openssl rand -hex 32`). If
    Discord rejects `DISCORD_BOT_TOKEN`, the bot log says
    `Discord connection ended for good (bad token or intents?)`.
@@ -143,6 +144,43 @@ Work through these in order:
     `secret.key` file in `DATA_DIR` is missing or was replaced. A new key is
     created silently, and every existing code stops matching. Restore the
     whole `jwp-data` volume, or assign new codes.
+
+### Telegram Bot
+
+Setup is in the [Telegram Bot guide]({{ '/telegram-bot/' | relative_url }}).
+Most of the [Discord list](#discord-bot) applies too (codes, limits,
+`DATA_DIR`, `JWP_INTEGRATION_URL`). Specific to Telegram:
+
+1. **The bot doesn't start; the log says `Telegram refused
+   TELEGRAM_BOT_TOKEN`.** Copy the token from @BotFather again
+   (`/mybots` > your bot > API Token). The Discord part of the bot, if set
+   up, keeps running.
+2. **The chip reads "No bot token" or "Bot offline".** The session server
+   and the bot need the same `TELEGRAM_INTEGRATION_TOKEN`, at least 32
+   characters and different from the Discord one. The bot starts with
+   `--profile telegram` (or `discord`: it's one container).
+3. **"This group isn't set up for watch parties".** The **Group ID** in the
+   admin panel isn't this group's. Send `/groupid` in the group and copy
+   the negative number. If the group was upgraded to a supergroup, its ID
+   changed (the bot log says so): update it.
+4. **The bot ignores `/rooms` in the group.** With other bots in the group,
+   Telegram may only pass on commands addressed to this one: use
+   `/rooms@YourBot`, or make the bot an administrator.
+5. **"Join the watch party group first".** In a private chat the bot only
+   serves members of the configured group. Join it with the same Telegram
+   account. If you just joined, wait a minute.
+6. **Pressing Add my device opens a chat with the bot instead.** The bot
+   may only write to people who started a chat with it. Press **Start**
+   there; the device list follows.
+7. **"Post as yourself".** You're posting as an anonymous admin or as the
+   channel. Turn off **Remain anonymous** for yourself, or use the private
+   chat.
+8. **The log warns about another program fetching the bot's updates.** Two
+   containers run with the same `TELEGRAM_BOT_TOKEN`, or a webhook was set
+   by another tool. Stop the other one.
+9. **Codes stay visible in the group.** The bot needs to be an
+   administrator with **Delete messages** to remove them there. In the
+   private chat it can always delete them.
 
 ## Log Analysis
 
