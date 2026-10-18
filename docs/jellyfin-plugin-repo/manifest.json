@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "4.1.2.0",
+        "changelog": "## What's Changed\n* fix(deps): bump rustls to 0.23.46 by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/105\n* feat(plugin): replace the plugin logo by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/106\n\n\n**Full Changelog**: https://github.com/TIGamingTV/JellyWatchParty/compare/v4.1.1.0...v4.1.2.0",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/TIGamingTV/JellyWatchParty/releases/download/v4.1.2.0/JellyWatchParty-v4.1.2.0.zip",
+        "checksum": "faa4b6da600f303b3940b579f15b80a0",
+        "timestamp": "2026-10-18T20:18:32Z"
+      },
+      {
         "version": "4.1.1.0",
         "changelog": "## What's Changed\n* feat(plugin): show the logo as the plugin image in Jellyfin by @TIGamingTV in https://github.com/TIGamingTV/JellyWatchParty/pull/104\n\n\n**Full Changelog**: https://github.com/TIGamingTV/JellyWatchParty/compare/v4.1.0.0...v4.1.1.0",
         "targetAbi": "12.0.0.0",
