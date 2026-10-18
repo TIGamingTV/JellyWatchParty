@@ -28,6 +28,7 @@ jobs:
         run: cargo audit
 
       - name: Run cargo audit (Discord bot)
+        if: always()
         working-directory: src/integrations/discord-bot
         run: cargo audit
 
