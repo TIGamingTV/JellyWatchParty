@@ -13,7 +13,7 @@ use crate::integration::IntegrationStatus;
 use crate::jellyfin::Bridges;
 use crate::types::{Clients, Rooms};
 use crate::utils::now_ms;
-use auth::AuthStore;
+use auth::{AuthStore, LiveCredentials};
 use axum::extract::connect_info::ConnectInfo;
 use axum::extract::{FromRequestParts, Request, State};
 use axum::http::request::Parts;
@@ -38,6 +38,7 @@ pub struct AdminState {
     pub clients: Clients,
     pub rooms: Rooms,
     pub cfg: Arc<AdminConfig>,
+    pub creds: Arc<LiveCredentials>,
     pub auth: Arc<Mutex<AuthStore>>,
     pub started_at: u64,
     pub jwt_enabled: bool,
@@ -65,6 +66,7 @@ impl AdminState {
         Self {
             clients,
             rooms,
+            creds: Arc::new(LiveCredentials::new(&cfg)),
             cfg: Arc::new(cfg),
             auth: Arc::new(Mutex::new(AuthStore::default())),
             started_at: now_ms(),
@@ -86,7 +88,19 @@ impl AdminState {
         // way that matters (worst case: a stale session or counter).
         self.auth.lock().unwrap_or_else(|e| e.into_inner())
     }
+
+    /// Picks up changed credential files. A new login signs everyone out,
+    /// so whoever knew the old password loses access with it.
+    pub fn refresh_credentials(&self) {
+        if self.creds.reload() {
+            let n = self.auth().revoke_all();
+            info!("admin: login changed; signed out {} session(s)", n);
+        }
+    }
 }
+
+/// How often credential files are checked between logins.
+const CREDENTIAL_CHECK_MS: u64 = 10_000;
 
 /// The caller's IP, for login throttling. Uses the TCP peer address, or the
 /// last `X-Forwarded-For` hop when `ADMIN_TRUST_X_FORWARDED_FOR` is set (the
@@ -299,12 +313,28 @@ pub async fn serve(
         }
     };
     info!("Admin panel listening on http://{}", addr);
+    let watcher = state.creds.watches_files().then(|| {
+        let state = state.clone();
+        tokio::spawn(async move {
+            let mut tick =
+                tokio::time::interval(std::time::Duration::from_millis(CREDENTIAL_CHECK_MS));
+            tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            tick.tick().await;
+            loop {
+                tick.tick().await;
+                state.refresh_credentials();
+            }
+        })
+    });
     let app = build_router(state).into_make_service_with_connect_info::<SocketAddr>();
     if let Err(e) = axum::serve(listener, app)
         .with_graceful_shutdown(shutdown)
         .await
     {
         error!("Admin panel error: {}", e);
+    }
+    if let Some(w) = watcher {
+        w.abort();
     }
 }
 

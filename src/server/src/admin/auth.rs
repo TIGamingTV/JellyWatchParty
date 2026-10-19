@@ -1,12 +1,14 @@
 //! Admin login: one shared account, in-memory sessions, brute-force throttle.
 
-use super::config::AdminConfig;
+use super::config::{normalize_username, AdminConfig, CredentialSources};
 use crate::password::ct_eq;
 use crate::utils::random_token;
 use axum::http::{header, HeaderMap};
+use log::{info, warn};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::net::IpAddr;
+use std::sync::{Mutex, RwLock};
 
 pub const COOKIE_NAME: &str = "jwp_admin";
 /// Failed logins allowed per client IP per window.
@@ -89,15 +91,128 @@ impl AuthStore {
     }
 }
 
+impl AuthStore {
+    /// Signs everyone out. Returns how many sessions were open.
+    pub fn revoke_all(&mut self) -> usize {
+        let n = self.sessions.len();
+        self.sessions.clear();
+        n
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Credentials {
+    pub username: String,
+    pub password: String,
+}
+
+/// The admin login as currently configured. Values from `*_FILE` sources
+/// are re-read (on login and periodically), so they can be changed without
+/// restarting; values from plain variables are fixed for the process.
+pub struct LiveCredentials {
+    sources: CredentialSources,
+    current: RwLock<Credentials>,
+    /// Last reload error, so a broken file is logged once, not every check.
+    last_error: Mutex<Option<String>>,
+}
+
+impl LiveCredentials {
+    pub fn new(cfg: &AdminConfig) -> Self {
+        Self {
+            sources: cfg.sources.clone(),
+            current: RwLock::new(Credentials {
+                username: cfg.username.clone(),
+                password: cfg.password.clone(),
+            }),
+            last_error: Mutex::new(None),
+        }
+    }
+
+    pub fn get(&self) -> Credentials {
+        self.current
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
+    pub fn watches_files(&self) -> bool {
+        self.sources.username.is_file() || self.sources.password.is_file()
+    }
+
+    fn read_files(&self, mut next: Credentials) -> Result<Credentials, String> {
+        if let Some(r) = self.sources.username.reread() {
+            // An empty username file falls back to the default, as at startup.
+            next.username = r
+                .ok()
+                .and_then(|u| normalize_username(&u))
+                .unwrap_or_else(|| "admin".to_string());
+        }
+        if let Some(r) = self.sources.password.reread() {
+            next.password = r?;
+        }
+        Ok(next)
+    }
+
+    /// Re-reads file sources. Returns true when the login changed. A file
+    /// that can't be read keeps the current login.
+    pub fn reload(&self) -> bool {
+        if !self.watches_files() {
+            return false;
+        }
+        let current = self.get();
+        let mut last_error = self.last_error.lock().unwrap_or_else(|e| e.into_inner());
+        let next = match self.read_files(current.clone()) {
+            Ok(n) => n,
+            Err(e) => {
+                if last_error.as_deref() != Some(e.as_str()) {
+                    warn!("Admin panel: {}; keeping the current login", e);
+                    *last_error = Some(e);
+                }
+                return false;
+            }
+        };
+        if last_error.take().is_some() {
+            info!("Admin panel: credential files readable again");
+        }
+        if next == current {
+            return false;
+        }
+        let what = match (
+            next.username != current.username,
+            next.password != current.password,
+        ) {
+            (true, true) => "username and password",
+            (true, false) => "username",
+            _ => "password",
+        };
+        info!(
+            "Admin panel: {} changed (login is now '{}')",
+            what, next.username
+        );
+        *self.current.write().unwrap_or_else(|e| e.into_inner()) = next;
+        true
+    }
+
+    /// Startup summary; never includes the password.
+    pub fn describe(&self) -> String {
+        format!(
+            "login '{}' (username from {}, password from {})",
+            self.get().username,
+            self.sources.username.describe(),
+            self.sources.password.describe()
+        )
+    }
+}
+
 fn digest(s: &str) -> [u8; 32] {
     Sha256::digest(s.as_bytes()).into()
 }
 
 /// Compares fixed-length digests in constant time, so neither the content
 /// nor the length of the configured credentials leaks through timing.
-pub fn credentials_match(cfg: &AdminConfig, username: &str, password: &str) -> bool {
-    let user_ok = ct_eq(&digest(username), &digest(&cfg.username));
-    let pass_ok = ct_eq(&digest(password), &digest(&cfg.password));
+pub fn credentials_match(creds: &Credentials, username: &str, password: &str) -> bool {
+    let user_ok = ct_eq(&digest(username), &digest(&creds.username));
+    let pass_ok = ct_eq(&digest(password), &digest(&creds.password));
     user_ok & pass_ok
 }
 
@@ -137,6 +252,7 @@ mod tests {
             addr: "127.0.0.1:0".parse().unwrap(),
             username: "admin".into(),
             password: "correct horse".into(),
+            sources: CredentialSources::default(),
             session_ttl_ms: 1000,
             cookie_secure: false,
             empty_group_ttl_ms: 1000,
@@ -144,9 +260,70 @@ mod tests {
         }
     }
 
+    fn temp_file(content: &str) -> String {
+        let path = std::env::temp_dir().join(format!("jwp-admin-{}", uuid::Uuid::new_v4()));
+        std::fs::write(&path, content).unwrap();
+        path.to_string_lossy().to_string()
+    }
+
+    #[test]
+    fn env_credentials_never_reload() {
+        let live = LiveCredentials::new(&cfg());
+        assert!(!live.watches_files());
+        assert!(!live.reload());
+        assert_eq!(live.get().username, "admin");
+    }
+
+    #[test]
+    fn file_credentials_reload_and_keep_the_last_good_login() {
+        use super::super::config::Source;
+        let user = temp_file("admin\n");
+        let pass = temp_file("correct horse\n");
+        let mut c = cfg();
+        c.sources = CredentialSources {
+            username: Source::File {
+                var: "ADMIN_USERNAME_FILE",
+                path: user.clone(),
+            },
+            password: Source::File {
+                var: "ADMIN_PASSWORD_FILE",
+                path: pass.clone(),
+            },
+        };
+        let live = LiveCredentials::new(&c);
+        assert!(live.watches_files());
+        assert!(!live.reload(), "unchanged files are not a change");
+
+        std::fs::write(&pass, "battery staple\n").unwrap();
+        assert!(live.reload());
+        assert_eq!(live.get().password, "battery staple");
+        assert!(!live.reload());
+
+        std::fs::write(&user, " boss \n").unwrap();
+        assert!(live.reload());
+        assert_eq!(live.get().username, "boss");
+
+        // Empty or missing password file: keep the current login.
+        std::fs::write(&pass, "").unwrap();
+        assert!(!live.reload());
+        std::fs::remove_file(&pass).unwrap();
+        assert!(!live.reload());
+        assert_eq!(live.get().password, "battery staple");
+        std::fs::remove_file(&user).ok();
+    }
+
+    #[test]
+    fn revoke_all_signs_everyone_out() {
+        let mut s = AuthStore::default();
+        let a = s.create_session(0, 10_000);
+        let b = s.create_session(0, 10_000);
+        assert_eq!(s.revoke_all(), 2);
+        assert!(!s.is_valid(&a, 1) && !s.is_valid(&b, 1));
+    }
+
     #[test]
     fn credentials() {
-        let c = cfg();
+        let c = LiveCredentials::new(&cfg()).get();
         assert!(credentials_match(&c, "admin", "correct horse"));
         assert!(!credentials_match(&c, "admin", "correct hors"));
         assert!(!credentials_match(&c, "Admin", "correct horse"));

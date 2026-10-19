@@ -91,6 +91,13 @@ fn start_admin_panel(
             warn!("Admin panel: NOT started - {}", reason);
         }
         AdminSetup::Enabled(cfg) => {
+            info!(
+                "Admin panel: {}",
+                admin::auth::LiveCredentials::new(&cfg).describe()
+            );
+            if cfg.sources.username.is_file() || cfg.sources.password.is_file() {
+                info!("Admin panel: credential files are re-read while running; a change signs everyone out");
+            }
             if cfg.password.chars().count() < RECOMMENDED_MIN_PASSWORD_LEN {
                 warn!(
                     "SECURITY: ADMIN_PASSWORD is shorter than {} characters; use a long random one",

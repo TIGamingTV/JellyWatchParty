@@ -46,6 +46,7 @@ services:
     environment:
       - ALLOWED_ORIGINS=http://your-jellyfin:8096
       - JWT_SECRET=${JWT_SECRET:-}            # same value as in the plugin settings
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
       # Jellyfin devices (TV apps, Fladder, ...) in the admin panel and the bot
       - JELLYFIN_URL=${JELLYFIN_URL:-}        # as seen from this container
@@ -80,6 +81,7 @@ volumes:
 ```bash
 # .env next to docker-compose.yml
 JWT_SECRET=<openssl rand -base64 32>
+ADMIN_USERNAME=admin
 ADMIN_PASSWORD=<openssl rand -base64 18>
 JELLYFIN_URL=http://your-jellyfin:8096
 JELLYFIN_API_KEY=<Dashboard > API Keys>

@@ -11,11 +11,54 @@ const MAX_SECS: u64 = 30 * 24 * 60 * 60;
 /// Shorter passwords still work but log a warning at startup.
 pub const RECOMMENDED_MIN_PASSWORD_LEN: usize = 12;
 
+/// Where a credential came from. File sources are re-read while the server
+/// runs, so a rotated Docker secret applies without a restart.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub enum Source {
+    #[default]
+    Default,
+    Env(&'static str),
+    File {
+        var: &'static str,
+        path: String,
+    },
+}
+
+impl Source {
+    /// The file's current contents, or `None` when this isn't a file source.
+    pub fn reread(&self) -> Option<Result<String, String>> {
+        match self {
+            Source::File { var, path } => Some(read_secret_file(var, path)),
+            _ => None,
+        }
+    }
+
+    pub fn is_file(&self) -> bool {
+        matches!(self, Source::File { .. })
+    }
+
+    pub fn describe(&self) -> String {
+        match self {
+            Source::Default => "default".to_string(),
+            Source::Env(var) => var.to_string(),
+            Source::File { var, path } => format!("{} ({})", var, path),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct CredentialSources {
+    pub username: Source,
+    pub password: Source,
+}
+
 #[derive(Debug, Clone)]
 pub struct AdminConfig {
     pub addr: SocketAddr,
+    /// Login at startup. The live values are in `auth::LiveCredentials`.
     pub username: String,
     pub password: String,
+    pub sources: CredentialSources,
     /// How long a login stays valid.
     pub session_ttl_ms: u64,
     /// Mark the session cookie `Secure` (set when served over HTTPS).
@@ -44,19 +87,58 @@ fn parse_bool(value: &str) -> Option<bool> {
     }
 }
 
-/// Reads `NAME`, or the contents of the file named by `NAME_FILE` (Docker
-/// secrets). A trailing newline in the file is ignored.
-fn secret(get: &impl Fn(&str) -> Option<String>, name: &str) -> Result<Option<String>, String> {
+/// Contents of a secret file. A trailing newline is ignored; an empty file
+/// is an error, so a half-written file never becomes an empty password.
+pub fn read_secret_file(var: &str, path: &str) -> Result<String, String> {
+    let s = std::fs::read_to_string(path)
+        .map_err(|e| format!("cannot read {} ({}): {}", var, path, e))?;
+    let s = s.trim_end_matches(['\r', '\n']);
+    if s.is_empty() {
+        return Err(format!("{} ({}) is empty", var, path));
+    }
+    Ok(s.to_string())
+}
+
+/// Reads `name`, or the contents of the file named by `file_var` (Docker
+/// secrets). The variable wins when both are set.
+fn secret(
+    get: &impl Fn(&str) -> Option<String>,
+    name: &'static str,
+    file_var: &'static str,
+) -> Result<Option<(String, Source)>, String> {
+    let file = get(file_var).filter(|v| !v.trim().is_empty());
     if let Some(v) = get(name).filter(|v| !v.is_empty()) {
-        return Ok(Some(v));
+        if file.is_some() {
+            log::warn!(
+                "Admin panel: {} and {} are both set; using {} and ignoring the file",
+                name,
+                file_var,
+                name
+            );
+        }
+        return Ok(Some((v, Source::Env(name))));
     }
-    let file_var = format!("{}_FILE", name);
-    match get(&file_var).filter(|v| !v.is_empty()) {
+    match file {
         None => Ok(None),
-        Some(path) => std::fs::read_to_string(&path)
-            .map(|s| Some(s.trim_end_matches(['\r', '\n']).to_string()))
-            .map_err(|e| format!("cannot read {} ({}): {}", file_var, path, e)),
+        Some(path) => {
+            let path = path.trim().to_string();
+            read_secret_file(file_var, &path).map(|v| {
+                Some((
+                    v,
+                    Source::File {
+                        var: file_var,
+                        path,
+                    },
+                ))
+            })
+        }
     }
+}
+
+/// `ADMIN_USERNAME` is trimmed and falls back to `admin`.
+pub fn normalize_username(u: &str) -> Option<String> {
+    let u = u.trim();
+    (!u.is_empty()).then(|| u.to_string())
 }
 
 impl AdminSetup {
@@ -81,19 +163,25 @@ impl AdminSetup {
             },
         }
 
-        let password = match secret(&get, "ADMIN_PASSWORD") {
-            Ok(Some(p)) => p,
-            Ok(None) => {
-                return AdminSetup::Misconfigured(
-                    "ADMIN_PASSWORD (or ADMIN_PASSWORD_FILE) is not set".to_string(),
-                )
-            }
-            Err(e) => return AdminSetup::Misconfigured(e),
-        };
-        let username = get("ADMIN_USERNAME")
-            .map(|u| u.trim().to_string())
-            .filter(|u| !u.is_empty())
-            .unwrap_or_else(|| "admin".to_string());
+        let (password, password_source) =
+            match secret(&get, "ADMIN_PASSWORD", "ADMIN_PASSWORD_FILE") {
+                Ok(Some(p)) => p,
+                Ok(None) => {
+                    return AdminSetup::Misconfigured(
+                        "ADMIN_PASSWORD (or ADMIN_PASSWORD_FILE) is not set".to_string(),
+                    )
+                }
+                Err(e) => return AdminSetup::Misconfigured(e),
+            };
+        let (username, username_source) =
+            match secret(&get, "ADMIN_USERNAME", "ADMIN_USERNAME_FILE") {
+                Ok(Some((u, src))) => match normalize_username(&u) {
+                    Some(u) => (u, src),
+                    None => ("admin".to_string(), Source::Default),
+                },
+                Ok(None) => ("admin".to_string(), Source::Default),
+                Err(e) => return AdminSetup::Misconfigured(e),
+            };
 
         let host = get("ADMIN_HOST").unwrap_or_else(|| "0.0.0.0".to_string());
         let port = match get("ADMIN_PORT") {
@@ -145,6 +233,10 @@ impl AdminSetup {
             addr,
             username,
             password,
+            sources: CredentialSources {
+                username: username_source,
+                password: password_source,
+            },
             session_ttl_ms: secs("ADMIN_SESSION_TTL_SECS", DEFAULT_SESSION_TTL_SECS) * 1000,
             cookie_secure: flag("ADMIN_COOKIE_SECURE"),
             empty_group_ttl_ms: secs("ADMIN_EMPTY_GROUP_TTL_SECS", DEFAULT_EMPTY_GROUP_TTL_SECS)
@@ -280,11 +372,58 @@ mod tests {
             panic!("expected enabled");
         };
         assert_eq!(c.password, "from-file");
+        assert_eq!(
+            c.sources.password,
+            Source::File {
+                var: "ADMIN_PASSWORD_FILE",
+                path: p.clone()
+            }
+        );
+        assert_eq!(c.sources.username, Source::Default);
         std::fs::remove_file(&path).ok();
 
         assert!(matches!(
             setup(&[("ADMIN_PASSWORD_FILE", "/nonexistent/jwp")]),
             AdminSetup::Misconfigured(_)
         ));
+    }
+
+    #[test]
+    fn empty_password_file_is_refused() {
+        let path = std::env::temp_dir().join(format!("jwp-admin-pw-{}", uuid::Uuid::new_v4()));
+        std::fs::write(&path, "\n").unwrap();
+        let p = path.to_string_lossy().to_string();
+        assert!(matches!(
+            setup(&[("ADMIN_PASSWORD_FILE", &p)]),
+            AdminSetup::Misconfigured(_)
+        ));
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn username_file_and_env_precedence() {
+        let path = std::env::temp_dir().join(format!("jwp-admin-user-{}", uuid::Uuid::new_v4()));
+        std::fs::write(&path, " boss\n").unwrap();
+        let p = path.to_string_lossy().to_string();
+        let AdminSetup::Enabled(c) =
+            setup(&[("ADMIN_PASSWORD", "pw"), ("ADMIN_USERNAME_FILE", &p)])
+        else {
+            panic!("expected enabled");
+        };
+        assert_eq!(c.username, "boss");
+        assert!(c.sources.username.is_file());
+        assert_eq!(c.sources.password, Source::Env("ADMIN_PASSWORD"));
+
+        // The variable wins over the file.
+        let AdminSetup::Enabled(c) = setup(&[
+            ("ADMIN_PASSWORD", "pw"),
+            ("ADMIN_USERNAME", "chief"),
+            ("ADMIN_USERNAME_FILE", &p),
+        ]) else {
+            panic!("expected enabled");
+        };
+        assert_eq!(c.username, "chief");
+        assert_eq!(c.sources.username, Source::Env("ADMIN_USERNAME"));
+        std::fs::remove_file(&path).ok();
     }
 }

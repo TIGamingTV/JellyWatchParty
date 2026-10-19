@@ -37,6 +37,7 @@ services:
       - BRIDGE_POLL_INTERVAL_MS=${BRIDGE_POLL_INTERVAL_MS:-1000}
       - ADMIN_HOST=${ADMIN_HOST:-0.0.0.0}
       - ADMIN_PASSWORD_FILE=${ADMIN_PASSWORD_FILE:-}
+      - ADMIN_USERNAME_FILE=${ADMIN_USERNAME_FILE:-}
       # Chat integrations (Discord and Telegram bots); never publish
       # INTEGRATION_PORT.
       - DATA_DIR=/data

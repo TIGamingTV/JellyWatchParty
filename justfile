@@ -106,9 +106,10 @@ watch:
         echo -e "{{GREEN}}✓ Restarted{{RESET}}"
     done
 
-[doc('Restart all services')]
+[doc('Restart all services (recreates changed containers, so .env changes apply)')]
 restart:
     @echo -e "{{YELLOW}}▶ Restarting services...{{RESET}}"
+    @{{compose}} up -d session-server jellyfin-dev
     @{{compose}} restart session-server jellyfin-dev
     @echo -e "{{GREEN}}✓ Services restarted{{RESET}}"
 

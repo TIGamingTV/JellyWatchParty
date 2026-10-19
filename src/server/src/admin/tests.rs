@@ -10,6 +10,7 @@ fn cfg() -> AdminConfig {
         addr: "127.0.0.1:0".parse().unwrap(),
         username: "admin".into(),
         password: "s3cret-admin-pw".into(),
+        sources: Default::default(),
         session_ttl_ms: 60_000,
         cookie_secure: false,
         empty_group_ttl_ms: 60_000,
@@ -177,6 +178,55 @@ async fn login_logout_cycle() {
     assert_eq!(out.status, StatusCode::OK);
     let me = call(&s, "GET", "/api/me", Some(&token), None).await;
     assert_eq!(me.status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn a_changed_password_file_applies_without_restart() {
+    use super::config::{CredentialSources, Source};
+    let path = std::env::temp_dir().join(format!("jwp-admin-pw-{}", uuid::Uuid::new_v4()));
+    std::fs::write(&path, "s3cret-admin-pw\n").unwrap();
+    let mut c = cfg();
+    c.sources = CredentialSources {
+        username: Source::Default,
+        password: Source::File {
+            var: "ADMIN_PASSWORD_FILE",
+            path: path.to_string_lossy().to_string(),
+        },
+    };
+    let s = AdminState::new(
+        test_helpers::create_clients(),
+        test_helpers::create_rooms(),
+        c,
+        false,
+        JellyfinStatus::Unavailable("not configured".into()),
+        crate::integration::IntegrationStatus::Unavailable("no DATA_DIR".into()),
+    );
+    let old_session = login(&s).await;
+
+    std::fs::write(&path, "new-admin-password\n").unwrap();
+    let old_pw = call(
+        &s,
+        "POST",
+        "/api/login",
+        None,
+        Some(serde_json::json!({ "username": "admin", "password": "s3cret-admin-pw" })),
+    )
+    .await;
+    assert_eq!(old_pw.status, StatusCode::UNAUTHORIZED);
+    // The change signed out the session made with the old password.
+    let me = call(&s, "GET", "/api/me", Some(&old_session), None).await;
+    assert_eq!(me.status, StatusCode::UNAUTHORIZED);
+
+    let new_pw = call(
+        &s,
+        "POST",
+        "/api/login",
+        None,
+        Some(serde_json::json!({ "username": "admin", "password": "new-admin-password" })),
+    )
+    .await;
+    assert_eq!(new_pw.status, StatusCode::OK);
+    std::fs::remove_file(&path).ok();
 }
 
 #[tokio::test]
