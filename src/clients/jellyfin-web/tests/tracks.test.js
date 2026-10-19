@@ -49,6 +49,15 @@ describe('playback/tracks patchTrackSwitching', () => {
     assert.equal(JWP.state.isSyncing, false);
   });
 
+  it('suppresses a guest\'s track switch in democratic mode', () => {
+    JWP.playback.patchTrackSwitching();
+    JWP.state.inRoom = true;
+    JWP.state.democraticMode = true;
+    window.playbackManager.setAudioStreamIndex(1);
+    assert.equal(JWP.state.isSyncing, true);
+    JWP.state.democraticMode = false;
+  });
+
   it('does not touch isSyncing when host but not in a room', () => {
     JWP.playback.patchTrackSwitching();
     JWP.state.isHost = true;
@@ -84,6 +93,15 @@ describe('playback/tracks onStreamReload (no global playbackManager)', () => {
     JWP.state.inRoom = true;
     JWP.playback.onStreamReload();
     assert.equal(JWP.state.isSyncing, false);
+  });
+
+  it('suppresses a guest\'s reload in democratic mode (their events are sent then)', () => {
+    JWP.state.isHost = false;
+    JWP.state.inRoom = true;
+    JWP.state.democraticMode = true;
+    JWP.playback.onStreamReload();
+    assert.equal(JWP.state.isSyncing, true);
+    JWP.state.democraticMode = false;
   });
 
   it('defers to the patched methods when a playbackManager exists', () => {

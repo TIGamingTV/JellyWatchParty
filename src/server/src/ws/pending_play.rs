@@ -34,6 +34,7 @@ pub(super) fn start_scheduled_play(
     // from when the host first pressed play. `target_server_ts` in the
     // message says when playback actually starts.
     room.last_state_ts = current_ts;
+    room.last_change_ts = current_ts;
     let msg = WsMessage {
         msg_type: "player_event".to_string(),
         room: Some(room.room_id.clone()),

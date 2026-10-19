@@ -12,8 +12,9 @@
 
 use super::api::{JellyfinApi, JfSession};
 use super::logic::{
-    device_view, follower_step, host_step, local_checkin_ms, Command, FollowerMemory, HostEvent,
-    HostMemory, RoomView, MAX_EXTRAPOLATION_SECS, TICKS_PER_SEC,
+    detect_user_action, device_view, follower_step, host_follow, host_step, local_checkin_ms,
+    Command, FollowerMemory, HostEvent, HostMemory, RoomView, UserAction, MAX_EXTRAPOLATION_SECS,
+    TICKS_PER_SEC,
 };
 use super::time::parse_utc_ms;
 use super::JellyfinConfig;
@@ -403,6 +404,7 @@ impl Bridges {
                     connected: true,
                     kind: ClientKind::Bridge,
                     bridge_device: Some(s.device_id().to_string()),
+                    democratic_capable: false,
                 },
             );
             let opts = AddOptions {
@@ -512,7 +514,7 @@ impl Bridges {
         st: &mut TaskState,
     ) -> Option<&'static str> {
         let now = now_ms();
-        let (room_id, view, is_host, ready, started) = {
+        let (room_id, view, is_host, ready, started, demo) = {
             let rooms = self.0.rooms.read().await;
             let clients = self.0.clients.read().await;
             let Some(client) = clients.get(client_id) else {
@@ -548,12 +550,20 @@ impl Bridges {
                 }
             }
             let view = RoomView::new(room.media_id.as_deref(), playing, expected, hold);
+            let demo = Democratic {
+                on: room.democratic && room.started,
+                device_control: room.device_control,
+                last_command: (room.last_command_ts > 0)
+                    .then(|| (room.last_command_ts, room.last_command_by != client_id)),
+                changed_at: room.last_change_ts,
+            };
             (
                 room_id,
                 view,
                 room.host_id == client_id,
                 room.ready_clients.contains(client_id),
                 room.started,
+                demo,
             )
         };
 
@@ -618,7 +628,26 @@ impl Bridges {
                 )
                 .await;
             }
-            let (events, status) = host_step(&view, device.as_ref(), &mut st.host);
+            // Democratic mode: carry out what someone else told the room.
+            let (follow, quiet) = host_follow(
+                &view,
+                device.as_ref(),
+                &mut st.host,
+                demo.last_command.filter(|_| demo.on),
+                now,
+            );
+            if let (Some(s), false) = (session, follow.is_empty()) {
+                if s.supports_remote_control
+                    && !st.inflight.as_ref().is_some_and(|h| !h.is_finished())
+                {
+                    st.inflight = Some(self.spawn_commands(client_id, &s.id, follow));
+                }
+            }
+            let (events, status) = if quiet {
+                (Vec::new(), info.status)
+            } else {
+                host_step(&view, device.as_ref(), &mut st.host)
+            };
             for ev in events {
                 let (ty, payload) = match ev {
                     HostEvent::SetMedia { media_id, position } => (
@@ -655,6 +684,36 @@ impl Bridges {
         } else if st.inflight.as_ref().is_some_and(|h| !h.is_finished()) {
             // Commands from the last tick are still on their way; decide
             // again once they're through.
+            (info.status, info.drift, info.detail.clone())
+        } else if let Some(action) = (demo.on && demo.device_control)
+            .then(|| {
+                detect_user_action(
+                    &view,
+                    device.as_ref(),
+                    &mut st.follower,
+                    demo.changed_at,
+                    now,
+                )
+            })
+            .flatten()
+        {
+            // Someone used the device itself: that's a command for the room.
+            let (verb, position) = match action {
+                UserAction::Play { position } => ("play", position),
+                UserAction::Pause { position } => ("pause", position),
+                UserAction::Seek { position } => ("seek", position),
+            };
+            info!(
+                "Bridge {}: {} at {:.1}s on the device, sent to the room",
+                client_id, verb, position
+            );
+            self.send_to_room(
+                client_id,
+                &room_id,
+                ClientMessageType::PlayerEvent,
+                serde_json::json!({ "action": verb, "position": position }),
+            )
+            .await;
             (info.status, info.drift, info.detail.clone())
         } else {
             let step = follower_step(&view, device.as_ref(), &mut st.follower, now);
@@ -740,6 +799,16 @@ impl Bridges {
         )
         .await;
     }
+}
+
+/// What a bridge needs to know about the room's democratic mode.
+struct Democratic {
+    /// Democratic mode is on and the room has started.
+    on: bool,
+    device_control: bool,
+    /// The room's last play/pause/seek: `(time, sent by someone else)`.
+    last_command: Option<(u64, bool)>,
+    changed_at: u64,
 }
 
 #[derive(Default)]

@@ -43,7 +43,10 @@
       const lockIcon = room.has_password
         ? '<span class="material-icons" style="font-size:12px;vertical-align:middle;" aria-hidden="true">lock</span> '
         : '';
-      item.innerHTML = `<div><div style="font-weight:bold">${lockIcon}${utils.escapeHtml(room.name)}</div><div style="font-size:10px; color:#888">${room.count} users</div></div><button class="jwp-btn secondary">Join</button>`;
+      const democraticIcon = room.democratic === true
+        ? ' <span class="material-icons jwp-room-democratic" title="Everyone can control playback" aria-label="Everyone can control playback">how_to_vote</span>'
+        : '';
+      item.innerHTML = `<div><div style="font-weight:bold">${lockIcon}${utils.escapeHtml(room.name)}${democraticIcon}</div><div style="font-size:10px; color:#888">${room.count} users</div></div><button class="jwp-btn secondary">Join</button>`;
       item.onclick = () => joinRoomFromList(room);
       roomList.appendChild(item);
     });

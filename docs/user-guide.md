@@ -18,6 +18,7 @@ script — see [Installation]({{ '/installation/' | relative_url }}) if not.
 5. **Click "Start Room"** - You are now the host
 
 As the host, you control playback for everyone. When you play, pause, or seek, all participants follow.
+To share control, turn on [democratic mode](#democratic-mode).
 
 ### Watching on a TV App
 
@@ -94,6 +95,44 @@ The Jellyfin homepage displays active watch parties in a dedicated "Watch Partie
 | Host loses connection briefly | Nothing visible — the server holds the room open for 90 seconds waiting for the host to reconnect |
 | Host leaves (or doesn't reconnect within 90s) | "Room closed" notification, unless another participant is promoted to host |
 | Drift detected | Playback speed adjusts (0.85x-2.0x) to catch up, only kicking in once drift passes 0.3s and staying quiet again once it drops back under 0.1s |
+| You pause on your own | The video resumes within about a second ("Only the host controls playback"), unless the room is in democratic mode |
+
+## Democratic Mode
+
+In democratic mode everyone in the room can play, pause and seek, not just
+the host. Rooms with it on are marked with an icon in the room list.
+
+**Turning it on (host):** in the Watch Party panel, tick **Everyone can
+control playback**. The switch only appears if your administrator turned on
+*Allow democratic mode* in the plugin settings (or the room already is
+democratic, so you can turn it off). An admin can also turn it on for any
+room from the [admin panel]({{ '/admin-panel/' | relative_url }}#democratic-mode), and in a room created from
+Discord or Telegram the owner can turn it on from the bot.
+
+**What everyone sees:** a notification such as "Alice turned on democratic
+mode: everyone can control playback", and a line in the panel saying
+*Everyone can control playback* (with *(TV devices too)* when an admin also
+let devices control the room). Pause and resume toasts name who did it,
+e.g. "Bob paused playback".
+
+**What you can do as a participant** (Jellyfin in a browser or Jellyfin
+Desktop): play, pause and seek with the player's normal controls once the
+room has started. Everyone, host included, follows. These stay with the
+host:
+
+- the room's first play (the start countdown);
+- switching to another item;
+- the position everyone follows between commands.
+
+**Chat users:** if the room was created from Discord or Telegram and the
+admin turned on the bot's *Democratic mode commands*, everyone who joined
+the room in the chat gets play, pause and seek: `/jwp playback` and panel
+buttons in [Discord]({{ '/discord-bot/' | relative_url }}#democratic-mode), panel buttons in
+[Telegram]({{ '/telegram-bot/' | relative_url }}#democratic-mode).
+
+**TV apps** put into the room as receivers only follow, unless an admin
+turned on *Devices control too* for the room: then pausing or seeking on
+the TV itself is applied for everyone after a few seconds.
 
 ## The Panel Interface
 
@@ -105,6 +144,7 @@ The Jellyfin homepage displays active watch parties in a dedicated "Watch Partie
 ### In-Room View
 - **Room name** and **participant list**: each person's name (the host has a star) and status: In sync, Catching up, Buffering, Loading, Not watching, or Playing / Paused for the host
 - **Sync indicator** - Shows sync status (participants only)
+- **Democratic mode** - The host's *Everyone can control playback* switch (when allowed), and for everyone a note while the mode is on
 - **Chat** - Text messaging with other participants
 - **RTT** - Round-trip time to server (latency indicator)
 - **Leave button** - Exit the watch party (for the host: **Close room**)
@@ -134,7 +174,7 @@ The "Out of sync" state is normal for a few seconds after joining or after the h
 
 ## Notifications
 
-**System notifications (center)** — brief toasts for host resumed/paused playback, participant joined/left, and room closed.
+**System notifications (center)** — brief toasts for resumed/paused playback (naming who did it), democratic mode turned on or off, participant joined/left, and room closed.
 
 **Chat notifications (top-right)** — when the chat panel is closed, incoming messages appear as stacked toasts (up to 5), showing sender and message; click to dismiss, or they fade after 5 seconds.
 

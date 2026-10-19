@@ -367,6 +367,29 @@ if now_ms() - room.last_command_ts < COMMAND_COOLDOWN_MS {
 }
 ```
 
+A `play_state` change normally gets through the cooldown. When the last
+command came from someone other than the update's sender (a member of a
+democratic room, or a chat bot user; `room.last_command_by`), nothing does:
+the host's player hasn't carried the command out yet, and its update would
+undo it.
+
+### Democratic Mode
+
+In a [democratic room]({{ '/technical/protocol/' | relative_url }}#democratic-mode) any
+member may send `play`, `pause` and `seek`, but the host stays the only
+source of `state_update`, so there is still one position everyone follows.
+Extra guards against commands bouncing back and forth:
+
+| Where | Guard |
+|-------|-------|
+| Server | The cooldown above blocks the host's stale updates after someone else's command. |
+| Client (sender) | `mirrorRoomState` takes its own command as the new sync baseline (the server doesn't echo it), so `syncLoop` doesn't drift-correct back. |
+| Client (all) | The command guard (`COMMAND_GUARD_MS` 3 s) ignores `state_update`s that disagree with the last sent or applied command by more than `COMMAND_GUARD_TOLERANCE_SEC` (2 s) or in play state; the first that agrees ends it. |
+| Client (all) | `isEchoOfRoomState`: a play/pause/seek event that only brings the video in line with the room (e.g. a slow seek finishing after the 2 s `isSyncing` lock) is not sent. |
+| Client (guest) | No commands while the stream is loading (`FOLLOWER_LOAD_MAX_MS`, cut to `SUPPRESS_MS` once it can play), before the first sync baseline, or while not on the room's item. |
+| Client (host) | Applies other members' commands (not its own, not a `play` while already playing). |
+| Device bridges | Host devices are sent others' commands and stay quiet until they report again; receiver devices' own actions count only 3 s after the last command or room change (see [Server: `jellyfin/`]({{ '/technical/server/' | relative_url }}#module-jellyfin)). |
+
 #### Position Jitter Filtering
 
 ```rust
@@ -501,3 +524,8 @@ they're still catching up.
 | `MIN_STATE_UPDATE_INTERVAL_MS` | 500ms | Server | State rate limit |
 | `POSITION_JITTER_THRESHOLD` | 0.5s | Server | Position noise threshold |
 | `COMMAND_COOLDOWN_MS` | 2000ms | Server | Cooldown after command |
+| `COMMAND_GUARD_MS` | 3000ms | Client | Democratic mode: disagreeing `state_update`s ignored after a command |
+| `COMMAND_GUARD_TOLERANCE_SEC` | 2.0s | Client | Democratic mode: how far an update may be from the command and still agree |
+| `FOLLOWER_LOAD_MAX_MS` | 15000ms | Client | Democratic mode: a loading guest stream's events aren't commands (at most) |
+| `USER_ACTION_GRACE_MS` | 3000ms | Server (bridge) | Device control: report must be this long after the last command / room change |
+| `USER_SEEK_THRESHOLD_SECS` | 8.0s | Server (bridge) | Device control: jump that counts as a seek on the device |

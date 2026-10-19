@@ -52,6 +52,9 @@
       display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; color: #aaa;
     }
     .jwp-checkbox-row input { accent-color: #388e3c; }
+    .jwp-democratic-info { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 11px; color: #69f0ae; }
+    .jwp-democratic-info .material-icons { font-size: 14px; }
+    .jwp-room-democratic { font-size: 12px; vertical-align: middle; color: #69f0ae; }
     /* UX-P3: Sync status indicator styles */
     .jwp-sync-status { display: flex; align-items: center; gap: 6px; font-size: 11px; margin-top: 8px; padding: 6px 8px; border-radius: 4px; background: rgba(255,255,255,0.05); }
     .jwp-sync-dot { width: 8px; height: 8px; border-radius: 50%; }

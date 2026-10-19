@@ -83,3 +83,23 @@ describe('buildAuthHeader', () => {
     assert.equal(buildAuthHeader({}, 'tok'), 'MediaBrowser Token="tok"');
   });
 });
+
+describe('fetchAuthToken admin flags', () => {
+  const respond = (body) => {
+    window.ApiClient = { accessToken: () => 'jf-token', serverAddress: () => 'http://jellyfin.test', _currentUser: { Name: 'Alice' } };
+    globalThis.fetch = async () => ({ ok: true, json: async () => body });
+  };
+
+  it('picks up allow_democratic_mode', async () => {
+    respond({ auth_enabled: false, allow_democratic_mode: true });
+    await JWP.actions.fetchAuthToken();
+    assert.equal(JWP.state.allowDemocraticMode, true);
+  });
+
+  it('defaults it to off when the plugin does not send it (older plugin)', async () => {
+    JWP.state.allowDemocraticMode = true;
+    respond({ auth_enabled: false });
+    await JWP.actions.fetchAuthToken();
+    assert.equal(JWP.state.allowDemocraticMode, false);
+  });
+});

@@ -93,6 +93,10 @@ fn build_room(client_id: &str, host_name: &str, payload: Option<&serde_json::Val
         admin_created: false,
         created_at: now_ms(),
         chat: None,
+        democratic: false,
+        device_control: false,
+        last_command_by: String::new(),
+        last_change_ts: 0,
     }
 }
 

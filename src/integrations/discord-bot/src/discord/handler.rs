@@ -7,8 +7,9 @@ use super::flush::{self, DiscordPanels};
 use super::ids::{self, Id};
 use super::panel::{self, Style};
 use super::text::{escape, fit, join_within, label, MESSAGE_MAX};
-use crate::api::{room_path, Actor, Api, ApiError, Device, Room};
+use crate::api::{room_path, Actor, Api, ApiError, Device, Playback, Room};
 use crate::core::{Core, Platform};
+use crate::text::{democratic_done, parse_seek, playback_done, SEEK_HELP, SKIP_SECS};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -35,7 +36,9 @@ pub struct Shared {
     pub http: Arc<Client>,
     pub app_id: DcId<ApplicationMarker>,
     pub panels: Mutex<DiscordPanels>,
-    pub registered_guild: tokio::sync::Mutex<Option<u64>>,
+    /// The server `/jwp` is registered in, and whether with the democratic
+    /// mode commands.
+    pub registered_guild: tokio::sync::Mutex<Option<(u64, bool)>>,
     devices: Mutex<HashMap<String, (Instant, Vec<Device>)>>,
 }
 
@@ -53,10 +56,16 @@ impl Platform for Shared {
     }
 
     fn rooms_changed(&self, rooms: &[Room]) {
-        flush::apply(&mut self.panels(), rooms);
+        flush::apply(&mut self.panels(), rooms, self.democratic());
     }
 
     async fn settings_checked(&self) {
+        if self.democratic_changed() {
+            // Panels show the switch: look at them again. Rooms are read
+            // under the panels lock, so a rooms update can't be undone.
+            let mut panels = self.panels();
+            flush::apply(&mut panels, &self.rooms(), self.democratic());
+        }
         self.sync_commands().await;
     }
 }
@@ -102,28 +111,48 @@ impl Shared {
     }
 
     /// Registers `/jwp` in the configured server (and removes it from a
-    /// server that is no longer configured).
+    /// server that is no longer configured). Registers it again when the
+    /// democratic mode commands are turned on or off.
     pub async fn sync_commands(&self) {
         let want = self
             .settings()
             .and_then(|s| s.guild_id.parse::<u64>().ok())
             .and_then(DcId::<GuildMarker>::new_checked);
+        let democratic = self.democratic();
         let mut reg = self.registered_guild.lock().await;
-        if *reg == want.map(|g| g.get()) {
+        if *reg == want.map(|g| (g.get(), democratic)) {
             return;
         }
         let client = self.http.interaction(self.app_id);
-        if let Some(old) = reg.and_then(DcId::<GuildMarker>::new_checked) {
+        // Setting the commands replaces them, so only a server we leave
+        // needs them removed.
+        if let Some(old) = reg
+            .map(|(g, _)| g)
+            .filter(|g| Some(*g) != want.map(|w| w.get()))
+            .and_then(DcId::<GuildMarker>::new_checked)
+        {
             if let Err(e) = client.set_guild_commands(old, &[]).await {
                 log::warn!("could not remove the commands from server {}: {}", old, e);
             }
         }
         *reg = None;
         if let Some(g) = want {
-            match client.set_guild_commands(g, &[commands::definition()]).await {
+            match client
+                .set_guild_commands(g, &[commands::definition(democratic)])
+                .await
+            {
                 Ok(_) => {
-                    log::info!("/{} registered in server {}", commands::NAME, g);
-                    *reg = Some(g.get());
+                    log::info!(
+                        "/{} registered in server {}{}",
+                        commands::NAME,
+                        g,
+                        if democratic {
+                            " (with democratic mode commands)"
+                        } else {
+                            ""
+                        }
+                    );
+                    *reg = Some((g.get(), democratic));
                 }
                 Err(e) => log::error!(
                     "could not register /{} in server {} (is the bot in that server, invited with the applications.commands scope?): {}",
@@ -581,6 +610,17 @@ impl Bot {
                 }
             }
             ["room", "close"] => self.close(actor, &room).await,
+            ["room", "democratic"] => match inv.string("mode") {
+                Some("on") => self.set_democratic(actor, &room, true).await,
+                Some("off") => self.set_democratic(actor, &room, false).await,
+                _ => "Pick on or off.".into(),
+            },
+            ["playback", "play"] => self.playback(actor, &room, Playback::Play).await,
+            ["playback", "pause"] => self.playback(actor, &room, Playback::Pause).await,
+            ["playback", "seek"] => match inv.string("time").and_then(parse_seek) {
+                Some(seek) => self.playback(actor, &room, seek.into()).await,
+                None => SEEK_HELP.into(),
+            },
             ["room", "panel"] => match channel_of(ix.ix) {
                 Some(channel) => self.repost_panel(actor, &room, channel).await,
                 None => OUTSIDE_SERVER.into(),
@@ -722,6 +762,17 @@ impl Bot {
                     components: vec![confirm],
                 })
                 .await;
+            }
+            Id::Play(_) | Id::Pause(_) | Id::Back(_) | Id::Forward(_) => {
+                let (room, what) = match id {
+                    Id::Play(r) => (r, Playback::Play),
+                    Id::Pause(r) => (r, Playback::Pause),
+                    Id::Back(r) => (r, Playback::SeekBy(-SKIP_SECS)),
+                    Id::Forward(r) => (r, Playback::SeekBy(SKIP_SECS)),
+                    _ => return,
+                };
+                ix.defer().await;
+                ix.edit(self.playback(actor, &room, what).await).await;
             }
             // Follow-ups on private messages: replace that message with the result.
             Id::ConfirmClose(room) => {
@@ -911,6 +962,32 @@ impl Bot {
             .await
         {
             Ok(_) => format!("Closed {}.", name).into(),
+            Err(e) => err(e),
+        }
+    }
+
+    /// Owner or admin: democratic mode on or off.
+    async fn set_democratic(&self, actor: &Actor, room: &str, enabled: bool) -> Out {
+        match self
+            .act(
+                actor,
+                &room_path(room, "democratic"),
+                json!({ "enabled": enabled }),
+            )
+            .await
+        {
+            Ok(v) => democratic_done(v["democratic"].as_bool().unwrap_or(enabled)).into(),
+            Err(e) => err(e),
+        }
+    }
+
+    /// Anyone in a democratic room: play, pause or seek for everyone.
+    async fn playback(&self, actor: &Actor, room: &str, what: Playback) -> Out {
+        match self
+            .act(actor, &room_path(room, "playback"), what.body())
+            .await
+        {
+            Ok(v) => playback_done(&v).into(),
             Err(e) => err(e),
         }
     }
@@ -1149,7 +1226,7 @@ impl Bot {
                 .find(|r| r.id == room_id)
                 .ok_or("the room is gone")?,
         };
-        let view = panel::render(&room);
+        let view = panel::render(&room, self.shared.democratic());
         let embeds = [panel::embed(&view)];
         let components = panel::components(&view);
         let mentions = no_mentions();
@@ -1189,11 +1266,12 @@ fn rooms_text(rooms: &[Room], actor_id: &str) -> String {
         .iter()
         .map(|r| {
             format!(
-                "- **{}** by {}: {} watching{}{}",
+                "- **{}** by {}: {} watching{}{}{}",
                 escape(&r.name, 60),
                 escape(&r.owner.name, 40),
                 r.members.len(),
                 if r.has_password { ", password" } else { "" },
+                if r.democratic { ", democratic" } else { "" },
                 if r.is_participant(actor_id) {
                     ", you're in"
                 } else {
@@ -1214,6 +1292,7 @@ mod tests {
             id: format!("7b0d3c1e-0c39-4a43-9a0e-2f1f3a3e{:04}", i),
             name: name.into(),
             has_password: true,
+            democratic: false,
             owner: crate::api::Person {
                 user_id: "u".into(),
                 name: name.into(),

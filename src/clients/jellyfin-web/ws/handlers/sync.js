@@ -19,6 +19,9 @@
     // (Re)entering a room: make the next tick report our status again.
     state.lastReportedStatus = '';
     state.roomStarted = msg.payload.started !== false;
+    // Older servers don't send these: host-only control.
+    state.democraticMode = msg.payload.democratic === true;
+    state.deviceControl = msg.payload.device_control === true;
     if (state.isHost && !state.roomStarted) {
       // Created the room while already playing: no countdown later on.
       const video = utils.getVideo();
@@ -121,6 +124,7 @@
     state.syncCooldownUntil = 0;
     state.isDriftCorrecting = false;
     state.pendingPlayUntil = 0;
+    state.commandGuardUntil = 0;
     if (state.pendingActionTimer) {
       clearTimeout(state.pendingActionTimer);
       state.pendingActionTimer = null;
@@ -140,6 +144,10 @@
   h.handleStateUpdate = (msg, video) => {
     if (state.isHost || !video) return;
     if (!utils.isOnRoomMedia()) return;
+    // Democratic mode: a play/pause/seek just sent or applied here wins over
+    // a host update that disagrees with it (it was sent before the host got
+    // the command); otherwise this would briefly undo it.
+    if (utils.commandGuardBlocks(msg)) return;
     if (msg.payload) {
       state.lastSyncPlayState = msg.payload.play_state || state.lastSyncPlayState;
     }

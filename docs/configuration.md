@@ -18,6 +18,7 @@ Access the plugin configuration page at **Dashboard** > **Plugins** > **JellyWat
 | Invite TTL | `3600` | Invite link lifetime in seconds (reserved for future use) |
 | Session Server URL | (empty) | Custom WebSocket server URL. If empty, uses `ws(s)://[host]:3000/ws`. Invalid or suspicious values (wrong scheme, malformed URL, bare internal hostname) show a non-blocking warning in the config page and browser console/toast — the value is still saved and used as entered. |
 | Hide native SyncPlay button | `false` | Hides Jellyfin's built-in SyncPlay button in the web client, since JellyWatchParty replaces that feature. |
+| Allow democratic mode | `false` | In the **Interface** section. Room hosts on Jellyfin Web and Jellyfin Desktop get an *Everyone can control playback* switch in the Watch Party panel; with it on, any participant on those clients can play, pause and seek for the room (see [Features: Democratic Mode]({{ '/features/' | relative_url }}#democratic-mode)). This only shows or hides the switch: the session server never sees the setting, and admins can turn democratic mode on for any room from the [admin panel]({{ '/admin-panel/' | relative_url }}#democratic-mode) regardless. Takes effect on the next page load. |
 | Let users bridge their devices from the Watch Party panel | `false` | Master switch for the two options below, **for small servers with trusted users only**. Admins put devices into rooms from the session server's [admin panel]({{ '/admin-panel/' | relative_url }}#jellyfin-devices) instead. Even when on, users can only bridge their own sessions (administrators: any). Turning it off stops bridges started from the panel. New in 2.1: installs upgraded from earlier versions start with it off. |
 | Allow third-party clients to host | `false` | Only with the master switch on. Lets a native/third-party client that can't run the injected script (Fladder, Swiftfin, Infuse, official mobile apps, …) be bridged in as a room **host**. While off, the "Host From Another Device" picker is hidden and the server rejects host-bridge requests. See [Host Bridge]({{ '/technical/host-bridge/' | relative_url }}). |
 | Allow supported clients as receivers | `false` | Only with the master switch on. Lets a supported native client (such as the official Jellyfin Android TV app) be attached to a room as a **receiver** that follows the host via remote-control commands. While off, the "Add a Device to This Room" picker is hidden and the server rejects receiver requests. See [Host Bridge]({{ '/technical/host-bridge/' | relative_url }}). |
@@ -62,6 +63,9 @@ devices into rooms. See [Admin Panel]({{ '/admin-panel/' | relative_url }}#envir
 The chat bots add `DATA_DIR`, `DISCORD_INTEGRATION_TOKEN` /
 `TELEGRAM_INTEGRATION_TOKEN` (one per platform, each different) and
 `INTEGRATION_HOST` / `INTEGRATION_PORT`; see [Discord Bot]({{ '/discord-bot/' | relative_url }}#2-configure-the-containers).
+Bot behaviour (including *Democratic mode commands*, off by default) is set
+in the admin panel, not in the environment; see
+[Admin Panel: Chat bots]({{ '/admin-panel/' | relative_url }}#chat-bots).
 
 ```yaml
 services:

@@ -132,6 +132,7 @@ Represents a connected WebSocket client.
 | `message_count` | `u32` | Messages sent in current rate-limit window |
 | `last_reset` | `u64` | Timestamp of last rate-limit window reset |
 | `last_seen` | `u64` | Timestamp of last activity (for zombie detection) |
+| `democratic_capable` | `bool` | The client sent `capabilities: ["democratic"]` in `auth` (the injected web client does). Only such clients, and device bridges with device control, may control a democratic room without being host. |
 
 ### Struct `Room`
 
@@ -149,6 +150,10 @@ Represents a watch party room.
 | `state` | `PlaybackState` | Yes | Current playback state |
 | `last_state_ts` | `u64` | No | Last accepted state_update timestamp |
 | `last_command_ts` | `u64` | No | Last player_event timestamp (cooldown) |
+| `democratic` | `bool` | No | Democratic mode: non-hosts may play, pause and seek (see `may_control` below) |
+| `device_control` | `bool` | No | With `democratic`, bridged Jellyfin devices may control too (admin only) |
+| `last_command_by` | `String` | No | Client id that sent the last play/pause/seek; empty for server commands (chat bots) |
+| `last_change_ts` | `u64` | No | When the play state or position last changed other than by playing on (any player_event, a play-state change, or a jump of more than 2 s from the expected position; also `set_media` and a scheduled play). Bridges use it for device-control detection. |
 
 ### Struct `PlaybackState`
 
@@ -292,10 +297,36 @@ Marks client as ready; triggers pending play if all ready.
 Removes client from room; closes room if host leaves.
 
 #### `player_event`
-Validates host permissions, applies action, broadcasts to room.
+Checks `may_control` (below), applies the action, records
+`last_command_ts`/`last_command_by`, adds `by`/`by_name` to the payload and
+broadcasts to the rest of the room.
 
 #### `state_update`
-Applies filtering (cooldown, rate limit, jitter), broadcasts if accepted.
+Checks `may_control` (host only), applies filtering (cooldown, rate limit,
+jitter), broadcasts if accepted. During the 2 s cooldown after a command
+from someone else (`last_command_by` isn't the sender), every update is
+dropped, play-state changes included, so a host update sent before its
+player carried out the command can't undo it.
+
+#### `may_control` (`handlers/playback.rs`)
+Who may send a `player_event` / `state_update`. The host: anything. Anyone
+else only when the room is `democratic` and `started`, the message is a
+`player_event` `play`, `pause` or `seek`, the sender is in the room, and it
+is either a `democratic_capable` client that isn't a plugin bridge
+(`bridge_device` unset), or a device bridge (`ClientKind::Bridge`) while
+`device_control` is on. Everything else is dropped silently.
+
+#### `server_command` (`handlers/playback.rs`)
+A play, pause or seek from outside the room (the integration API's
+`playback`, for chat bot users). Applies it like a `player_event` with an
+empty sender (so the host's next updates hit the cooldown above), and sends
+it to every member, host included, with `by: ""` and the chat user's
+`by_name`. Seeks are clamped to 0 to `MAX_POSITION_SECONDS`. The caller
+checks that the room is democratic and started.
+
+#### `set_democratic` (`handlers/misc.rs`)
+Host only (others get `error` "Only the host can change this setting").
+Calls `ops::set_democratic`, then broadcasts `room_list` on a change.
 
 #### `set_media` (`handlers/media.rs`)
 Host-only. Changes `room.media_id`, resets `room.state`/`pending_play`/
@@ -324,6 +355,7 @@ admin API use, all on already-locked maps (rooms first, then clients):
 | `set_host` | admin "make host" | Hands over the host role, drops a pending play, sends `host_changed` and `participants`. |
 | `close_room` | host starting a new room, admin "close" | Removes the room and tells its members why. |
 | `create_group` / `update_room` | admin | Creates an empty, hostless group (password optional); renames it or sets/clears its password. |
+| `set_democratic` | `set_democratic`, admin `PATCH /api/rooms/{id}`, integration `democratic` | Sets `democratic` and/or `device_control` (`None` keeps a value). On a change, sends `democratic_changed {enabled, device_control, by}` to every member and bumps the change signal. Returns whether anything changed. |
 
 A room may be **hostless** (`host_id` empty) only while it is an empty
 admin-created group. Host-only messages are ignored then (no client id
@@ -457,6 +489,27 @@ Lets the admin panel put Jellyfin sessions that can't run the web client
   stopped on purpose and is left alone until the room changes item;
   `PlayNow` is tried at most 3 times per item.
 - A bridge that becomes host marks the room started (no start countdown).
+- Democratic rooms (`tick` reads `democratic && started`,
+  `device_control`, `last_command_ts`/`last_command_by` and
+  `last_change_ts` into a `Democratic` snapshot):
+  - **Host device follows others** (`logic::host_follow`): when the room's
+    last command is newer than the last one seen and came from someone
+    else, the host device is sent `Pause`/`Unpause` and, past the 2 s drift
+    threshold, `Seek`, if it accepts remote control. Until its next
+    check-in (at most 10 s, `COMMAND_TRUST_MS`) the host reports nothing,
+    so its old state can't undo the command. Commands from before the
+    device became host are ignored; a scheduled play is acted on once it
+    starts.
+  - **Device control** (`logic::detect_user_action`, receivers only, with
+    `device_control` on): each progress report is judged once. It counts
+    only if it is more than `USER_ACTION_GRACE_MS` (3 s) after the bridge's
+    own last pause/seek/`PlayNow` and the room's `last_change_ts`, the
+    device is on the room's item and there is no scheduled play. A
+    play/pause state that differs from the room is a play or pause; a jump
+    of more than `USER_SEEK_THRESHOLD_SECS` (8 s) both from where the device
+    was heading and from the room is a seek. The bridge sends it as its own
+    `player_event` (passing `may_control`) and treats it as its own command,
+    so `follower_step` doesn't undo it.
 - Receiver thresholds: seek beyond 2 s drift (4 s cooldown, 1 s lead while
   playing), pause/unpause 2.5 s cooldown, `PlayNow` 15 s cooldown.
 - `/Sessions` is fetched without `activeWithinSeconds` (an idle TV makes

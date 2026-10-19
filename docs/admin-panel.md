@@ -20,6 +20,8 @@ Admins can use it to:
 - **make someone host** (everyone else in the room follows the host);
 - **remove** people from a room, **rename** a room, **set or remove its
   password**, and **close** it;
+- **turn on democratic mode** for a room, so everyone in it can play,
+  pause and seek, not just the host. See [Democratic mode](#democratic-mode);
 - **put Jellyfin devices into rooms**: TV apps and other clients that
   can't show the Watch Party panel (official Android TV app, Fladder,
   Swiftfin, Infuse, ...), as **host** or **receiver**. See
@@ -205,6 +207,53 @@ a normal member and starts following the new one. A play that was waiting
 for everyone to be ready is cancelled; the new host just presses play
 again.
 
+## Democratic mode
+
+**Democratic** on a room lets everyone in it play, pause and seek for
+everyone; **Host-only control** turns it off again. Rooms with it on show a
+*Democratic* badge. Everyone in the room is told, and the room list in the
+Watch Party panel marks the room. This works for every room, whatever the
+plugin's *Allow democratic mode* setting says (that setting only decides
+whether hosts get the switch in their Watch Party panel).
+
+Who can then control playback:
+
+- people with the Watch Party panel (Jellyfin in a browser, Jellyfin
+  Desktop);
+- chat bot users in the room, when the bot's **Democratic mode commands**
+  setting is on (see [Chat bots](#chat-bots));
+- Jellyfin devices, only with **Devices control too** (below).
+
+Others can play, pause and seek once the room has started. The first play
+(the start countdown), switching to another item and the position updates
+everyone follows stay with the host.
+
+**Devices control too** appears on a democratic room that has a Jellyfin
+device in it (**Devices follow only** turns it off; the badge then reads
+*Democratic + devices*). With it on, what someone does on a receiver
+device itself (pause, resume, or a seek of more than about 8 seconds) is
+applied to the whole room. Caveats:
+
+- It is only as fast as the device reports to Jellyfin, often several
+  seconds.
+- A report only counts when it is at least 3 seconds after the last command
+  the session server sent the device and the room's last change, so a
+  device that is still catching up isn't mistaken for someone pressing a
+  button.
+- A device that pauses to buffer can look like a pause, and pause the room.
+- The device must accept remote control.
+
+A device that is the **host** of a democratic room is also told to carry out
+what other members do (play, pause, seek), like a receiver. This doesn't
+need device control. If the host app doesn't accept remote control
+(Fladder, for example), it can't follow, and its own state wins over the
+others' commands a moment later.
+
+Both switches use `PATCH /api/rooms/{id}` with `democratic` and/or
+`device_control` (booleans, alongside the optional `name` and `password`).
+`GET /api/overview` reports both for each room. The mode is kept in memory
+with the room and starts off for every new room.
+
 ## Sync status
 
 Each member's status is what their client last reported: `synced`,
@@ -227,6 +276,11 @@ appear:
   send `/groupid` in the group to see it) and limits. **Group
   administrators manage all rooms** lets the group's admins act as owners
   of every room. Telegram has no roles or channel list.
+- **Democratic mode commands** (both bots, off by default): room owners and
+  admins can turn on [democratic mode](#democratic-mode) for their room
+  from the bot, and everyone in a democratic room gets play, pause and seek
+  commands and panel buttons. While it is off, the bot offers none of
+  this and the server refuses it.
 - **Users and link codes**: every Jellyfin user, with their code and a
   column for each platform in use with the linked account. **Assign code**
   / **New code** show a 4-digit code once; the same code links one account

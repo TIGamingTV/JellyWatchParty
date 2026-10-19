@@ -126,14 +126,6 @@ pub async fn me(State(state): State<AdminState>) -> Response {
 
 // --- overview --------------------------------------------------------------
 
-fn expected_position(room: &Room, now: u64) -> f64 {
-    if room.state.play_state == "playing" {
-        room.state.position + now.saturating_sub(room.last_state_ts) as f64 / 1000.0
-    } else {
-        room.state.position
-    }
-}
-
 fn member_json(
     id: &str,
     room: &Room,
@@ -201,11 +193,13 @@ pub fn build_overview(
                 "media_id": r.media_id,
                 "media_name": media_name(snapshot.as_deref(), r.media_id.as_deref()),
                 "host_id": if r.is_hostless() { None } else { Some(&r.host_id) },
-                "position": expected_position(r, now),
+                "position": r.expected_position(now),
                 "play_state": r.state.play_state,
                 "started": r.started,
                 "pending_play": r.pending_play.is_some(),
                 "created_at": r.created_at,
+                "democratic": r.democratic,
+                "device_control": r.device_control,
                 "chat": r.chat.as_ref().map(|c| serde_json::json!({
                     "provider": c.provider,
                     "owner_name": c.owner_name,
@@ -311,6 +305,13 @@ pub struct UpdateRoomBody {
     /// Absent: keep. `null` or `""`: remove. Anything else: set.
     #[serde(default, deserialize_with = "double_option")]
     password: Option<Option<String>>,
+    /// Democratic mode: any member on a supporting client may control
+    /// playback.
+    #[serde(default)]
+    democratic: Option<bool>,
+    /// With democratic mode, bridged Jellyfin devices may control it too.
+    #[serde(default)]
+    device_control: Option<bool>,
 }
 
 pub async fn update_room(
@@ -320,20 +321,44 @@ pub async fn update_room(
 ) -> ApiResult {
     {
         let mut locked_rooms = state.rooms.write().await;
-        let pw = body.password.as_ref().map(|p| p.as_deref());
-        ops::update_room(&id, body.name.as_deref(), pw, &mut locked_rooms).map_err(op_error)?;
-    }
-    info!(
-        "admin: updated room {} (name: {}, password: {})",
-        id,
-        body.name.is_some(),
-        match &body.password {
-            None => "kept",
-            Some(None) => "removed",
-            Some(Some(p)) if p.is_empty() => "removed",
-            Some(Some(_)) => "changed",
+        if !locked_rooms.contains_key(&id) {
+            return Err(op_error(OpError::RoomNotFound));
         }
-    );
+        if body.name.is_some() || body.password.is_some() {
+            let pw = body.password.as_ref().map(|p| p.as_deref());
+            ops::update_room(&id, body.name.as_deref(), pw, &mut locked_rooms).map_err(op_error)?;
+            info!(
+                "admin: updated room {} (name: {}, password: {})",
+                id,
+                body.name.is_some(),
+                match &body.password {
+                    None => "kept",
+                    Some(None) => "removed",
+                    Some(Some(p)) if p.is_empty() => "removed",
+                    Some(Some(_)) => "changed",
+                }
+            );
+        }
+        if body.democratic.is_some() || body.device_control.is_some() {
+            let locked_clients = state.clients.read().await;
+            let changed = ops::set_democratic(
+                &id,
+                body.democratic,
+                body.device_control,
+                "an admin",
+                &mut locked_rooms,
+                &locked_clients,
+            )
+            .map_err(op_error)?;
+            if changed {
+                let r = &locked_rooms[&id];
+                info!(
+                    "admin: room {} democratic mode {}, device control {}",
+                    id, r.democratic, r.device_control
+                );
+            }
+        }
+    }
     broadcast_room_list(&state.clients, &state.rooms).await;
     Ok(ok())
 }

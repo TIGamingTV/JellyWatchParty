@@ -51,11 +51,23 @@
     host,
     DEFAULT_WS_URL: `${protocol}//${host}:3000/ws`,
     SUPPRESS_MS: 2000,
+    // Announced in every `auth` message. 'democratic': this client applies
+    // and echo-suppresses other participants' play/pause/seek, so the server
+    // lets it control playback in democratic rooms.
+    CLIENT_CAPABILITIES: ['democratic'],
     // Host gives up waiting for the start countdown after this long and just
     // plays (the server waits at most 10 s for everyone to be ready).
     START_SAFETY_MS: 15000,
     TRACK_SWITCH_SUPPRESS_MS: 8000, // Safety-net suppression window for host audio/subtitle track switches (collapses early via settle-shortcut, see playback/tracks.js)
     SEEK_THRESHOLD: 1.0,          // Reduced from 2.5s - smaller seeks now broadcast (UX-P2)
+    // Democratic mode: how long a sent/applied play/pause/seek overrides
+    // disagreeing state_updates, and how far (s) an update may be from it
+    // and still count as agreeing (see utils/misc.js commandGuardBlocks).
+    COMMAND_GUARD_MS: 3000,
+    COMMAND_GUARD_TOLERANCE_SEC: 2.0,
+    // Guest: how long a loading stream's own play/seek events are never
+    // treated as commands, at most (shortened once it can play).
+    FOLLOWER_LOAD_MAX_MS: 15000,
     STATE_UPDATE_MS: 1000,        // Reduced from 2000ms - more responsive state updates (UX-P1)
     SYNC_LEAD_MS: 300,            // Compensates processing + initial HLS buffer
     DRIFT_CORRECTION_ENTER_SEC: 0.3, // Start a rate-correction burst once drift exceeds this
@@ -146,6 +158,22 @@
     // Participant list from the server: [{ id, name, is_host, status }].
     // Empty with an older session server, which only sends counts.
     participants: [],
+    // Democratic mode (room_state.democratic / democratic_changed): once the
+    // room has started, any participant may play/pause/seek for everyone.
+    // The host stays the position source (periodic state_update).
+    democraticMode: false,
+    deviceControl: false,      // Bridged TV devices may control too (informational)
+    // Democratic mode: after this client sent (or applied) a play/pause/seek,
+    // state_updates disagreeing with it are ignored until this time. The
+    // host's update may already have been in flight when the command went
+    // out, and would otherwise briefly revert it (see ws/handlers/sync.js).
+    commandGuardUntil: 0,
+    commandGuardPlayState: '',
+    commandGuardPosition: 0,
+    commandGuardServerTs: 0,
+    // Guest: a new stream is loading (join, media change, track reload);
+    // the player's own play/seek events until then are not user commands.
+    followerLoadingUntil: 0,
     lastReportedStatus: '',   // Own status last sent as client_status
     lastStatusReportAt: 0,
     lastSyncServerTs: 0,
@@ -167,6 +195,7 @@
     hideNativeSyncButton: false, // Hide Jellyfin's built-in SyncPlay button
     allowThirdPartyHost: false,  // Opt-in: bridge a third-party client in as a room host
     allowSupportedReceiver: false, // Opt-in: attach a supported client (e.g. Android TV) as a receiver
+    allowDemocraticMode: false,  // Opt-in: hosts may let everyone control playback
     // Authentication
     authToken: null,
     authEnabled: false,

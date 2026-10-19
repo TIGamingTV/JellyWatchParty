@@ -70,7 +70,12 @@
         if (newToken && state.ws && state.ws.readyState === WebSocket.OPEN) {
           state.ws.send(JSON.stringify({
             type: 'auth',
-            payload: { token: newToken, user_name: state.userName, user_id: state.userId },
+            payload: {
+              token: newToken,
+              user_name: state.userName,
+              user_id: state.userId,
+              capabilities: JWP.constants.CLIENT_CAPABILITIES.slice()
+            },
             ts: utils.nowMs()
           }));
           console.log('[JellyWatchParty] Token refreshed and re-authenticated');
@@ -116,6 +121,7 @@
       state.hideNativeSyncButton = data.hide_native_sync_button || false;
       state.allowThirdPartyHost = data.allow_third_party_host || false;
       state.allowSupportedReceiver = data.allow_supported_receiver || false;
+      state.allowDemocraticMode = data.allow_democratic_mode || false;
       if (JWP.ui && JWP.ui.applyNativeSyncButtonVisibility) {
         JWP.ui.applyNativeSyncButtonVisibility();
       }

@@ -140,6 +140,7 @@ td.actions select { max-width: 200px; }
 }
 .badge-host { border-color: #d2992288; color: var(--warn); background: #d299221a; }
 .badge-admin { border-color: #00a4dc88; color: var(--accent); }
+.badge-democratic { border-color: #a371f788; color: #a371f7; background: #a371f71a; }
 .badge-jellyfin { border-color: #aa5cc388; color: #c58bd8; }
 .badge-plugin { border-color: #3fb95088; color: var(--good); }
 

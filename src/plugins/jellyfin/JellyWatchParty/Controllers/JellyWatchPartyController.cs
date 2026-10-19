@@ -264,7 +264,8 @@ public class JellyWatchPartyController : ControllerBase
                 session_server_url = config.SessionServerUrl ?? string.Empty,
                 hide_native_sync_button = config.HideNativeSyncButton,
                 allow_third_party_host = config.PanelHostAllowed,
-                allow_supported_receiver = config.PanelReceiverAllowed
+                allow_supported_receiver = config.PanelReceiverAllowed,
+                allow_democratic_mode = config.AllowDemocraticMode
             });
         }
 
@@ -280,7 +281,8 @@ public class JellyWatchPartyController : ControllerBase
             session_server_url = config.SessionServerUrl ?? string.Empty,
             hide_native_sync_button = config.HideNativeSyncButton,
             allow_third_party_host = config.PanelHostAllowed,
-            allow_supported_receiver = config.PanelReceiverAllowed
+            allow_supported_receiver = config.PanelReceiverAllowed,
+            allow_democratic_mode = config.AllowDemocraticMode
         });
     }
 

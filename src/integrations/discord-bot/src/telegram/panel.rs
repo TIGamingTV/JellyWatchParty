@@ -56,10 +56,11 @@ fn kind_label(kind: &str) -> &'static str {
     }
 }
 
-/// The buttons of a room, on its panel and in private room menus.
-pub fn room_buttons(id: &str) -> Vec<Vec<Button>> {
+/// The buttons of a room, on its panel and in private room menus; with
+/// `playback`, a row to play, pause and seek (democratic rooms).
+pub fn room_buttons(id: &str, playback: bool) -> Vec<Vec<Button>> {
     let id = id.to_string();
-    vec![
+    let mut rows = vec![
         vec![
             Button::data("Join", Data::Join(id.clone())),
             Button::data("Leave", Data::Leave(id.clone())),
@@ -68,11 +69,30 @@ pub fn room_buttons(id: &str) -> Vec<Vec<Button>> {
             Button::data("Add my device", Data::AddDevice(id.clone())),
             Button::data("Remove my device", Data::RemoveDevice(id.clone())),
         ],
-        vec![Button::data("Manage (owner)", Data::Manage(id))],
-    ]
+        vec![Button::data("Manage (owner)", Data::Manage(id.clone()))],
+    ];
+    if playback {
+        rows.push(vec![
+            Button::data("Play", Data::Play(id.clone())),
+            Button::data("Pause", Data::Pause(id.clone())),
+            Button::data("−30s", Data::Back(id.clone())),
+            Button::data("+30s", Data::Forward(id.clone())),
+            Button::data("Seek to…", Data::Seek(id)),
+        ]);
+    }
+    rows
 }
 
-pub fn render(room: &Room) -> View {
+/// Whether a panel says who controls playback: when the admin turned on
+/// democratic mode commands (so owners see they can share control), or
+/// when the room is democratic anyway (turned on from Jellyfin web).
+pub fn shows_control(room: &Room, democratic_commands: bool) -> bool {
+    democratic_commands || room.democratic
+}
+
+/// `democratic_commands`: the admin turned on democratic mode commands
+/// (only then are there playback buttons).
+pub fn render(room: &Room, democratic_commands: bool) -> View {
     let mut text = format!(
         "<b>Watch party: {}</b>\nOwner: {}\n{}",
         escape(&room.name, 100),
@@ -96,6 +116,14 @@ pub fn render(room: &Room) -> View {
         None => "nobody yet".into(),
     };
     text.push_str(&format!("\n\n<b>Host:</b> {}", host));
+    if shows_control(room, democratic_commands) {
+        text.push_str(if room.democratic {
+            "\n<b>Control:</b> everyone"
+        } else {
+            "\n<b>Control:</b> host only"
+        });
+    }
+    let controls = room.democratic && democratic_commands;
 
     text.push_str(&format!("\n<b>Watching ({}):</b>", room.members.len()));
     if room.members.is_empty() {
@@ -135,13 +163,17 @@ pub fn render(room: &Room) -> View {
             people
         }
     ));
-    text.push_str(
-        "\n\n<i>Only your own Jellyfin devices can be added. The owner picks the host and can close the room. Jellyfin web users join from their Watch Party panel.</i>",
-    );
+    text.push_str(if controls {
+        "\n\n<i>Democratic mode: everyone in the room can play, pause and seek with the buttons below. Only your own Jellyfin devices can be added. Jellyfin web users join from their Watch Party panel.</i>"
+    } else if democratic_commands {
+        "\n\n<i>Only your own Jellyfin devices can be added. The owner picks the host, can close the room and can turn on democratic mode (Manage) so everyone can play, pause and seek. Jellyfin web users join from their Watch Party panel.</i>"
+    } else {
+        "\n\n<i>Only your own Jellyfin devices can be added. The owner picks the host and can close the room. Jellyfin web users join from their Watch Party panel.</i>"
+    });
 
     View {
         text,
-        rows: room_buttons(&room.id),
+        rows: room_buttons(&room.id, controls),
     }
 }
 
@@ -170,6 +202,10 @@ mod tests {
         r.rooms.into_iter().next().unwrap()
     }
 
+    fn render(r: &Room) -> View {
+        super::render(r, false)
+    }
+
     #[test]
     fn renders_owner_host_members_and_participants() {
         let v = render(&room());
@@ -190,6 +226,48 @@ mod tests {
             };
             assert!(d.encode().len() <= DATA_MAX);
         }
+    }
+
+    #[test]
+    fn democratic_rooms_get_playback_buttons_when_the_admin_allows() {
+        let mut r = room();
+        assert!(r.democratic);
+        let v = super::render(&r, true);
+        assert!(v
+            .text
+            .contains("<b>Host:</b> Alice (Living room TV)\n<b>Control:</b> everyone\n"));
+        assert!(v.text.contains("Democratic mode"));
+        assert_eq!(v.rows.len(), 4);
+        let data: Vec<String> = v.rows[3]
+            .iter()
+            .map(|b| match b {
+                Button::Data(_, d) => d.encode(),
+                Button::Url(..) => panic!("panel buttons carry data"),
+            })
+            .collect();
+        assert_eq!(
+            data,
+            ["pb-play", "pb-pause", "pb-back", "pb-fwd", "pb-seek"]
+                .map(|a| format!("v1:{}:{}", a, r.id))
+        );
+        assert!(data.iter().all(|d| d.len() <= DATA_MAX));
+
+        // Feature off: no buttons, but the room says who controls it.
+        let v = super::render(&r, false);
+        assert_eq!(v.rows.len(), 3);
+        assert!(v.text.contains("<b>Control:</b> everyone"));
+
+        // Feature on, host-only room: says so, and where to change it.
+        r.democratic = false;
+        let v = super::render(&r, true);
+        assert_eq!(v.rows.len(), 3);
+        assert!(v.text.contains("<b>Control:</b> host only"));
+        assert!(v.text.contains("democratic mode (Manage)"));
+
+        // Neither: as it always was.
+        let v = super::render(&r, false);
+        assert!(!v.text.contains("Control"));
+        assert_ne!(super::render(&r, true), v);
     }
 
     #[test]
@@ -247,9 +325,11 @@ mod tests {
                     external_id: None,
                 })
                 .collect();
-            let v = render(&r);
-            assert!(len16(&v.text) <= MESSAGE_MAX, "{}", len16(&v.text));
-            assert!(v.text.contains("more"));
+            for democratic in [false, true] {
+                let v = super::render(&r, democratic);
+                assert!(len16(&v.text) <= MESSAGE_MAX, "{}", len16(&v.text));
+                assert!(v.text.contains("more"));
+            }
         }
         let c = render_closed(&"&".repeat(200), crate::panels::CLOSED);
         assert!(len16(&c.text) <= MESSAGE_MAX);

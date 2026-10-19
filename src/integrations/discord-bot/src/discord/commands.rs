@@ -25,8 +25,25 @@ fn sub(name: &str, description: &str) -> SubCommandBuilder {
     SubCommandBuilder::new(name, description)
 }
 
-pub fn definition() -> Command {
-    CommandBuilder::new(
+/// `/jwp`. With `democratic` (the admin turned on democratic mode
+/// commands), also `/jwp room democratic` and the `/jwp playback` group.
+pub fn definition(democratic: bool) -> Command {
+    let mut rooms = room_subcommands();
+    if democratic {
+        rooms.push(
+            sub(
+                "democratic",
+                "Owner: let everyone in the room play, pause and seek (on), or only the host (off)",
+            )
+            .option(room_opt())
+            .option(
+                StringBuilder::new("mode", "On or off")
+                    .required(true)
+                    .choices([("on", "on"), ("off", "off")]),
+            ),
+        );
+    }
+    let mut cmd = CommandBuilder::new(
         NAME,
         "Watch parties with your own Jellyfin devices",
         CommandType::ChatInput,
@@ -40,71 +57,103 @@ pub fn definition() -> Command {
         "whoami",
         "Show which Jellyfin account you're linked to and your rooms",
     ))
-    .option(
-        SubCommandGroupBuilder::new("room", "Watch party rooms").subcommands([
-            sub(
-                "create",
-                "Create a room (asks for a name and an optional password)",
+    .option(SubCommandGroupBuilder::new("room", "Watch party rooms").subcommands(rooms))
+    .option(device_group());
+    if democratic {
+        cmd = cmd.option(playback_group());
+    }
+    cmd.build()
+}
+
+/// `/jwp playback`: for everyone in a democratic room.
+fn playback_group() -> SubCommandGroupBuilder {
+    SubCommandGroupBuilder::new(
+        "playback",
+        "Democratic rooms: play, pause and seek for everyone",
+    )
+    .subcommands([
+        sub("play", "Play for everyone in the room").option(room_opt()),
+        sub("pause", "Pause for everyone in the room").option(room_opt()),
+        sub(
+            "seek",
+            "Jump to a time, or ahead or back, for everyone in the room",
+        )
+        .option(room_opt())
+        .option(
+            StringBuilder::new(
+                "time",
+                "1:23:45, 83:10 or 95 (seconds) to go there; +30, -10 or +1:30 to jump",
+            )
+            .required(true)
+            .max_length(16),
+        ),
+    ])
+}
+
+fn room_subcommands() -> Vec<SubCommandBuilder> {
+    vec![
+        sub(
+            "create",
+            "Create a room (asks for a name and an optional password)",
+        ),
+        sub("list", "List the rooms"),
+        sub("join", "Join a room").option(room_opt()),
+        sub("leave", "Leave a room (your devices leave too)").option(room_opt()),
+        sub("host", "Owner: pick who everyone follows")
+            .option(room_opt())
+            .option(
+                StringBuilder::new("member", "The new host")
+                    .required(true)
+                    .autocomplete(true),
             ),
-            sub("list", "List the rooms"),
-            sub("join", "Join a room").option(room_opt()),
-            sub("leave", "Leave a room (your devices leave too)").option(room_opt()),
-            sub("host", "Owner: pick who everyone follows")
-                .option(room_opt())
-                .option(
-                    StringBuilder::new("member", "The new host")
-                        .required(true)
-                        .autocomplete(true),
-                ),
-            sub("password", "Owner: set or remove the room password").option(room_opt()),
-            sub("rename", "Owner: rename the room")
-                .option(room_opt())
-                .option(
-                    StringBuilder::new("name", "New name")
-                        .required(true)
-                        .max_length(100),
-                ),
-            sub("transfer", "Owner: hand the room to another participant")
-                .option(room_opt())
-                .option(UserBuilder::new("user", "The new owner").required(true)),
-            sub("kick", "Owner: remove a participant, device or viewer")
-                .option(room_opt())
-                .option(
-                    StringBuilder::new("who", "Who to remove")
-                        .required(true)
-                        .autocomplete(true),
-                ),
-            sub("close", "Owner: close the room").option(room_opt()),
-            sub("panel", "Owner: post the room's panel in this channel").option(room_opt()),
-        ]),
-    )
-    .option(
-        SubCommandGroupBuilder::new("device", "Your Jellyfin devices").subcommands([
-            sub("add", "Put one of your devices into a room")
-                .option(room_opt())
-                .option(
-                    StringBuilder::new("device", "Your device (open the Jellyfin app first)")
-                        .required(true)
-                        .autocomplete(true),
-                )
-                .option(
-                    StringBuilder::new("role", "Follow the host, or be the host")
-                        .required(true)
-                        .choices([
-                            ("receiver (follows the host)", "receiver"),
-                            ("host (everyone follows it)", "host"),
-                        ]),
-                ),
-            sub("remove", "Take one of your devices out of a room")
-                .option(room_opt())
-                .option(
-                    StringBuilder::new("device", "Your device")
-                        .required(true)
-                        .autocomplete(true),
-                ),
-        ]),
-    )
-    .build()
+        sub("password", "Owner: set or remove the room password").option(room_opt()),
+        sub("rename", "Owner: rename the room")
+            .option(room_opt())
+            .option(
+                StringBuilder::new("name", "New name")
+                    .required(true)
+                    .max_length(100),
+            ),
+        sub("transfer", "Owner: hand the room to another participant")
+            .option(room_opt())
+            .option(UserBuilder::new("user", "The new owner").required(true)),
+        sub("kick", "Owner: remove a participant, device or viewer")
+            .option(room_opt())
+            .option(
+                StringBuilder::new("who", "Who to remove")
+                    .required(true)
+                    .autocomplete(true),
+            ),
+        sub("close", "Owner: close the room").option(room_opt()),
+        sub("panel", "Owner: post the room's panel in this channel").option(room_opt()),
+    ]
+}
+
+fn device_group() -> SubCommandGroupBuilder {
+    SubCommandGroupBuilder::new("device", "Your Jellyfin devices").subcommands([
+        sub("add", "Put one of your devices into a room")
+            .option(room_opt())
+            .option(
+                StringBuilder::new("device", "Your device (open the Jellyfin app first)")
+                    .required(true)
+                    .autocomplete(true),
+            )
+            .option(
+                StringBuilder::new("role", "Follow the host, or be the host")
+                    .required(true)
+                    .choices([
+                        ("receiver (follows the host)", "receiver"),
+                        ("host (everyone follows it)", "host"),
+                    ]),
+            ),
+        sub("remove", "Take one of your devices out of a room")
+            .option(room_opt())
+            .option(
+                StringBuilder::new("device", "Your device")
+                    .required(true)
+                    .autocomplete(true),
+            ),
+    ])
 }
 
 /// A parsed invocation: the subcommand path (`["room", "join"]`) and its
@@ -176,9 +225,61 @@ mod tests {
     use super::*;
     use twilight_model::application::command::CommandOptionType;
 
+    /// The subcommand names under `group` ("" for the top level).
+    fn names(json: &serde_json::Value, group: &str) -> Vec<String> {
+        let opts = if group.is_empty() {
+            &json["options"]
+        } else {
+            &json["options"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|o| o["name"] == group)
+                .unwrap()["options"]
+        };
+        opts.as_array()
+            .unwrap()
+            .iter()
+            .map(|o| o["name"].as_str().unwrap().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn democratic_commands_only_when_turned_on() {
+        let off = serde_json::to_value(definition(false)).unwrap();
+        assert!(!names(&off, "").contains(&"playback".into()));
+        assert!(!names(&off, "room").contains(&"democratic".into()));
+
+        let on = serde_json::to_value(definition(true)).unwrap();
+        assert!(names(&on, "room").contains(&"democratic".into()));
+        assert_eq!(names(&on, "playback"), ["play", "pause", "seek"]);
+        let room = on["options"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|o| o["name"] == "room")
+            .unwrap();
+        let dem = room["options"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|o| o["name"] == "democratic")
+            .unwrap();
+        assert_eq!(dem["options"][0]["name"], "room");
+        assert_eq!(dem["options"][0]["autocomplete"], true);
+        assert_eq!(dem["options"][1]["name"], "mode");
+        assert_eq!(dem["options"][1]["choices"][0]["value"], "on");
+        assert_eq!(dem["options"][1]["choices"][1]["value"], "off");
+    }
+
     #[test]
     fn the_definition_is_valid_for_discord() {
-        let cmd = definition();
+        for democratic in [false, true] {
+            check_definition(definition(democratic));
+        }
+    }
+
+    fn check_definition(cmd: Command) {
         twilight_validate::command::command(&cmd).unwrap();
         let json = serde_json::to_value(&cmd).unwrap();
         assert_eq!(json["name"], "jwp");
@@ -200,6 +301,13 @@ mod tests {
                 assert!(opts.len() <= 25);
                 for o in opts {
                     check(o);
+                }
+            }
+            if let Some(choices) = v["choices"].as_array() {
+                assert!(choices.len() <= 25);
+                for c in choices {
+                    let n = c["name"].as_str().unwrap();
+                    assert!(!n.is_empty() && n.chars().count() <= 100, "{}", n);
                 }
             }
         }

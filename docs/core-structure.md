@@ -75,7 +75,7 @@ A lightweight WebSocket server that manages rooms and relays messages.
 
 **Responsibilities:**
 - Accept WebSocket connections and manage room lifecycle (create, join, leave, close)
-- Relay playback events between clients, validating host permissions
+- Relay playback events between clients, validating host permissions (or, in a democratic room, who else may play, pause and seek)
 - Filter state updates (anti-jitter, rate limiting) and schedule synchronized actions
 
 All state is in-memory (`Arc<RwLock<HashMap<...>>>`) — no database, and
@@ -179,7 +179,8 @@ reattachment possible.
 ```
 Client { sender, room_id, user_id, user_name, authenticated, message_count, last_reset, last_seen }
 Room   { room_id, name, host_id, clients, ready_clients, pending_play, state,
-         last_state_ts, last_command_ts, chat_history (capped at 50), password_hash }
+         last_state_ts, last_command_ts, chat_history (capped at 50), password_hash,
+         democratic, device_control, last_command_by, last_change_ts }
 ```
 
 **Client** (`JWP.state`): `ws`, `roomId`, `clientId`, `isHost`, `serverOffsetMs`,
@@ -189,7 +190,7 @@ see [Client: `state.js`]({{ '/technical/client/' | relative_url }}#module-statej
 ## Security Model
 
 - **Authentication**: Optional JWT tokens validated by session server
-- **Authorization**: Only hosts can send playback commands
+- **Authorization**: Only hosts can send playback commands, except play/pause/seek from other members of a democratic room (see [Protocol: Democratic mode]({{ '/technical/protocol/' | relative_url }}#democratic-mode))
 - **Transport**: WebSocket (ws://) or secure WebSocket (wss://)
 - **Rate limiting**: 30 messages/sec per client, 10 token requests/min per user
 - **Message size**: 64KB maximum

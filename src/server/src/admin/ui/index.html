@@ -50,6 +50,8 @@
               <dd>Hands control to that member. The old host becomes a receiver.</dd>
               <dt>Remove</dt>
               <dd>Takes the member out of the room. People land back in their lobby; devices stop being controlled.</dd>
+              <dt>Democratic</dt>
+              <dd>Lets everyone in the room play, pause and seek, not just the host. Works for people with the Watch Party panel (Jellyfin in a browser, Jellyfin Desktop) and for chat bot users. <b>Devices control</b> also lets receiver devices (TV apps) control the room: pausing or seeking on the device itself is noticed within a few seconds and applied for everyone. A device that pauses to buffer can look like a pause.</dd>
               <dt>Rename, passwords</dt>
               <dd>Edit the room. A new or removed password only matters for people joining from now on.</dd>
               <dt>Close</dt>
@@ -162,6 +164,7 @@
             <label class="check"><input type="checkbox" id="dc-require-pw"> Rooms need a password</label>
             <label class="check"><input type="checkbox" id="dc-host"> Devices may be added as host</label>
             <label class="check"><input type="checkbox" id="dc-receiver"> Devices may be added as receiver</label>
+            <label class="check" title="Room owners and admins can turn on democratic mode; then everyone in the room gets play, pause and seek from the bot"><input type="checkbox" id="dc-democratic"> Democratic mode commands</label>
           </div>
           <div class="wide form-foot">
             <span id="dc-dirty" class="muted small hidden">Unsaved changes</span>
@@ -187,6 +190,7 @@
             <label class="check"><input type="checkbox" id="tg-require-pw"> Rooms need a password</label>
             <label class="check"><input type="checkbox" id="tg-host"> Devices may be added as host</label>
             <label class="check"><input type="checkbox" id="tg-receiver"> Devices may be added as receiver</label>
+            <label class="check" title="Room owners and admins can turn on democratic mode; then everyone in the room gets play, pause and seek from the bot"><input type="checkbox" id="tg-democratic"> Democratic mode commands</label>
           </div>
           <div class="wide form-foot">
             <span id="tg-dirty" class="muted small hidden">Unsaved changes</span>

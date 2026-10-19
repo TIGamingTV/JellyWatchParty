@@ -174,6 +174,54 @@ describe('playback/sync syncLoop drift correction', () => {
     assert.equal(JWP.state.isDriftCorrecting, false);
   });
 
+  it('the host stays quiet in a democratic room too (it is the position source)', () => {
+    JWP.state.isHost = true;
+    JWP.state.democraticMode = true;
+    video.currentTime = 10.0 - 5.0; // far from a (stale) baseline
+    JWP.playback.syncLoop();
+    assert.equal(video.playbackRate, 1);
+    assert.equal(video.currentTime, 5.0, 'no hard seek');
+    assert.equal(JWP.state.isDriftCorrecting, false);
+    JWP.state.democraticMode = false;
+  });
+
+  it('a democratic guest that mirrored its own seek is not pulled back to the old position', () => {
+    JWP.state.democraticMode = true;
+    // The guest seeked from ~10s to 100s and sent it (playback/bind.js
+    // mirrors what it sends as the room state).
+    video.currentTime = 100;
+    JWP.utils.mirrorRoomState(100, 'playing');
+    JWP.playback.syncLoop();
+    assert.ok(Math.abs(video.currentTime - 100) < 0.01, 'no hard seek back');
+    assert.equal(video.playbackRate, 1);
+    JWP.state.democraticMode = false;
+  });
+
+  it('without the mirror the same seek would be reverted (why the mirror exists)', () => {
+    video.currentTime = 100;
+    JWP.playback.syncLoop();
+    assert.ok(Math.abs(video.currentTime - 10) < 0.5, 'hard-seeked back to the stale baseline');
+  });
+
+  it('a hard seek is suppressed from being sent and lands on the room position', () => {
+    JWP.state.suppressUntil = 0;
+    video.currentTime = 10.0 - DRIFT_SOFT_MAX_SEC - 1;
+    JWP.playback.syncLoop();
+    assert.equal(JWP.utils.shouldSend(), false, 'its seeked event is suppressed');
+    assert.equal(JWP.utils.isEchoOfRoomState('seek', video), true, 'and recognised as an echo even after that');
+  });
+
+  it('an initial-sync correction seek is suppressed from being sent too', () => {
+    JWP.state.suppressUntil = 0;
+    JWP.state.isInitialSync = true;
+    JWP.state.initialSyncTargetPos = 10.0;
+    video.currentTime = 10.0 - 3; // past INITIAL_SYNC_DRIFT_THRESHOLD
+    JWP.playback.syncLoop();
+    assert.ok(Math.abs(video.currentTime - 10.0) < 0.5);
+    assert.equal(JWP.utils.shouldSend(), false);
+    JWP.state.isInitialSync = false;
+  });
+
   it('does nothing when not in a room', () => {
     JWP.state.inRoom = false;
     video.currentTime = 10.0 - 5.0;

@@ -3,7 +3,7 @@
 //! request needs `Authorization: Bearer <token>`, and the token says which
 //! platform is calling. Errors are `{error, reason, retry_after_ms?}`.
 
-use super::{Actor, IntError, Integration, KickTarget, RoomUpdate};
+use super::{Actor, IntError, Integration, KickTarget, PlaybackRequest, RoomUpdate};
 use crate::integration::DeviceRole;
 use crate::password::ct_eq;
 use crate::utils::now_ms;
@@ -253,6 +253,25 @@ struct MemberBody {
 }
 
 #[derive(Deserialize)]
+struct DemocraticBody {
+    actor: Actor,
+    enabled: bool,
+}
+
+#[derive(Deserialize)]
+struct PlaybackBody {
+    actor: Actor,
+    /// `play`, `pause` or `seek`.
+    action: String,
+    /// Seek to this position (seconds)...
+    #[serde(default)]
+    position: Option<f64>,
+    /// ...or by this many seconds (negative: back).
+    #[serde(default)]
+    offset: Option<f64>,
+}
+
+#[derive(Deserialize)]
 struct DeviceBody {
     actor: Actor,
     session_id: String,
@@ -367,6 +386,37 @@ async fn kick(
     reply(s.hub.kick(&p, b.actor, &id, target).await)
 }
 
+action!(democratic, DemocraticBody, |s, p, id, b| s
+    .hub
+    .set_democratic(&p, b.actor, &id, b.enabled));
+
+async fn playback(
+    State(s): State<ApiState>,
+    Extension(Provider(p)): Extension<Provider>,
+    Path(id): Path<String>,
+    b: Body<PlaybackBody>,
+) -> Response {
+    let b = match body(b) {
+        Ok(b) => b,
+        Err(e) => return e.into_response(),
+    };
+    let request = match (b.action.as_str(), b.position, b.offset) {
+        ("play", None, None) => PlaybackRequest::Play,
+        ("pause", None, None) => PlaybackRequest::Pause,
+        ("seek", Some(to), None) => PlaybackRequest::SeekTo(to),
+        ("seek", None, Some(by)) => PlaybackRequest::SeekBy(by),
+        _ => {
+            return IntError::new(
+                StatusCode::BAD_REQUEST,
+                "invalid",
+                "Give action play or pause, or seek with either position or offset",
+            )
+            .into_response()
+        }
+    };
+    reply(s.hub.playback(&p, b.actor, &id, request).await)
+}
+
 async fn not_found() -> Response {
     IntError::new(StatusCode::NOT_FOUND, "invalid", "No such endpoint").into_response()
 }
@@ -388,6 +438,8 @@ pub fn build_router(state: ApiState) -> Router {
         .route("/rooms/{id}/owner", post(owner))
         .route("/rooms/{id}/kick", post(kick))
         .route("/rooms/{id}/host", post(host))
+        .route("/rooms/{id}/democratic", post(democratic))
+        .route("/rooms/{id}/playback", post(playback))
         .route("/rooms/{id}/devices", post(add_device))
         .route("/rooms/{id}/devices/remove", post(remove_device));
     Router::new()

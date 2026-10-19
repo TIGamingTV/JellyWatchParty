@@ -209,6 +209,54 @@ pub fn set_host(
     Ok(())
 }
 
+/// Turns democratic mode and/or device control on or off (`None` keeps
+/// the current value). On a change every member gets `democratic_changed`
+/// with who changed it. Returns whether anything changed.
+pub fn set_democratic(
+    room_id: &str,
+    democratic: Option<bool>,
+    device_control: Option<bool>,
+    by: &str,
+    rooms: &mut Rooms,
+    clients: &Clients,
+) -> Result<bool, OpError> {
+    let room = rooms.get_mut(room_id).ok_or(OpError::RoomNotFound)?;
+    let next = (
+        democratic.unwrap_or(room.democratic),
+        device_control.unwrap_or(room.device_control),
+    );
+    if next == (room.democratic, room.device_control) {
+        return Ok(false);
+    }
+    (room.democratic, room.device_control) = next;
+    info!(
+        "Room {}: democratic mode {}, device control {} (by {})",
+        room_id,
+        if next.0 { "on" } else { "off" },
+        if next.1 { "on" } else { "off" },
+        if by.is_empty() { "an admin" } else { by }
+    );
+    broadcast_to_room(
+        room,
+        clients,
+        &WsMessage {
+            msg_type: "democratic_changed".to_string(),
+            room: Some(room_id.to_string()),
+            client: None,
+            payload: Some(serde_json::json!({
+                "enabled": room.democratic,
+                "device_control": room.device_control,
+                "by": by,
+            })),
+            ts: now_ms(),
+            server_ts: Some(now_ms()),
+        },
+        None,
+    );
+    crate::events::bump();
+    Ok(true)
+}
+
 /// Closes a room, telling every member why. Returns the ids that were in it.
 pub fn close_room(
     room_id: &str,
@@ -327,6 +375,10 @@ fn empty_room(name: &str, password: Option<&str>) -> Result<Room, OpError> {
         admin_created: true,
         created_at: now,
         chat: None,
+        democratic: false,
+        device_control: false,
+        last_command_by: String::new(),
+        last_change_ts: 0,
     })
 }
 

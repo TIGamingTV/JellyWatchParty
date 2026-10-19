@@ -56,6 +56,13 @@
                             </label>
                             <div class="fieldDescription checkboxFieldDescription">Removes Jellyfin's native SyncPlay button (the "groups" icon) from the web client, since JellyWatchParty replaces that feature. Applies to browsers after the next page load.</div>
                         </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label>
+                                <input is="emby-checkbox" type="checkbox" id="AllowDemocraticMode" />
+                                <span>Allow democratic mode</span>
+                            </label>
+                            <div class="fieldDescription checkboxFieldDescription">Room hosts on Jellyfin Web and Jellyfin Desktop get an "Everyone can control playback" switch in the Watch Party panel. With it on, any participant on these clients can play, pause and seek for the whole room. Admins can also turn it on per room in the session server's admin panel, whatever this setting says. Takes effect on the next page load.</div>
+                        </div>
                     </div>
 
                     <!-- Native / Third-Party Client Bridging from the Watch Party panel -->
@@ -201,6 +208,7 @@
 
                     // Interface settings
                     $('#HideNativeSyncButton', page).prop('checked', config.HideNativeSyncButton || false);
+                    $('#AllowDemocraticMode', page).prop('checked', config.AllowDemocraticMode || false);
 
                     // Client bridging settings
                     $('#EnablePanelBridging', page).prop('checked', config.EnablePanelBridging || false);
@@ -232,6 +240,7 @@
 
                     // Interface settings
                     config.HideNativeSyncButton = $('#HideNativeSyncButton', page).is(':checked');
+                    config.AllowDemocraticMode = $('#AllowDemocraticMode', page).is(':checked');
 
                     // Client bridging settings
                     config.EnablePanelBridging = $('#EnablePanelBridging', page).is(':checked');

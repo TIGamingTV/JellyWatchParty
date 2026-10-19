@@ -26,6 +26,8 @@ pub fn build_room_state_payload(room: &Room, participant_count: usize) -> serde_
         "media_id": room.media_id,
         "started": room.started,
         "chat_history": chat_history,
+        "democratic": room.democratic,
+        "device_control": room.device_control,
     })
 }
 
@@ -85,6 +87,7 @@ fn build_room_list_msg(rooms: &HashMap<String, Room>) -> WsMessage {
                 "count": r.clients.len(),
                 "media_id": r.media_id,
                 "has_password": r.password_hash.is_some(),
+                "democratic": r.democratic,
             })
         })
         .collect();
@@ -258,6 +261,10 @@ mod tests {
                 admin_created: false,
                 created_at: 0,
                 chat: None,
+                democratic: false,
+                device_control: false,
+                last_command_by: String::new(),
+                last_change_ts: 0,
             },
         );
         rooms.insert(
@@ -284,6 +291,10 @@ mod tests {
                 admin_created: false,
                 created_at: 0,
                 chat: None,
+                democratic: false,
+                device_control: false,
+                last_command_by: String::new(),
+                last_change_ts: 0,
             },
         );
         let msg = build_room_list_msg(&rooms);

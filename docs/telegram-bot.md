@@ -14,7 +14,9 @@ Swiftfin, ...) without asking an admin:
 - join a room (with its password);
 - put **their own** Jellyfin devices into a room, as host or as receiver;
 - as the room's owner: pick the host, remove people and devices, change the
-  name and password, hand the room over, and close it.
+  name and password, hand the room over, and close it;
+- if the admin allows it, play, pause and seek for everyone in a room in
+  [democratic mode](#democratic-mode).
 
 It runs in the same container as the Discord bot
 (`ghcr.io/tigamingtv/jwp-discord-bot`): set the Telegram tokens and it
@@ -146,6 +148,7 @@ Under **Telegram bot**:
 | Group ID | The group's ID from `/groupid` (negative). The command menu is set up there within about 30 seconds. |
 | Group administrators manage all rooms | The group's creator and administrators can manage every bot room. Off: only Jellyfin administrators can. |
 | Rooms per user / in total, Close empty rooms after, Rooms need a password, Devices may be added as host / receiver | As for Discord. Limits count only rooms created from Telegram. |
+| Democratic mode commands | Off by default. Room owners and admins get a democratic mode switch in **Manage**, and democratic rooms get playback buttons on their panel. See [Democratic mode](#democratic-mode). |
 
 ## Using it
 
@@ -179,11 +182,38 @@ watching with their sync status, and who joined on Telegram. Its buttons:
   signed in as you.
 - **Manage (owner)**: for the owner and admins, in the private chat:
   rename, password, pick the host, remove someone, hand over, post the
-  panel again, close.
+  panel again, close, and (with *Democratic mode commands*) democratic
+  mode.
+- **Play**, **Pause**, **−30s**, **+30s** and **Seek to…**: only on a
+  democratic room while *Democratic mode commands* is on.
+
+With *Democratic mode commands* on, or when the room is democratic anyway,
+the panel also has a **Control:** line: *everyone* or *host only*.
 
 Panels are edited at most every few seconds, to stay within Telegram's
 limits. Rooms live in the session server's memory: a server restart closes
 them.
+
+### Democratic mode
+
+In a democratic room, everyone in it can play, pause and seek, not just the
+host (see [Features: Democratic Mode]({{ '/features/' | relative_url }}#democratic-mode)). From
+Telegram this needs the admin panel setting **Democratic mode commands**.
+Then:
+
+- the room's owner or an admin turns it on or off under **Manage** with
+  the **Democratic: off → turn on** / **Democratic: on → turn off** button.
+  The host can also switch it from their Watch Party panel, and an admin
+  from the admin panel;
+- everyone who joined the room on Telegram (and the owner and admins) can
+  use the panel's playback buttons once the room has started playing.
+  **Play**, **Pause**, **−30s** and **+30s** answer with a short note;
+  **Seek to…** asks for a time in the private chat: `1:23:45`, `83:10` or
+  `95` (seconds) jump to that time, `+30`, `-10` or `+1:30` jump ahead or
+  back. The command goes to everyone in the room, the host included.
+
+Refusals are the same as for
+[Discord]({{ '/discord-bot/' | relative_url }}#democratic-mode).
 
 ## Security notes
 

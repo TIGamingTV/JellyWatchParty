@@ -24,7 +24,20 @@ pub enum Data {
     AddDevice(String),
     RemoveDevice(String),
     Manage(String),
+    // Panel buttons of a democratic room: one action each.
+    Play(String),
+    Pause(String),
+    Back(String),
+    Forward(String),
+    /// Asks for a time in the private chat.
+    Seek(String),
     // Private menus.
+    /// Turn democratic mode to `on` (the target state, so pressing a stale
+    /// button again changes nothing).
+    Democratic {
+        room: String,
+        on: bool,
+    },
     Room(String),
     Rename(String),
     Password(String),
@@ -50,6 +63,13 @@ impl Data {
             Data::AddDevice(r) => ("dev", Some(r)),
             Data::RemoveDevice(r) => ("undev", Some(r)),
             Data::Manage(r) => ("mng", Some(r)),
+            Data::Play(r) => ("pb-play", Some(r)),
+            Data::Pause(r) => ("pb-pause", Some(r)),
+            Data::Back(r) => ("pb-back", Some(r)),
+            Data::Forward(r) => ("pb-fwd", Some(r)),
+            Data::Seek(r) => ("pb-seek", Some(r)),
+            Data::Democratic { room, on: true } => ("dem-on", Some(room)),
+            Data::Democratic { room, on: false } => ("dem-off", Some(room)),
             Data::Room(r) => ("room", Some(r)),
             Data::Rename(r) => ("ren", Some(r)),
             Data::Password(r) => ("pw", Some(r)),
@@ -90,6 +110,13 @@ impl Data {
             "dev" => Data::AddDevice(r),
             "undev" => Data::RemoveDevice(r),
             "mng" => Data::Manage(r),
+            "pb-play" => Data::Play(r),
+            "pb-pause" => Data::Pause(r),
+            "pb-back" => Data::Back(r),
+            "pb-fwd" => Data::Forward(r),
+            "pb-seek" => Data::Seek(r),
+            "dem-on" => Data::Democratic { room: r, on: true },
+            "dem-off" => Data::Democratic { room: r, on: false },
             "room" => Data::Room(r),
             "ren" => Data::Rename(r),
             "pw" => Data::Password(r),
@@ -114,6 +141,8 @@ pub enum Start {
     AddDevice(String),
     RemoveDevice(String),
     Manage(String),
+    /// Ask for a time to seek to in a democratic room.
+    Seek(String),
 }
 
 impl Start {
@@ -126,6 +155,7 @@ impl Start {
             Start::AddDevice(r) => format!("dev-{}", r),
             Start::RemoveDevice(r) => format!("undev-{}", r),
             Start::Manage(r) => format!("mng-{}", r),
+            Start::Seek(r) => format!("seek-{}", r),
         }
     }
 
@@ -147,6 +177,7 @@ impl Start {
             ("dev", Some(_)) => Start::AddDevice(room()?),
             ("undev", Some(_)) => Start::RemoveDevice(room()?),
             ("mng", Some(_)) => Start::Manage(room()?),
+            ("seek", Some(_)) => Start::Seek(room()?),
             _ => return None,
         })
     }
@@ -229,6 +260,19 @@ mod tests {
             Data::AddDevice(r()),
             Data::RemoveDevice(r()),
             Data::Manage(r()),
+            Data::Play(r()),
+            Data::Pause(r()),
+            Data::Back(r()),
+            Data::Forward(r()),
+            Data::Seek(r()),
+            Data::Democratic {
+                room: r(),
+                on: true,
+            },
+            Data::Democratic {
+                room: r(),
+                on: false,
+            },
             Data::Room(r()),
             Data::Rename(r()),
             Data::Password(r()),
@@ -259,6 +303,10 @@ mod tests {
             "v1:pk:",
             "v1:pk:a/b",
             "v1:cancel:x",
+            "v1:pb-play",
+            "v1:dem:7b0d3c1e-0c39-4a43-9a0e-2f1f3a3e9d10",
+            "v1:dem-maybe:7b0d3c1e-0c39-4a43-9a0e-2f1f3a3e9d10",
+            "v1:pb-seek:../admin",
         ] {
             assert_eq!(Data::parse(s), None, "{}", s);
         }
@@ -275,6 +323,7 @@ mod tests {
             Start::AddDevice(r()),
             Start::RemoveDevice(r()),
             Start::Manage(r()),
+            Start::Seek(r()),
         ] {
             let e = s.encode();
             assert!(e.len() <= 64, "{}", e);
@@ -287,7 +336,7 @@ mod tests {
             assert_eq!(Start::parse(&e), Some(s));
         }
         for bad in [
-            "", "new-x", "new--1", "join", "join-abc", "link-1", "mng-../x",
+            "", "new-x", "new--1", "join", "join-abc", "link-1", "mng-../x", "seek", "seek-1",
         ] {
             assert_eq!(Start::parse(bad), None, "{}", bad);
         }

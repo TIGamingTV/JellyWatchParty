@@ -34,7 +34,27 @@
     // The server counts the room as started once the host reports playing;
     // mirror that so a later pause/play doesn't trigger a countdown.
     if (!video.paused) state.roomStarted = true;
-    actions.send('state_update', { position: video.currentTime, play_state: video.paused ? 'paused' : 'playing' });
+    const playState = video.paused ? 'paused' : 'playing';
+    actions.send('state_update', { position: video.currentTime, play_state: playState });
+    // Keep the host's own view of the room current: in democratic mode the
+    // seek echo filter (utils.isEchoOfRoomState) compares against it.
+    utils.mirrorRoomState(video.currentTime, playState);
+  };
+
+  // Guest: a new stream is loading (joining, media change, track reload).
+  // Its autoplay/start-position events are the player's, not the user's.
+  const isFollowerLoading = () => !!state.followerLoadingUntil && utils.nowMs() < state.followerLoadingUntil;
+
+  const beginFollowerLoad = (ms) => {
+    if (state.isHost || !state.inRoom) return;
+    state.followerLoadingUntil = utils.nowMs() + ms;
+  };
+
+  // The stream can play: keep ignoring its events only for a short while
+  // longer (autoplay and the start-position seek follow right after).
+  const settleFollowerLoad = () => {
+    if (!state.followerLoadingUntil) return;
+    state.followerLoadingUntil = Math.min(state.followerLoadingUntil, utils.nowMs() + JWP.constants.SUPPRESS_MS);
   };
 
   // The room's first play: keep the host's video where it is, ask the server
@@ -80,10 +100,44 @@
     }, JWP.constants.START_SAFETY_MS);
   };
 
+  // Democratic mode: a guest's own play/pause/seek goes to the whole room.
+  // Only the discrete command - never state_update/buffering/set_media or
+  // the room's first (countdown) play, which stay with the host.
+  const sendGuestCommand = (action, video) => {
+    if (action !== 'play' && action !== 'pause' && action !== 'seek') return;
+    if (!state.inRoom || state.startPending) return;
+    // Still on (or loading) another item than the room's: not a command
+    // for the room's media.
+    if (utils.isOnRoomMedia && !utils.isOnRoomMedia()) return;
+    if (isFollowerLoading()) return;
+    // No idea yet where the room is (just switched media): nothing to
+    // compare against, so nothing can be told apart from an echo.
+    if (!state.lastSyncServerTs) return;
+    if (action === 'seek' && !utils.isVideoReady()) return;
+    if (action === 'pause' && state.isBuffering) return;
+    if (action !== 'seek' && utils.isSeeking()) return;
+    if (utils.isEchoOfRoomState(action, video)) return;
+    if (action === 'seek') {
+      const now = utils.nowMs();
+      if (now - state.lastSeekSentAt < 250) return;
+      state.lastSeekSentAt = now;
+      state.lastSentPosition = video.currentTime;
+    }
+    const playState = video.paused ? 'paused' : 'playing';
+    utils.log('GUEST', { action, pos: video.currentTime, paused: video.paused });
+    JWP.actions.send('player_event', { action, position: video.currentTime, play_state: playState });
+    utils.mirrorRoomState(video.currentTime, playState);
+    utils.armCommandGuard(video.currentTime, playState);
+  };
+
   const onHostEvent = (action, video) => {
     const actions = JWP.actions;
-    if (!state.isHost || !actions || !actions.send || !utils.shouldSend()) return;
+    if (!actions || !actions.send || !utils.shouldSend()) return;
     if (state.isSyncing) return;
+    if (!state.isHost) {
+      if (utils.canControlPlayback()) sendGuestCommand(action, video);
+      return;
+    }
     if (action === 'play' && state.inRoom && (state.startPending || !state.roomStarted)) {
       if (state.startPending) {
         // Pressed play again while waiting: stay paused, the start is on its way.
@@ -96,6 +150,10 @@
     }
     if (isMediaSwitchPending()) return;
     if (action === 'seek' && !utils.isVideoReady()) return;
+    // Democratic mode: the host also applies other participants' commands,
+    // and e.g. a slow seek can complete after the time-based suppression ran
+    // out. Ending up where the room already is is not a new command.
+    if (state.democraticMode && state.inRoom && utils.isEchoOfRoomState(action, video)) return;
     if (action === 'pause') {
       if (state.isBuffering) return;
       if (utils.isSeeking()) return;
@@ -112,11 +170,13 @@
       state.lastSeekSentAt = now;
       state.lastSentPosition = video.currentTime;
     }
+    const playState = video.paused ? 'paused' : 'playing';
     utils.log('HOST', { action, pos: video.currentTime, paused: video.paused });
-    actions.send('player_event', { action, position: video.currentTime, play_state: video.paused ? 'paused' : 'playing' });
+    actions.send('player_event', { action, position: video.currentTime, play_state: playState });
     if (action === 'play' || action === 'pause' || action === 'seek') {
-      actions.send('state_update', { position: video.currentTime, play_state: video.paused ? 'paused' : 'playing' });
+      actions.send('state_update', { position: video.currentTime, play_state: playState });
       state.lastStateSentAt = utils.nowMs();
+      utils.mirrorRoomState(video.currentTime, playState);
     }
   };
 
@@ -127,7 +187,8 @@
   // video catching up to a host who is themselves paused.
   const GUEST_PAUSE_TOAST_COOLDOWN_MS = 10000;
   const onGuestPause = () => {
-    if (state.isHost || !state.inRoom) return;
+    // Democratic mode: the pause went to the room (see sendGuestCommand).
+    if (state.isHost || !state.inRoom || state.democraticMode) return;
     if (state.lastSyncPlayState !== 'playing') return;
     const now = utils.nowMs();
     if (now - state.lastGuestPauseToastAt < GUEST_PAUSE_TOAST_COOLDOWN_MS) return;
@@ -149,11 +210,13 @@
       canplay: () => {
         const wasBuffering = state.isBuffering;
         state.isBuffering = false;
+        settleFollowerLoad();
         if (wasBuffering) utils.log('VIDEO', { event: 'ready', pos: video.currentTime, readyState: video.readyState });
       },
       playing: () => {
         const wasBuffering = state.isBuffering;
         state.isBuffering = false;
+        settleFollowerLoad();
         if (wasBuffering) {
           utils.log('VIDEO', { event: 'playing', pos: video.currentTime });
           if (state.isHost && JWP.actions && JWP.actions.send) {
@@ -174,6 +237,7 @@
       // the transcode).
       loadstart: () => {
         if (playback.onStreamReload) playback.onStreamReload();
+        beginFollowerLoad(JWP.constants.FOLLOWER_LOAD_MAX_MS);
         beginMediaResolution();
       }
     };
@@ -261,6 +325,9 @@
     video.addEventListener('pause', listeners.pause);
     video.addEventListener('seeked', listeners.seeked);
     video.addEventListener('loadstart', listeners.loadstart);
+    // A guest's player that just appeared may still be loading (its
+    // loadstart can predate this bind, which is polled).
+    beginFollowerLoad(utils.isVideoReady() ? JWP.constants.SUPPRESS_MS : JWP.constants.FOLLOWER_LOAD_MAX_MS);
     beginMediaResolution();
     if (state.isHost && state.inRoom && !state.roomStarted && !state.startPending && !video.paused) {
       requestStart(video);
@@ -301,5 +368,5 @@
 
   // Exposed for tests only - lets set_media detection be exercised directly
   // instead of waiting out NOW_PLAYING_REFRESH_DELAY_MS in real time.
-  JWP._bindInternal = { maybeSendSetMedia, resolveHostItemId, isMediaSwitchPending, beginMediaResolution };
+  JWP._bindInternal = { maybeSendSetMedia, resolveHostItemId, isMediaSwitchPending, beginMediaResolution, isFollowerLoading };
 })();

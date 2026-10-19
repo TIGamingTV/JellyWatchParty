@@ -4,6 +4,7 @@
 
 use crate::api::{Api, Room, Settings};
 use std::future::Future;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
@@ -19,6 +20,8 @@ pub struct Core {
     pub rooms: RwLock<Vec<Room>>,
     /// The bot's name on its platform, sent with every heartbeat.
     pub bot_name: RwLock<String>,
+    /// What `democratic_changed` last saw.
+    democratic_seen: AtomicBool,
 }
 
 impl Core {
@@ -29,6 +32,7 @@ impl Core {
             settings: RwLock::new(None),
             rooms: RwLock::new(Vec::new()),
             bot_name: RwLock::new(String::new()),
+            democratic_seen: AtomicBool::new(false),
         }
     }
 
@@ -37,6 +41,22 @@ impl Core {
             .read()
             .unwrap_or_else(|e| e.into_inner())
             .clone()
+    }
+
+    /// Whether the admin turned on democratic mode commands.
+    pub fn democratic(&self) -> bool {
+        self.settings
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .is_some_and(|s| s.democratic_commands)
+    }
+
+    /// Whether `democratic()` changed since the last call (panels show it,
+    /// so they need another look).
+    pub fn democratic_changed(&self) -> bool {
+        let now = self.democratic();
+        self.democratic_seen.swap(now, Ordering::Relaxed) != now
     }
 
     pub fn rooms(&self) -> Vec<Room> {
@@ -63,7 +83,8 @@ impl Core {
 pub trait Platform: Send + Sync + 'static {
     fn core(&self) -> &Core;
 
-    /// The rooms changed (called before the new list is stored).
+    /// The rooms changed (called after the new list is stored, so anything
+    /// that reads `Core::rooms` meanwhile sees the new one).
     fn rooms_changed(&self, rooms: &[Room]);
 
     /// After every settings check, whether they changed or not (e.g. to
@@ -79,8 +100,8 @@ pub async fn rooms_loop<P: Platform>(p: Arc<P>) {
         match core.api.rooms(since).await {
             Ok(r) => {
                 since = Some(r.version);
+                *core.rooms.write().unwrap_or_else(|e| e.into_inner()) = r.rooms.clone();
                 p.rooms_changed(&r.rooms);
-                *core.rooms.write().unwrap_or_else(|e| e.into_inner()) = r.rooms;
             }
             Err(e) => {
                 log::warn!("{}: room updates: {}", core.label, e);
@@ -126,5 +147,25 @@ pub async fn config_loop<P: Platform>(p: Arc<P>) {
                 tokio::time::sleep(RETRY_AFTER).await;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_democratic_switch_is_noticed_once() {
+        let core = Core::new("T", Api::new("http://127.0.0.1:9", "t", "T").unwrap());
+        assert!(!core.democratic() && !core.democratic_changed());
+        *core.settings.write().unwrap() = Some(Settings {
+            democratic_commands: true,
+            ..Settings::default()
+        });
+        assert!(core.democratic());
+        assert!(core.democratic_changed());
+        assert!(!core.democratic_changed());
+        *core.settings.write().unwrap() = None;
+        assert!(core.democratic_changed());
     }
 }

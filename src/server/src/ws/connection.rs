@@ -46,6 +46,7 @@ fn register_client(
         connected: true,
         kind: crate::types::ClientKind::Web,
         bridge_device: None,
+        democratic_capable: false,
     }
 }
 

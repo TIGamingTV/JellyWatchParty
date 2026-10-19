@@ -23,7 +23,7 @@ Watching media together remotely is challenging:
 ## The Solution
 
 - **Real-time synchronization** - All participants see the same content at the same time
-- **Host-controlled playback** - One person controls play/pause/seek for everyone
+- **Host-controlled playback** - One person controls play/pause/seek for everyone, or, in democratic mode, everyone does
 - **Automatic drift correction** - Playback speed adjusts to keep clients in sync
 - **HLS/transcoding support** - Works with Jellyfin's adaptive streaming
 
@@ -64,7 +64,7 @@ session server, web client) work together to make this happen.
 
 ### Playback Synchronization
 - **Start countdown** - The room's first play waits (up to 10 s) until everyone's video is loaded, then everyone, host included, sees 3, 2, 1 and starts at the same moment
-- **Play/Pause sync** - Host controls playback state for all clients
+- **Play/Pause sync** - Host controls playback state for all clients (in a democratic room, any participant can; see [Democratic Mode](#democratic-mode))
 - **Seek sync** - Jumping to a position syncs everyone
 - **Position sync** - Continuous updates keep clients aligned
 - **Drift correction** - Automatic playback speed adjustment (0.85x-2.0x), using hysteresis so it only kicks in once drift exceeds 0.3s and stays quiet until it falls back under 0.1s (see [Sync Algorithms]({{ '/technical/sync/' | relative_url }}))
@@ -101,6 +101,35 @@ session server, web client) work together to make this happen.
 - **Message size limits** - 64KB max message size
 
 See [Security]({{ '/security/' | relative_url }}) for the full security model.
+
+### Democratic Mode
+
+A room in democratic mode lets every participant play, pause and seek for
+everyone, not just the host. It is off by default and set per room.
+
+- **Who can control**: the host, plus anyone in the room on Jellyfin Web in a
+  browser or Jellyfin Desktop. Plugin bridges never control; Jellyfin devices
+  put in by an admin or a chat bot (TV apps) only when the room also has
+  *device control* on.
+- **What they can do**: play, pause and seek, once the room has started. The
+  room's first play (the countdown), changing the item and the periodic
+  position updates stay with the host, who remains the room's position source.
+- **Who turns it on**:
+  - the host, with *Everyone can control playback* in the Watch Party panel,
+    when the plugin setting *Allow democratic mode* is on;
+  - an admin, for any room, from the [admin panel]({{ '/admin-panel/' | relative_url }}#democratic-mode), whatever
+    the plugin setting says;
+  - a chat room's owner or an admin in Discord or Telegram, when the bot's
+    *Democratic mode commands* setting is on. Every participant then gets
+    play, pause and seek commands or buttons in the bot.
+- **Device control** (admin panel only): with democratic mode on, pausing,
+  resuming or seeking (more than about 8 s) on a receiver TV app itself is
+  applied to the whole room. It is only as fast as the device reports to
+  Jellyfin (often several seconds), and a device that pauses to buffer may
+  pause the room.
+
+Everyone in the room gets a notification when the mode changes, and the
+pause and resume toasts name who did it.
 
 ### Native Client Bridge
 
@@ -183,7 +212,7 @@ Safari uses its native HLS implementation, which behaves differently:
 
 ## Known Limitations
 
-1. **Host-only control** - Only the host can control playback (democratic mode planned)
+1. **Host-led control** - By default only the host controls playback. [Democratic mode](#democratic-mode) lets participants play, pause and seek, but only on Jellyfin Web, Jellyfin Desktop or a chat bot (TV devices only with device control, and only as fast as they report to Jellyfin); the first play, changing the item and position updates stay with the host
 2. **One item at a time** - A room watches a single item, but it follows the host: switching movies mid-session (or starting one after creating a room with nothing playing) sends `set_media` and guests follow automatically
 3. **Ephemeral rooms** - Rooms are closed when the host leaves (with no other participants remaining) and doesn't reconnect within 90 seconds, or when the server restarts (by design); if other participants remain, host duties transfer automatically instead — see Automatic host transfer above
 4. **Guests need a browser or Jellyfin Media Player client** - The Watch Party UI (joining, chat, the room list) only exists in the injected web client and Jellyfin Desktop. Native/TV clients are broader via the [Native Client Bridge]({{ '/technical/host-bridge/' | relative_url }}): any such client can be bridged in as a room **host**, or attached to a room as a **receiver** that follows playback — but neither role gives it the interactive UI (chat, room list), and someone still drives the session from a supported client.
@@ -195,11 +224,10 @@ Safari uses its native HLS implementation, which behaves differently:
 |---------|----------|--------|
 | Text chat | High | Done |
 | Message history for late joiners | Medium | Done |
-| Democratic mode | Medium | Planned |
+| Democratic mode | Medium | Done |
 | Automatic host transfer | Medium | Done |
 | Room passwords | Low | Done |
 
-- **Democratic mode** - Allow all participants to control playback, not just the host
 - **Official Jellyfin plugin repository** - Publish to the [official Jellyfin plugin repository](https://jellyfin.org/docs/general/server/plugins/#official-plugins) for native discoverability and installation
 
 ## Next Steps

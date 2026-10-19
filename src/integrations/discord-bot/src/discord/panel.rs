@@ -51,7 +51,16 @@ fn kind_label(kind: &str) -> &'static str {
     }
 }
 
-pub fn render(room: &Room) -> PanelView {
+/// Whether a panel says who controls playback: when the admin turned on
+/// democratic mode commands (so owners see they can share control), or
+/// when the room is democratic anyway (turned on from Jellyfin web).
+pub fn shows_control(room: &Room, democratic_commands: bool) -> bool {
+    democratic_commands || room.democratic
+}
+
+/// `democratic_commands`: the admin turned on democratic mode commands
+/// (only then are there playback buttons).
+pub fn render(room: &Room, democratic_commands: bool) -> PanelView {
     let mut description = format!(
         "Owner: {}\n{}",
         mention(room.owner.external_id.as_deref(), &room.owner.name),
@@ -107,35 +116,109 @@ pub fn render(room: &Room) -> PanelView {
     let people = join_within(&people, ", ", room.participants.len(), FIELD_MAX);
 
     let id = &room.id;
+    let mut fields = vec![
+        ("Host".into(), host),
+        (format!("Watching ({})", room.members.len()), members),
+        (
+            format!("Joined on Discord ({})", room.participants.len()),
+            if people.is_empty() {
+                "-".into()
+            } else {
+                people
+            },
+        ),
+    ];
+    // After the others, so their places don't move.
+    if shows_control(room, democratic_commands) {
+        fields.push((
+            "Control".into(),
+            if room.democratic {
+                "Everyone"
+            } else {
+                "Host only"
+            }
+            .into(),
+        ));
+    }
+    let controls = room.democratic && democratic_commands;
+    let footer = if controls {
+        "Democratic mode: everyone in the room can play, pause and seek (buttons below or /jwp playback). Only your own Jellyfin devices can be added. Jellyfin web users join from their Watch Party panel."
+    } else if democratic_commands {
+        "Only your own Jellyfin devices can be added. The owner picks the host, can close the room and can turn on democratic mode (/jwp room democratic) so everyone can play, pause and seek. Jellyfin web users join from their Watch Party panel."
+    } else {
+        "Only your own Jellyfin devices can be added. The owner picks the host and can close the room. Jellyfin web users join from their Watch Party panel."
+    };
+    let mut rows = vec![
+        vec![
+            Button {
+                id: Id::Join(id.clone()),
+                label: "Join",
+                style: Style::Primary,
+            },
+            Button {
+                id: Id::AddDevice(id.clone()),
+                label: "Add my device",
+                style: Style::Success,
+            },
+            Button {
+                id: Id::RemoveDevice(id.clone()),
+                label: "Remove my device",
+                style: Style::Secondary,
+            },
+            Button {
+                id: Id::Leave(id.clone()),
+                label: "Leave",
+                style: Style::Secondary,
+            },
+        ],
+        vec![
+            Button {
+                id: Id::PickHost(id.clone()),
+                label: "Pick host",
+                style: Style::Secondary,
+            },
+            Button {
+                id: Id::Close(id.clone()),
+                label: "Close room",
+                style: Style::Danger,
+            },
+        ],
+    ];
+    if controls {
+        rows.push(vec![
+            Button {
+                id: Id::Play(id.clone()),
+                label: "Play",
+                style: Style::Success,
+            },
+            Button {
+                id: Id::Pause(id.clone()),
+                label: "Pause",
+                style: Style::Secondary,
+            },
+            Button {
+                id: Id::Back(id.clone()),
+                label: "−30s",
+                style: Style::Secondary,
+            },
+            Button {
+                id: Id::Forward(id.clone()),
+                label: "+30s",
+                style: Style::Secondary,
+            },
+        ]);
+    }
     PanelView {
         title: format!("Watch party: {}", escape(&room.name, 100)),
         description,
-        fields: vec![
-            ("Host".into(), host),
-            (format!("Watching ({})", room.members.len()), members),
-            (
-                format!("Joined on Discord ({})", room.participants.len()),
-                if people.is_empty() { "-".into() } else { people },
-            ),
-        ],
-        footer: "Only your own Jellyfin devices can be added. The owner picks the host and can close the room. Jellyfin web users join from their Watch Party panel.".into(),
+        fields,
+        footer: footer.into(),
         color: if room.play_state == "playing" && !room.members.is_empty() {
             COLOR_PLAYING
         } else {
             COLOR_IDLE
         },
-        rows: vec![
-            vec![
-                Button { id: Id::Join(id.clone()), label: "Join", style: Style::Primary },
-                Button { id: Id::AddDevice(id.clone()), label: "Add my device", style: Style::Success },
-                Button { id: Id::RemoveDevice(id.clone()), label: "Remove my device", style: Style::Secondary },
-                Button { id: Id::Leave(id.clone()), label: "Leave", style: Style::Secondary },
-            ],
-            vec![
-                Button { id: Id::PickHost(id.clone()), label: "Pick host", style: Style::Secondary },
-                Button { id: Id::Close(id.clone()), label: "Close room", style: Style::Danger },
-            ],
-        ],
+        rows,
     }
 }
 
@@ -203,6 +286,10 @@ mod tests {
         let r: RoomsResponse =
             serde_json::from_str(include_str!("../../../fixtures/rooms.json")).unwrap();
         r.rooms.into_iter().next().unwrap()
+    }
+
+    fn render(r: &Room) -> PanelView {
+        super::render(r, false)
     }
 
     #[test]
@@ -298,10 +385,54 @@ mod tests {
             })
             .chain(std::iter::once(person))
             .collect();
+        twilight_validate::embed::embed(&embed(&super::render(&r, true))).unwrap();
         let v = render(&r);
         twilight_validate::embed::embed(&embed(&v)).unwrap();
         assert!(v.fields[1].1.ends_with("more"), "{}", v.fields[1].1);
         assert!(v.fields[2].1.ends_with("more"), "{}", v.fields[2].1);
+    }
+
+    #[test]
+    fn democratic_rooms_get_playback_buttons_when_the_admin_allows() {
+        let mut r = room();
+        assert!(r.democratic);
+        // Feature on, democratic room: a Control field and a third row.
+        let v = super::render(&r, true);
+        assert_eq!(v.fields[3], ("Control".into(), "Everyone".into()));
+        assert_eq!(v.rows.len(), 3);
+        let ids: Vec<String> = v.rows[2].iter().map(|b| b.id.encode()).collect();
+        assert_eq!(
+            ids,
+            ["pb-play", "pb-pause", "pb-back", "pb-fwd"].map(|a| format!("jwp:v1:{}:{}", a, r.id))
+        );
+        assert!(v.footer.contains("Democratic mode"));
+        assert!(v.rows.iter().flatten().all(|b| b.id.encode().len() <= 100));
+        twilight_validate::embed::embed(&embed(&v)).unwrap();
+        let c = components(&v);
+        assert!(c
+            .iter()
+            .all(|r| matches!(r, Component::ActionRow(a) if a.components.len() <= 5)));
+
+        // Feature off: no buttons, but the room says who controls it.
+        let v = super::render(&r, false);
+        assert_eq!(v.rows.len(), 2);
+        assert_eq!(v.fields[3].1, "Everyone");
+        assert!(!v.footer.contains("Democratic mode"));
+
+        // Feature on, host-only room: says so, and how to change it.
+        r.democratic = false;
+        let v = super::render(&r, true);
+        assert_eq!(v.rows.len(), 2);
+        assert_eq!(v.fields[3].1, "Host only");
+        assert!(v.footer.contains("/jwp room democratic"));
+
+        // Neither: the panel is as it always was.
+        let v = super::render(&r, false);
+        assert_eq!(v.fields.len(), 3);
+        assert_eq!(v.rows.len(), 2);
+
+        // The switch alone changes the view (so panels are edited).
+        assert_ne!(super::render(&r, true), super::render(&r, false));
     }
 
     #[test]

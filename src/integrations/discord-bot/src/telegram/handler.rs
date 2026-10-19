@@ -15,7 +15,8 @@ use super::panel::{self, keyboard, Button};
 use super::text::{escape, join_within, len16, MESSAGE_MAX};
 use super::types::{CallbackQuery, Message, User, GROUP_ANONYMOUS_BOT};
 use super::{Conv, Tg};
-use crate::api::{room_path, valid_room_id, Actor, ApiError, Room};
+use crate::api::{room_path, valid_room_id, Actor, ApiError, Playback, Room};
+use crate::text::{democratic_done, parse_seek, playback_done, SEEK_HELP, SKIP_SECS};
 use serde_json::{json, Value};
 
 /// What the bot sends as the role of group administrators; the server's
@@ -621,6 +622,11 @@ impl Tg {
                 self.set_conv(chat, Conv::JoinPassword { room: room.clone() });
                 self.reply(chat, None, self.password_prompt(&room)).await
             }
+            Start::Seek(room) => {
+                let prompt = self.seek_prompt(&room);
+                self.set_conv(chat, Conv::Seek { room });
+                self.reply(chat, None, prompt).await
+            }
             Start::AddDevice(_) | Start::RemoveDevice(_) | Start::Manage(_) => {
                 let actor = match self.actor(from, Place::Private).await {
                     Ok(a) => a,
@@ -640,6 +646,14 @@ impl Tg {
     fn password_prompt(&self, room: &str) -> Out {
         Out::from(format!(
             "Send the password for {}. I'll delete your message right after reading it.",
+            self.room_name(room)
+        ))
+        .with(vec![cancel_row()])
+    }
+
+    fn seek_prompt(&self, room: &str) -> Out {
+        Out::from(format!(
+            "Where to in {}? Send a time like <code>1:23:45</code>, <code>83:10</code> or <code>95</code> (seconds) to go there, or <code>+30</code> / <code>-10</code> to jump ahead or back.",
             self.room_name(room)
         ))
         .with(vec![cancel_row()])
@@ -751,6 +765,21 @@ impl Tg {
                 };
                 self.reply(chat, None, out).await
             }
+            Conv::Seek { room } => {
+                let Some(seek) = parse_seek(text) else {
+                    self.set_conv(from.id, Conv::Seek { room });
+                    let out = Out::from(format!("{} Or /cancel.", escape(SEEK_HELP, 300)))
+                        .with(vec![cancel_row()]);
+                    return self.reply(chat, None, out).await;
+                };
+                let out = match self.actor(from, Place::Private).await {
+                    Ok(a) => match self.playback(&a, &room, seek.into()).await {
+                        Ok(o) | Err(o) => o,
+                    },
+                    Err(e) => escape(&e, 300).into(),
+                };
+                self.reply(chat, None, out).await
+            }
         }
     }
 
@@ -842,10 +871,52 @@ impl Tg {
                 self.to_private(&cb, from_group, out, Start::Manage(room.clone()))
                     .await;
             }
+            Data::Play(_) | Data::Pause(_) | Data::Back(_) | Data::Forward(_) => {
+                let (room, what) = match data {
+                    Data::Play(r) => (r, Playback::Play),
+                    Data::Pause(r) => (r, Playback::Pause),
+                    Data::Back(r) => (r, Playback::SeekBy(-SKIP_SECS)),
+                    Data::Forward(r) => (r, Playback::SeekBy(SKIP_SECS)),
+                    _ => return,
+                };
+                let res = self.playback(&actor, &room, what).await;
+                self.answer_result(&cb, res).await
+            }
+            Data::Seek(room) => {
+                let prompt = self.seek_prompt(&room);
+                if self
+                    .to_private(&cb, from_group, prompt, Start::Seek(room.clone()))
+                    .await
+                {
+                    self.set_conv(uid, Conv::Seek { room });
+                }
+            }
+            Data::Democratic { room, on } => {
+                match self
+                    .act(
+                        &actor,
+                        &room_path(&room, "democratic"),
+                        json!({ "enabled": on }),
+                    )
+                    .await
+                {
+                    Ok(v) => {
+                        let on = v["democratic"].as_bool().unwrap_or(on);
+                        self.answer(&cb, Some(democratic_done(on)), false).await;
+                        // The menu sits in the private chat; never turn a
+                        // group panel into one.
+                        if !from_group {
+                            let out = self.manage_menu_with(&actor, &room, Some(on)).await;
+                            self.edit(&msg, out).await
+                        }
+                    }
+                    Err(e) => self.answer(&cb, Some(&e.message), true).await,
+                }
+            }
             Data::Room(room) => {
                 let out: Out = match self.room(&room) {
                     Some(r) => {
-                        let v = panel::render(&r);
+                        let v = panel::render(&r, self.democratic());
                         Out::from(v.text).with(v.rows)
                     }
                     None => GONE.into(),
@@ -1121,6 +1192,17 @@ impl Tg {
         }
     }
 
+    /// Anyone in a democratic room: play, pause or seek for everyone.
+    async fn playback(&self, actor: &Actor, room: &str, what: Playback) -> Result<Out, Out> {
+        match self
+            .act(actor, &room_path(room, "playback"), what.body())
+            .await
+        {
+            Ok(v) => Ok(playback_done(&v).into()),
+            Err(e) => Err(err(e)),
+        }
+    }
+
     /// Only for the owner or an admin (the server checks again).
     async fn may_manage(&self, actor: &Actor, room: &str) -> Result<Room, Out> {
         let Some(r) = self.room(room) else {
@@ -1259,28 +1341,29 @@ impl Tg {
     }
 
     async fn manage_menu(&self, actor: &Actor, room: &str) -> Out {
-        if let Err(out) = self.may_manage(actor, room).await {
-            return out;
+        self.manage_menu_with(actor, room, None).await
+    }
+
+    /// `democratic`: the room's democratic mode as just set (the cached
+    /// room may not show it yet).
+    async fn manage_menu_with(&self, actor: &Actor, room: &str, democratic: Option<bool>) -> Out {
+        let found = match self.may_manage(actor, room).await {
+            Ok(r) => r,
+            Err(out) => return out,
+        };
+        let democratic = democratic.unwrap_or(found.democratic);
+        let mut rows = manage_rows(room);
+        let mut text = format!("Manage {}:", self.room_name(room));
+        if self.democratic() {
+            // Above "Close the room / Done".
+            rows.insert(rows.len() - 1, democratic_row(room, democratic));
+            text.push_str(if democratic {
+                "\nDemocratic mode is on: everyone in the room can play, pause and seek."
+            } else {
+                "\nOnly the host controls playback. Turn on democratic mode to let everyone in the room play, pause and seek."
+            });
         }
-        let r = || room.to_string();
-        Out::from(format!("Manage {}:", self.room_name(room))).with(vec![
-            vec![
-                Button::data("Rename", Data::Rename(r())),
-                Button::data("Password", Data::Password(r())),
-            ],
-            vec![
-                Button::data("Pick the host", Data::HostMenu(r())),
-                Button::data("Remove someone", Data::KickMenu(r())),
-            ],
-            vec![
-                Button::data("Hand over", Data::TransferMenu(r())),
-                Button::data("Post panel again", Data::Repost(r())),
-            ],
-            vec![
-                Button::data("Close the room", Data::Close(r())),
-                Button::data("Done", Data::Cancel),
-            ],
-        ])
+        Out::from(text).with(rows)
     }
 
     async fn host_menu(&self, user: i64, actor: &Actor, room: &str) -> Out {
@@ -1502,7 +1585,7 @@ impl Tg {
                 .find(|r| r.id == room_id)
                 .ok_or("the room is gone")?,
         };
-        let view = panel::render(&room);
+        let view = panel::render(&room, self.democratic());
         let msg = self
             .client
             .send_message(chat, topic, &view.text, Some(keyboard(&view.rows)))
@@ -1516,6 +1599,46 @@ impl Tg {
             .map_err(|e| e.message)?;
         Ok(())
     }
+}
+
+/// The manage menu's buttons, without the democratic mode switch.
+fn manage_rows(room: &str) -> Vec<Vec<Button>> {
+    let r = || room.to_string();
+    vec![
+        vec![
+            Button::data("Rename", Data::Rename(r())),
+            Button::data("Password", Data::Password(r())),
+        ],
+        vec![
+            Button::data("Pick the host", Data::HostMenu(r())),
+            Button::data("Remove someone", Data::KickMenu(r())),
+        ],
+        vec![
+            Button::data("Hand over", Data::TransferMenu(r())),
+            Button::data("Post panel again", Data::Repost(r())),
+        ],
+        vec![
+            Button::data("Close the room", Data::Close(r())),
+            Button::data("Done", Data::Cancel),
+        ],
+    ]
+}
+
+/// The democratic mode switch of the manage menu: one button that says
+/// the room's mode and carries the one it switches to.
+fn democratic_row(room: &str, democratic: bool) -> Vec<Button> {
+    let (label, on) = if democratic {
+        ("Democratic: on → turn off", false)
+    } else {
+        ("Democratic: off → turn on", true)
+    };
+    vec![Button::data(
+        label,
+        Data::Democratic {
+            room: room.to_string(),
+            on,
+        },
+    )]
 }
 
 fn code_prompt() -> Out {

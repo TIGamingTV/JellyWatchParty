@@ -154,6 +154,17 @@ including switches within the same bridged session, not just the end of
 it. A native host that starts a different item currently just ends the
 bridge rather than updating the room's media. Tracked as a follow-up.
 
+**Known limitation: doesn't follow others in democratic mode.** In a
+[democratic room]({{ '/technical/protocol/' | relative_url }}#democratic-mode) other members may play,
+pause and seek, but `SessionHostBridge` ignores incoming `player_event`s,
+so the native host session keeps playing as before. The server drops its
+`state_update`s for 2 s after someone else's command; after that the
+host's own state goes out again and undoes the command. Admin-panel and
+chat-bot device hosts do carry such commands out (see
+[Server: `jellyfin/`]({{ '/technical/server/' | relative_url }}#module-jellyfin)). Plugin bridges never
+announce `capabilities: ["democratic"]` and are excluded from controlling
+a democratic room themselves, in either role.
+
 ### `Services/SessionFollowerBridge.cs`
 
 One instance per *receiver* session — the receive-only counterpart to
@@ -185,6 +196,11 @@ server's play gate (`all_ready` / `pending_play`) would otherwise hold back
 every host `play` for the whole room until it timed out waiting for the
 follower to ready. `ready` persists for the room's lifetime, so it is sent
 once, on join.
+
+A follower applies every relayed `player_event`, so in a democratic room it
+also follows other members' commands; what someone does on the receiver
+device itself is not sent to the room (only admin-panel device bridges
+with *device control* do that).
 
 **Known limitations (receiver):**
 - **Does not follow `media_changed`.** `ParseRoomEvent` only understands

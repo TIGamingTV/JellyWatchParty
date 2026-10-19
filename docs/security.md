@@ -100,6 +100,16 @@ Image URLs are restricted to `http(s)` schemes to block `javascript:`/`data:`
 XSS vectors. The server also validates message type, room existence, host
 permissions, and payload structure on every incoming message.
 
+Playback control is the host's. In a room an admin, the host or a chat room
+owner put in democratic mode, other members may also send `play`, `pause`
+and `seek` (never `state_update`, `set_media` or the first play). The
+client's `capabilities: ["democratic"]` announcement is a compatibility
+check, not a permission: any member of a democratic room can send these
+commands. Bridged devices only take part with the admin-only device
+control. The plugin setting *Allow democratic mode*
+only shows or hides the host's switch; the server enforces the rules
+itself. See [Protocol: Democratic mode]({{ '/technical/protocol/' | relative_url }}#democratic-mode).
+
 ## Security Best Practices
 
 **Production checklist:**
@@ -131,7 +141,7 @@ The [Discord bot]({{ '/discord-bot/' | relative_url }}) and the [Telegram bot]({
 
 - **Linking:** an admin assigns a 4-digit code to a Jellyfin user. The user enters their Jellyfin name and the code in a private Discord form. After 10 wrong codes for one user (from anyone), that code stops working until the admin assigns a new one, so a guesser has at most a 1 in 1,000 chance per assigned code. A Discord account that enters 5 wrong codes within 15 minutes is blocked until that window ends, and linking pauses for everyone after 50 wrong codes in 10 minutes. Another account can't take over an existing link.
 - **Storage:** codes are stored as HMAC-SHA256 with a per-install key, in `DATA_DIR` (files mode 0600). They are shown once and never logged.
-- **Permissions:** devices can only be added by the Jellyfin user they're signed in as. This is checked against Jellyfin's session list at the moment of adding. Only a room's owner, a Jellyfin administrator, or a member of the Discord admin role (if one is set) controls the host and can remove people or close the room. Room passwords use the same check and throttle as the Watch Party panel.
+- **Permissions:** devices can only be added by the Jellyfin user they're signed in as. This is checked against Jellyfin's session list at the moment of adding. Only a room's owner, a Jellyfin administrator, or a member of the Discord admin role (if one is set) controls the host and can remove people or close the room. Room passwords use the same check and throttle as the Watch Party panel. Democratic mode from chat is off unless the admin turns on **Democratic mode commands**; then only the owner or an admin switches it, and only participants of a democratic room may play, pause and seek.
 - **Integration API:** its own port (3002), never published. It needs a platform's token (`DISCORD_INTEGRATION_TOKEN` or `TELEGRAM_INTEGRATION_TOKEN`), which grants no admin panel access; holding one lets someone act only as users already linked on that platform (with the platform's admin role, if one is set, since the server trusts the roles the bot reports). Requests are limited to 30 per minute per chat account, and every action is in the admin panel's activity log.
 
 ## Reconnect Takeover Protection

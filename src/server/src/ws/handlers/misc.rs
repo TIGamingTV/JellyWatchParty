@@ -2,6 +2,7 @@ use super::super::dispatch::send_error;
 use super::super::pending_play::{all_ready, broadcast_scheduled_play};
 use crate::messaging::{broadcast_room_list, send_to_client};
 use crate::room::handle_leave;
+use crate::room::ops::set_democratic;
 use crate::types::{Clients, IncomingMessage, Rooms, WsMessage};
 use crate::utils::now_ms;
 use log::{info, warn};
@@ -70,6 +71,57 @@ pub(in crate::ws) async fn handle_ready(
                 broadcast_scheduled_play(room, clients, position).await;
             }
         }
+    }
+}
+
+/// Host-only: `set_democratic {enabled}` turns the room's democratic mode
+/// on or off (see `room::ops::set_democratic`).
+pub(in crate::ws) async fn handle_set_democratic(
+    client_id: &str,
+    parsed: &IncomingMessage,
+    clients: &Clients,
+    rooms: &Rooms,
+) {
+    let Some(ref room_id) = parsed.room else {
+        return;
+    };
+    let Some(enabled) = parsed
+        .payload
+        .as_ref()
+        .and_then(|p| p.get("enabled"))
+        .and_then(|v| v.as_bool())
+    else {
+        send_error(client_id, clients, "enabled is required").await;
+        return;
+    };
+    let changed = {
+        let mut locked_rooms = rooms.write().await;
+        let locked_clients = clients.read().await;
+        let Some(room) = locked_rooms.get(room_id) else {
+            return;
+        };
+        if room.host_id != client_id {
+            drop(locked_clients);
+            drop(locked_rooms);
+            send_error(client_id, clients, "Only the host can change this setting").await;
+            return;
+        }
+        let by = locked_clients
+            .get(client_id)
+            .map(|c| c.user_name.clone())
+            .unwrap_or_default();
+        set_democratic(
+            room_id,
+            Some(enabled),
+            None,
+            &by,
+            &mut locked_rooms,
+            &locked_clients,
+        )
+        .unwrap_or(false)
+    };
+    if changed {
+        broadcast_room_list(clients, rooms).await;
     }
 }
 
@@ -214,5 +266,57 @@ mod tests {
         };
         handle_ready("stranger", &parsed, &clients, &rooms).await;
         assert!(rooms.read().await["room-1"].ready_clients.is_empty());
+    }
+
+    #[tokio::test]
+    async fn only_the_host_switches_democratic_mode() {
+        let clients = test_helpers::create_clients();
+        let rooms = test_helpers::create_rooms();
+        let (mut host_rx, mut guest_rx) = {
+            let mut lc = clients.write().await;
+            let mut lr = rooms.write().await;
+            let host_rx = test_helpers::setup_room_with_host(&mut lc, &mut lr, "host");
+            let (mut guest, guest_rx) = test_helpers::create_client_with_rx("ug", "Guest", true);
+            guest.room_id = Some("room-1".into());
+            lc.insert("guest".into(), guest);
+            lr.get_mut("room-1").unwrap().clients.push("guest".into());
+            (host_rx, guest_rx)
+        };
+        let toggle = |client: &str, enabled: bool| IncomingMessage {
+            msg_type: crate::types::ClientMessageType::SetDemocratic,
+            room: Some("room-1".to_string()),
+            client: Some(client.to_string()),
+            payload: Some(serde_json::json!({ "enabled": enabled })),
+            ts: 0,
+            server_ts: None,
+        };
+
+        handle_set_democratic("guest", &toggle("guest", true), &clients, &rooms).await;
+        assert!(!rooms.read().await["room-1"].democratic);
+        assert_eq!(
+            test_helpers::recv_msg(&mut guest_rx).unwrap().msg_type,
+            "error"
+        );
+
+        handle_set_democratic("host", &toggle("host", true), &clients, &rooms).await;
+        assert!(rooms.read().await["room-1"].democratic);
+        for rx in [&mut host_rx, &mut guest_rx] {
+            let msg = test_helpers::recv_msg(rx).unwrap();
+            assert_eq!(msg.msg_type, "democratic_changed");
+            let p = msg.payload.unwrap();
+            assert_eq!(p["enabled"], true);
+            assert_eq!(p["device_control"], false);
+            // Then the refreshed room list, which flags the room.
+            let list = test_helpers::recv_msg(rx).unwrap();
+            assert_eq!(list.msg_type, "room_list");
+            assert_eq!(list.payload.unwrap()[0]["democratic"], true);
+        }
+        // Joiners learn it from room_state.
+        let payload = crate::messaging::build_room_state_payload(&rooms.read().await["room-1"], 2);
+        assert_eq!(payload["democratic"], true);
+
+        // No change, no broadcast.
+        handle_set_democratic("host", &toggle("host", true), &clients, &rooms).await;
+        assert!(test_helpers::recv_msg(&mut host_rx).is_none());
     }
 }

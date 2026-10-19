@@ -71,6 +71,7 @@ cached for 60 s.
 | `wrong_password`, `too_many_attempts` | Room password |
 | `password_required`, `room_limit`, `room_full`, `role_not_allowed` | Limits and settings |
 | `session_not_found`, `runs_web_client`, `no_remote_control`, `device_already_bridged`, `jellyfin_unavailable` | Adding a device |
+| `democratic_off`, `not_democratic` (403), `not_started` (409) | Democratic mode: the platform's `democratic_commands` is off; the room is host-only; nothing is playing yet |
 
 ## Endpoints (`/v1`)
 
@@ -94,10 +95,25 @@ cached for 60 s.
 | `POST /rooms/{id}/host` | `{actor, member}` | Owner only. |
 | `POST /rooms/{id}/devices` | `{actor, session_id, role: "host"\|"receiver"}` | `{ok, member_id}`. Participants only. `host` is allowed for the owner, or when the room has no host. |
 | `POST /rooms/{id}/devices/remove` | `{actor, member}` | Own devices; the owner can remove any member. |
+| `POST /rooms/{id}/democratic` | `{actor, enabled}` | `{ok, democratic}`. Owner only; needs `democratic_commands`. Sends `democratic_changed` to the room. |
+| `POST /rooms/{id}/playback` | `{actor, action: "play"\|"pause"}`, `{actor, action: "seek", position}` or `{actor, action: "seek", offset}` | `{ok, action, position}`. Participants (and the owner and admins) of a democratic room that has started; needs `democratic_commands`. `position` seeks to that second, `offset` by that many (negative: back); the result is clamped at 0. Any other combination is `invalid`. |
 
 "Owner only" also allows admins: Jellyfin administrators, or holders of
 the configured admin role (on Telegram: group administrators, when
 **Group administrators manage all rooms** is on).
+
+### Democratic mode
+
+`playback` goes through `ws::server_command`: it updates the room as a
+member's `player_event` would and sends the event to **every** member, the
+host included, with `by: ""` and `by_name` set to the chat user's Jellyfin
+name. `play` and `pause` use the room's current expected position. The
+host's `state_update`s are ignored for the 2 s command cooldown afterwards
+so its old state can't undo the command (see
+[Protocol: Democratic mode]({{ '/technical/protocol/' | relative_url }}#democratic-mode)).
+Both endpoints add to the activity log (`room_democratic`,
+`room_playback`). The bots only offer these commands while
+`democratic_commands` is on, but the server checks it on every request.
 
 Rooms, limits and settings are per platform: a bot only sees and reaches
 the rooms created on its own platform, and `max_rooms_per_user` /
@@ -108,7 +124,7 @@ tests on both sides check):
 
 ```json
 {
-  "id": "…", "name": "…", "has_password": true,
+  "id": "…", "name": "…", "has_password": true, "democratic": false,
   "owner": { "user_id": "…", "name": "Alice", "external_id": "…" },
   "participants": [{ "user_id": "…", "name": "…", "external_id": "…" | null }],
   "host": { "id": "…", "name": "…" } | null,
@@ -169,6 +185,11 @@ Settings are checked per platform when saved:
 | `channel_ids` | Up to 25 channel ids | Must be empty |
 | `required_role_id` | Role id | Must be empty |
 | `admin_role_id` | Role id | Empty, or `admin` (group administrators) |
+
+Other settings are the same on both platforms (`max_rooms_per_user`,
+`max_rooms_total`, `empty_room_minutes`, `require_password`, `allow_host`,
+`allow_receiver`, and `democratic_commands`, default `false`). Files
+without `democratic_commands` load with it off.
 
 `code_hmac` is HMAC-SHA256 over `"jwp-link-code\0" || user id || "\0" ||
 code`, keyed with `DATA_DIR/secret.key` (32 random bytes, created on first
