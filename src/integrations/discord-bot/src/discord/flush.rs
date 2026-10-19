@@ -25,9 +25,15 @@ fn key(p: &PanelRef) -> Option<Key> {
     Some((p.channel_id.parse().ok()?, p.message_id.parse().ok()?))
 }
 
-/// Notes what every panel should show now.
-pub fn apply(panels: &mut DiscordPanels, rooms: &[Room]) {
-    panels.apply(rooms, key, panel::render, panel::render_closed);
+/// Notes what every panel should show now (`democratic`: the admin turned
+/// on democratic mode commands).
+pub fn apply(panels: &mut DiscordPanels, rooms: &[Room], democratic: bool) {
+    panels.apply(
+        rooms,
+        key,
+        |r| panel::render(r, democratic),
+        panel::render_closed,
+    );
 }
 
 /// Discord says the message (or our access to it) is gone.
@@ -104,15 +110,31 @@ mod tests {
         let r: RoomsResponse =
             serde_json::from_str(include_str!("../../../fixtures/rooms.json")).unwrap();
         let mut p = new_panels();
-        apply(&mut p, &r.rooms);
+        apply(&mut p, &r.rooms, false);
         let t0 = Instant::now();
         let due = p.due(t0);
         assert_eq!(due.len(), 1);
         assert_eq!(due[0].key, (200000000000000002, 300000000000000003));
         assert!(!due[0].view.rows.is_empty());
-        apply(&mut p, &[]);
+        apply(&mut p, &[], false);
         let due = p.due(t0 + Duration::from_secs(3));
         assert!(due[0].view.rows.is_empty());
         assert!(due[0].view.description.contains("closed"));
+    }
+
+    #[test]
+    fn turning_democratic_commands_on_edits_the_panels() {
+        let r: RoomsResponse =
+            serde_json::from_str(include_str!("../../../fixtures/rooms.json")).unwrap();
+        let mut p = new_panels();
+        apply(&mut p, &r.rooms, false);
+        let t0 = Instant::now();
+        assert_eq!(p.due(t0)[0].view.rows.len(), 2);
+        apply(&mut p, &r.rooms, false);
+        assert!(p.due(t0 + Duration::from_secs(3)).is_empty());
+        apply(&mut p, &r.rooms, true);
+        let due = p.due(t0 + Duration::from_secs(6));
+        assert_eq!(due.len(), 1);
+        assert_eq!(due[0].view.rows.len(), 3);
     }
 }

@@ -9,3 +9,5 @@ pub use connection::client_connection;
 pub use dispatch::dispatch_internal;
 // Room password throttle, shared with the chat integration's joins.
 pub(crate) use handlers::{lockout_remaining_ms, record_failed_join};
+// Playback commands from outside a room (chat bots in democratic rooms).
+pub(crate) use handlers::{server_command, RoomCommand};

@@ -91,6 +91,30 @@
     ui.render(true);
   };
 
+  // The host (or an admin) switched democratic mode. Sent to everyone in the
+  // room, the host who switched it included.
+  h.handleDemocraticChanged = (msg) => {
+    const p = msg.payload || {};
+    const enabled = p.enabled === true;
+    const changed = enabled !== state.democraticMode;
+    state.democraticMode = enabled;
+    state.deviceControl = p.device_control === true;
+    // A guard armed under the old mode doesn't apply to the new one.
+    if (!enabled) state.commandGuardUntil = 0;
+    if (changed && ui.showToast) {
+      const by = typeof p.by === 'string' ? p.by.trim() : '';
+      const what = enabled
+        ? 'democratic mode: everyone can control playback'
+        : 'democratic mode: only the host controls playback';
+      ui.showToast(by
+        ? `${by} turned ${enabled ? 'on' : 'off'} ${what}`
+        : `Democratic mode ${enabled ? 'on' : 'off'}: ${enabled ? 'everyone can control playback' : 'only the host controls playback'}`);
+    }
+    // Host-only controls and the info line aren't covered by the fast
+    // render path (it only checks inRoom).
+    ui.render(true);
+  };
+
   h.handleError = (msg) => {
     const message = msg.payload?.message || 'Unknown error';
     console.error('[JellyWatchParty] Server error:', message);

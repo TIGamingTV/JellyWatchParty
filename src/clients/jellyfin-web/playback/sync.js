@@ -48,6 +48,7 @@
     const now = utils.nowMs();
     if (state.initialSyncTargetPos && abs > INITIAL_SYNC_DRIFT_THRESHOLD) {
       utils.log('SYNC', { type: 'post_buffer_seek', drift, videoPos: video.currentTime, expected });
+      utils.suppress(); // a correction, not a seek to broadcast (democratic mode)
       video.currentTime = expected;
       state.lastSyncServerTs = serverNow;
       state.lastSyncPosition = expected;
@@ -56,6 +57,7 @@
     }
     if (abs > INITIAL_SYNC_MAX_DRIFT) {
       utils.log('SYNC', { type: 'initial_sync_large_drift', drift, videoPos: video.currentTime, expected });
+      utils.suppress();
       video.currentTime = expected;
       state.lastSyncServerTs = serverNow;
       state.lastSyncPosition = expected;

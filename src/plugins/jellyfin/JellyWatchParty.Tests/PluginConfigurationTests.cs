@@ -107,6 +107,31 @@ public class PluginConfigurationTests
     }
 
     [Fact]
+    public void AllowDemocraticMode_DefaultIsFalse()
+    {
+        var config = new PluginConfiguration();
+        Assert.False(config.AllowDemocraticMode);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void AllowDemocraticMode_RoundTripsValue(bool value)
+    {
+        var config = new PluginConfiguration { AllowDemocraticMode = value };
+        Assert.Equal(value, config.AllowDemocraticMode);
+    }
+
+    [Fact]
+    public void AllowDemocraticMode_IndependentOfPanelBridging()
+    {
+        var config = new PluginConfiguration { AllowDemocraticMode = true, EnablePanelBridging = false };
+        Assert.True(config.AllowDemocraticMode);
+        Assert.False(config.PanelHostAllowed);
+        Assert.False(config.PanelReceiverAllowed);
+    }
+
+    [Fact]
     public void AllowThirdPartyClientHost_DefaultIsFalse()
     {
         var config = new PluginConfiguration();

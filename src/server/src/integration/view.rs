@@ -65,6 +65,7 @@ pub fn rooms_json(
                 "id": r.room_id,
                 "name": r.name,
                 "has_password": r.password_hash.is_some(),
+                "democratic": r.democratic,
                 "owner": {
                     "user_id": chat.owner,
                     "name": chat.owner_name,

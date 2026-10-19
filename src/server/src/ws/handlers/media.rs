@@ -73,6 +73,7 @@ pub(in crate::ws) async fn handle_set_media(
         room.ready_clients = HashSet::from([client_id.to_string()]);
         room.last_state_ts = now_ms();
         room.last_command_ts = 0;
+        room.last_change_ts = now_ms();
 
         let msg = WsMessage {
             msg_type: "media_changed".to_string(),

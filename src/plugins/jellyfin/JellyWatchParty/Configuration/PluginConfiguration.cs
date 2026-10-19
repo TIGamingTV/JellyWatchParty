@@ -91,6 +91,18 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool HideNativeSyncButton { get; set; }
 
     /// <summary>
+    /// When true, room hosts on Jellyfin Web / Jellyfin Desktop see an
+    /// "Everyone can control playback" toggle in the Watch Party panel that
+    /// lets any participant on those clients play, pause and seek for the
+    /// whole room. This only gates whether the widget shows the toggle - the
+    /// session server never sees it, and admins can still enable democratic
+    /// mode per room from the session server's admin panel regardless.
+    /// Independent of <see cref="EnablePanelBridging"/>. Defaults to false so
+    /// it is opt-in from the plugin configuration page.
+    /// </summary>
+    public bool AllowDemocraticMode { get; set; }
+
+    /// <summary>
     /// Master switch for bridging devices from the in-player Watch Party
     /// panel, meant only for small servers with trusted users. Off by
     /// default; because it is a new setting, upgraded installs also start

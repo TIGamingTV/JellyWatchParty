@@ -13,7 +13,9 @@ asking an admin. In a Discord server you choose, they can:
 - join a room (with its password);
 - put **their own** Jellyfin devices into a room, as host or as receiver;
 - as the room's owner: pick the host, remove people and devices, change the
-  name and password, hand the room over, and close it.
+  name and password, hand the room over, and close it;
+- if the admin allows it, play, pause and seek for everyone in a room in
+  [democratic mode](#democratic-mode).
 
 People with the Watch Party panel (Jellyfin in a browser, Jellyfin Desktop,
 the Android/iOS app) join these rooms from their panel's room list, as
@@ -171,6 +173,7 @@ Under **Discord bot**:
 | Close empty rooms after | A bot room with nobody in it closes after this many minutes (default 30, 5 to 1440). |
 | Rooms need a password | Refuse rooms without a password. Off by default. |
 | Devices may be added as host / receiver | Which roles users may give their devices. Both are on by default. Turn one off to refuse it for everyone. |
+| Democratic mode commands | Off by default. Room owners and admins can turn on [democratic mode](#democratic-mode), and everyone in a democratic room gets `/jwp playback` and the panel's playback buttons. `/jwp` is registered again with or without these commands within about 30 seconds of a change. |
 
 The status chip reads **Bot online** while the bot checks in (every 30
 seconds). It reads **Bot offline** if nothing has been heard for 90 seconds,
@@ -187,6 +190,9 @@ and **No bot token** if `DISCORD_INTEGRATION_TOKEN` is not set.
 | `/jwp device add` / `remove` | Put one of your devices into a room as receiver or host; take it out. |
 | `/jwp room host` / `kick` / `rename` / `password` / `transfer` / `close` | Owner and admins only. |
 | `/jwp room panel` | Owner and admins: post the room's panel again in this channel (the old one is marked as replaced). After a bot restart, older panels are no longer marked, so delete any stale ones by hand. |
+| `/jwp room democratic` | Owner and admins: turn [democratic mode](#democratic-mode) on or off (`mode`: `on` / `off`). Only with *Democratic mode commands*. |
+| `/jwp playback play` / `pause` | Anyone in a democratic room: play or pause for everyone. Only with *Democratic mode commands*. |
+| `/jwp playback seek` | Anyone in a democratic room: `1:23:45`, `83:10` or `95` (seconds) jump to that time; `+30`, `-10` or `+1:30` jump ahead or back by that much. Only with *Democratic mode commands*. |
 
 Each room gets a **panel** message that stays up to date. It shows the
 owner, the host, everyone watching with their sync status, and who joined
@@ -197,6 +203,11 @@ on Discord. Its buttons:
   each as "follow the host" and/or "be the host".
 - **Remove my device** and **Leave**.
 - **Pick host** and **Close room** are for the owner and admins.
+- **Play**, **Pause**, **−30s** and **+30s**, only on a democratic room
+  while *Democratic mode commands* is on.
+
+With *Democratic mode commands* on, or when the room is democratic anyway,
+the panel also has a **Control** field: *Everyone* or *Host only*.
 
 All replies are private (only you see them). Passwords and codes are only
 typed into forms, never into visible command options.
@@ -205,6 +216,32 @@ A device only shows up while its Jellyfin app is open and signed in **as
 you**. While a room has no host, anyone who joined it may add a device as host
 (a device added as receiver never becomes host by itself). After that,
 only the owner (or an admin) can change the host.
+
+### Democratic mode
+
+In a democratic room, everyone in it can play, pause and seek, not just the
+host (see [Features: Democratic Mode]({{ '/features/' | relative_url }}#democratic-mode)). From
+Discord this needs the admin panel setting **Democratic mode commands**.
+Then:
+
+- the room's owner or an admin turns it on or off with
+  `/jwp room democratic`. The host can also switch it from their Watch
+  Party panel, and an admin from the admin panel;
+- everyone who joined the room on Discord (and the owner and admins) can use
+  `/jwp playback play`, `pause` and `seek`, and the panel's playback
+  buttons, once the room has started playing. The command goes to everyone
+  in the room, the host included.
+
+Possible refusals:
+
+| Reason | Meaning |
+|---|---|
+| `democratic_off` | *Democratic mode commands* is off for this bot. |
+| `not_owner` | Only the owner or an admin may switch the mode. |
+| `not_participant` | Join the room first. |
+| `not_democratic` | The room is host-only; the owner can turn on democratic mode. |
+| `not_started` | Nothing is playing in the room yet (the host starts it). |
+| `invalid` | The time couldn't be read. |
 
 Rooms live in the session server's memory: a server restart closes them.
 Links, codes and settings are kept. A code's own lock (after 10 wrong tries)

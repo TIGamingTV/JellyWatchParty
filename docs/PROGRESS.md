@@ -2652,3 +2652,113 @@ the data file's temp file created with 0600.
 
 **Verification**: docs only. Anchors added in this round were checked against
 the heading slugs in the target pages. The site was not built locally.
+
+## Round 40 — Democratic mode returns, opt-in
+
+**Trigger**: democratic mode was the last "Planned" item on the roadmap.
+Round 19 shipped a first version (`4a22945`, fixed in `212aaac`) and
+Round 20 took it out again (`624bcdc`) before it was ever tested live.
+This round builds it again on top of everything that changed since (chat
+rooms, device bridges, start countdown, participant statuses), reusing
+that design's core idea (a per-room flag and one authority check) and
+replacing the rest.
+
+**What shipped** (branch `feat/democratic-mode`):
+
+- **Server**: `Room.democratic` / `device_control` (in memory, off for
+  every new room), `last_command_by`, `last_change_ts`.
+  `ws/handlers/playback.rs::may_control` replaces the host-only check:
+  besides the host, a member of a democratic, started room may send
+  `player_event` `play`/`pause`/`seek` if its client announced
+  `capabilities: ["democratic"]` in `auth` (and isn't a plugin bridge), or
+  if it is a device bridge while `device_control` is on. Anything else
+  from a non-host is dropped silently. New `set_democratic` (host only)
+  and `democratic_changed {enabled, device_control, by}`; `room_state`
+  gains `democratic`/`device_control`, `room_list` gains `democratic`,
+  relayed `player_event`s gain `by`/`by_name`. `room/ops.rs::set_democratic`
+  is shared by the websocket handler, the admin API and the integration
+  API.
+- **Admin panel**: `PATCH /api/rooms/{id}` takes `democratic` /
+  `device_control`; room cards get **Democratic** / **Host-only control**
+  and, on democratic rooms with a device, **Devices control too** /
+  **Devices follow only**, plus a badge. Bot settings get **Democratic
+  mode commands** (`ChatSettings.democratic_commands`, default off).
+- **Integration API**: `POST /v1/rooms/{id}/democratic` (owner/admin) and
+  `POST /v1/rooms/{id}/playback` (participants; play, pause, seek to a
+  position or by an offset), via `ws::server_command`, which sends the
+  command to every member including the host. New reasons
+  `democratic_off`, `not_democratic`, `not_started`; activity log kinds
+  `room_democratic`, `room_playback`; room JSON gains `democratic`.
+- **Bots** (crate 0.3.0): Discord `/jwp room democratic` and `/jwp
+  playback play|pause|seek` (times like `1:23:45`, `83:10`, `95`, `+30`,
+  `-10`, `+1:30`), registered only while the setting is on and
+  re-registered when it changes; panels get a **Control** field and
+  Play/Pause/−30s/+30s buttons. Telegram: a Democratic row in **Manage**,
+  a **Control:** line, and Play/Pause/−30s/+30s/**Seek to…** buttons
+  (the time is asked for in the private chat).
+- **Web client**: the host's *Everyone can control playback* checkbox
+  (shown when the plugin allows it or the room already is democratic), an
+  info line for everyone, a room-list icon, toasts naming who did what.
+  Guests send discrete commands through `playback/bind.js::sendGuestCommand`;
+  the host applies other members' commands (`hostApplies`).
+- **Plugin**: `PluginConfiguration.AllowDemocraticMode` (default off,
+  Interface section of the config page), passed to the widget as
+  `allow_democratic_mode` on `/JellyWatchParty/Token`. Plugin version
+  4.1.3.0.
+- **Device bridges** (`jellyfin/logic.rs`, `bridge.rs`): a host device in
+  a democratic room is now driven by remote control to carry out other
+  members' commands (`host_follow`); before, a host device was only read.
+  With device control, a receiver's own pause, resume or seek is detected
+  from its progress reports and sent to the room (`detect_user_action`).
+
+**Design decisions**:
+
+- **Discrete commands only.** Non-hosts send `play`, `pause` and `seek`,
+  never `state_update`, `buffering`, `set_media` or the room's first
+  (countdown) play. Several position sources would fight; the host stays
+  the one position everyone follows. Round 19 let anyone send anything.
+- **Capability announcement, not client sniffing.** Only a client that
+  applies and echo-suppresses other members' commands can safely send
+  them. The web client says so in `auth`; older clients and plugin
+  bridges don't, so they stay follow-only instead of bouncing commands.
+  It is a compatibility check, not a permission.
+- **Stale host updates.** A host `state_update` sent before its player
+  had applied a guest's pause could undo that pause (a play-state change
+  always got through the cooldown). The server now drops every host update
+  (play-state changes included) for the 2 s command cooldown when the
+  last command came from someone else; clients add a 3 s command guard
+  (`COMMAND_GUARD_MS`) and an echo filter (`isEchoOfRoomState`) for slow
+  seeks that complete after the 2 s `isSyncing` lock.
+- **Device detection rules.** Jellyfin only knows what a TV does when it
+  reports progress, often seconds later, and a device that hasn't caught
+  up yet looks the same as someone pressing a button. So a report counts
+  only if it comes more than 3 s (`USER_ACTION_GRACE_MS`) after the
+  bridge's own last command and the room's last change, each report is
+  judged once, a seek must jump more than 8 s
+  (`USER_SEEK_THRESHOLD_SECS`) both from where the device was heading and
+  from the room, and a detected action is recorded as the bridge's own
+  command so the follower doesn't undo it. Admin-only and off by default,
+  because a device that pauses to buffer can still pause the room.
+- **Host devices follow.** In a democratic room a device host must carry
+  out others' commands, or its next report puts the room back. It stays
+  quiet until it reports again (at most 10 s). An app that doesn't accept
+  remote control (Fladder) can't follow; its state wins. The plugin's own
+  host bridge doesn't follow either (documented limitation).
+- **The plugin setting is a UI gate only.** The session server never sees
+  it; admins can turn the mode on for any room regardless, and the host
+  keeps the switch while the room is democratic so they can turn off what
+  an admin turned on.
+
+**Docs**: `features.md` (new section, roadmap Done, limitation reworded),
+`user-guide.md`, `configuration.md`, `admin-panel.md`, `discord-bot.md`,
+`telegram-bot.md`, `troubleshooting.md` (new Democratic Mode section and
+FAQ), `security.md`, `core-structure.md`, and the technical pages
+(`protocol.md`, `integration-api.md`, `server.md`, `client.md`,
+`plugin.md`, `host-bridge.md`, `sync.md`).
+
+**Verification**: server `cargo test` 293, bot `cargo test` 72, client
+`node --test` 257, all passing. The plugin's new configuration tests were
+not run here (no .NET SDK in this environment). **Not tested end-to-end**
+against a real Jellyfin, Discord or Telegram: the guest-command echo
+filtering, device detection timing on real TV apps, and host-device
+following all rest on unit tests and simulated reports so far.

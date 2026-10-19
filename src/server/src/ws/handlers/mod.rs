@@ -14,7 +14,9 @@ pub(in crate::ws) use join::handle_join_room;
 pub(crate) use join::{lockout_remaining_ms, record_failed_join};
 pub(in crate::ws) use media::handle_set_media;
 pub(in crate::ws) use misc::{
-    handle_client_log, handle_leave_room, handle_ping, handle_ready, handle_unknown,
+    handle_client_log, handle_leave_room, handle_ping, handle_ready, handle_set_democratic,
+    handle_unknown,
 };
 pub(in crate::ws) use playback::handle_playback;
+pub(crate) use playback::{server_command, RoomCommand};
 pub(in crate::ws) use status::handle_client_status;

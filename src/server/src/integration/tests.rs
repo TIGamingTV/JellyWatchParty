@@ -1328,3 +1328,154 @@ async fn admin_status_shows_settings_and_sidecar() {
     assert_eq!(s["providers"][1]["token_set"], true);
     assert!(s["providers"][1]["sidecar"].is_null());
 }
+
+// --- democratic mode -------------------------------------------------------
+
+#[tokio::test]
+async fn democratic_commands_follow_the_bot_setting_and_room_roles() {
+    let f = fixture().await;
+    let room = owner_and_guest(&f).await;
+    f.hub
+        .join_room("discord", actor("200"), &room, Some("pw"))
+        .await
+        .unwrap();
+
+    // Off by default for the bot.
+    assert_eq!(
+        reason(
+            f.hub
+                .set_democratic("discord", actor("100"), &room, true)
+                .await
+        ),
+        "democratic_off"
+    );
+    assert_eq!(
+        reason(
+            f.hub
+                .playback("discord", actor("200"), &room, PlaybackRequest::Pause)
+                .await
+        ),
+        "democratic_off"
+    );
+    configure(&f.hub, |s| s.democratic_commands = true);
+
+    // Bob is only a participant: he can't switch it on, nor play yet.
+    assert_eq!(
+        reason(
+            f.hub
+                .set_democratic("discord", actor("200"), &room, true)
+                .await
+        ),
+        "not_owner"
+    );
+    assert_eq!(
+        reason(
+            f.hub
+                .playback("discord", actor("200"), &room, PlaybackRequest::Pause)
+                .await
+        ),
+        "not_democratic"
+    );
+    f.hub
+        .set_democratic("discord", actor("100"), &room, true)
+        .await
+        .unwrap();
+    assert!(f.hub.0.rooms.read().await[&room].democratic);
+
+    // Nothing playing yet.
+    assert_eq!(
+        reason(
+            f.hub
+                .playback("discord", actor("200"), &room, PlaybackRequest::Play)
+                .await
+        ),
+        "not_started"
+    );
+
+    // A web member watching the room's item: Bob's pause reaches it.
+    let (member, mut rx) = test_helpers::create_client_with_rx("w1", "Web", true);
+    {
+        let mut rooms = f.hub.0.rooms.write().await;
+        let mut clients = f.hub.0.clients.write().await;
+        clients.insert("w1".into(), member);
+        room_ops::add_member(
+            &room,
+            "w1",
+            &mut rooms,
+            &mut clients,
+            AddOptions {
+                promote_if_hostless: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let r = rooms.get_mut(&room).unwrap();
+        r.media_id = Some("0123456789abcdef0123456789abcdef".into());
+        r.state.play_state = "playing".into();
+        r.state.position = 100.0;
+        r.last_state_ts = crate::utils::now_ms();
+    }
+    while test_helpers::recv_msg(&mut rx).is_some() {}
+
+    let r = f
+        .hub
+        .playback("discord", actor("200"), &room, PlaybackRequest::Pause)
+        .await
+        .unwrap();
+    assert_eq!(r["action"], "pause");
+    let msg = test_helpers::recv_msg(&mut rx).expect("the host hears the pause");
+    assert_eq!(msg.msg_type, "player_event");
+    let p = msg.payload.unwrap();
+    assert_eq!(p["action"], "pause");
+    assert_eq!(p["by_name"], "Bob");
+    assert_eq!(f.hub.0.rooms.read().await[&room].state.play_state, "paused");
+
+    // Seek back by 30 s from where the room is.
+    let r = f
+        .hub
+        .playback(
+            "discord",
+            actor("200"),
+            &room,
+            PlaybackRequest::SeekBy(-30.0),
+        )
+        .await
+        .unwrap();
+    let pos = r["position"].as_f64().unwrap();
+    assert!((69.0..=71.0).contains(&pos), "{}", pos);
+
+    // Strangers and bad input are refused.
+    link(&f.hub, "300", "carol", CAROL).await;
+    let carol = f
+        .hub
+        .playback("discord", actor("300"), &room, PlaybackRequest::Play)
+        .await;
+    // Carol is a Jellyfin admin: admins manage every room.
+    assert!(carol.is_ok());
+    assert_eq!(
+        reason(
+            f.hub
+                .playback(
+                    "discord",
+                    actor("200"),
+                    &room,
+                    PlaybackRequest::SeekTo(f64::NAN)
+                )
+                .await
+        ),
+        "invalid"
+    );
+
+    // The bots see the flag.
+    let view = {
+        let rooms = f.hub.0.rooms.read().await;
+        let clients = f.hub.0.clients.read().await;
+        f.hub
+            .store()
+            .read(|d| view::rooms_json("discord", &rooms, &clients, &HashMap::new(), d))
+    };
+    assert_eq!(view[0]["democratic"], true);
+    let log = f.hub.audit_log();
+    assert!(log.iter().any(|e| e.kind == "room_democratic"));
+    assert!(log.iter().any(|e| e.kind == "room_playback"));
+}

@@ -5,6 +5,7 @@
       "id": "7b0d3c1e-0c39-4a43-9a0e-2f1f3a3e9d10",
       "name": "Friday movie night",
       "has_password": true,
+      "democratic": true,
       "owner": {
         "user_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "name": "Alice",

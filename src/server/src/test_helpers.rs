@@ -33,6 +33,7 @@ pub fn create_client_with_rx(
         connected: true,
         kind: crate::types::ClientKind::Web,
         bridge_device: None,
+        democratic_capable: false,
     };
     (client, rx)
 }
@@ -60,6 +61,10 @@ pub fn create_room(room_id: &str, host_id: &str) -> Room {
         admin_created: false,
         created_at: 0,
         chat: None,
+        democratic: false,
+        device_control: false,
+        last_command_by: String::new(),
+        last_change_ts: 0,
     }
 }
 

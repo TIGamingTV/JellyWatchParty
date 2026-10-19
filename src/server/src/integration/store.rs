@@ -58,6 +58,10 @@ pub struct ChatSettings {
     pub allow_receiver: bool,
     /// A room without members closes after this long.
     pub empty_room_minutes: u32,
+    /// Democratic mode from chat: owners and admins may turn it on for a
+    /// room, and then every participant gets play, pause and seek
+    /// commands.
+    pub democratic_commands: bool,
 }
 
 impl Default for ChatSettings {
@@ -74,6 +78,7 @@ impl Default for ChatSettings {
             allow_host: true,
             allow_receiver: true,
             empty_room_minutes: 30,
+            democratic_commands: false,
         }
     }
 }

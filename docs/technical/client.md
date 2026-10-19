@@ -68,6 +68,10 @@ no-op.
 | `INITIAL_SYNC_MAX_DRIFT` | `10` | Drift that forces a hard seek during initial sync (s) |
 | `TIME_SYNC_MAX_SAMPLES` | `8` | Clock-sync sliding-window sample count |
 | `TIME_SYNC_EMA_ALPHA` | `0.4` | Clock-sync EMA smoothing coefficient |
+| `CLIENT_CAPABILITIES` | `['democratic']` | Sent as `capabilities` in every `auth`, so the server lets this client control democratic rooms |
+| `COMMAND_GUARD_MS` | `3000` | Democratic mode: how long a sent/applied play/pause/seek overrides disagreeing `state_update`s |
+| `COMMAND_GUARD_TOLERANCE_SEC` | `2.0` | How far (s) a `state_update` may be from the guarded command and still agree |
+| `FOLLOWER_LOAD_MAX_MS` | `15000` | Guest: longest time a loading stream's own play/seek events are never treated as commands |
 
 See also `PANEL_ID`, `BTN_ID`, `STYLE_ID`, `HOME_SECTION_ID` (DOM element
 IDs) and `DEFAULT_WS_URL` (`ws(s)://<host>:3000/ws`, scheme matching the
@@ -90,6 +94,14 @@ post-join catch-up phase, which suppresses hard seeks for
 `tokenExpiresAt`/`tokenRefreshTimer` (JWT lifecycle), and
 `homeRoomCache` (an `LRUCache` of 50 entries for home-page cover images).
 
+Democratic mode: `democraticMode`/`deviceControl` (from `room_state` and
+`democratic_changed`; reset on leave), `allowDemocraticMode` (the plugin
+setting from `/JellyWatchParty/Token`; only shows the host's switch),
+`commandGuardUntil`/`commandGuardPlayState`/`commandGuardPosition`/
+`commandGuardServerTs` (the command guard, see `utils/misc.js`), and
+`followerLoadingUntil` (a guest's stream is loading; its events aren't
+commands).
+
 ## Module: `utils/` — Shared Helpers
 
 ### `utils/time.js`
@@ -105,6 +117,17 @@ remainder — also clears any prior pending action timer), and
 `shouldSend()` (outside the suppression window), `suppress(ms?)`,
 `escapeHtml(str)` (chat/room-name XSS escaping), `getItemImageUrl(itemId,
 imageTag)`, `isHomeView()`.
+
+Democratic mode helpers: `canControlPlayback()` (host, or
+`democraticMode && roomStarted`), `expectedRoomPosition()` (from the last
+sync baseline), `mirrorRoomState(position, playState)` (takes a command
+this client just sent as the room's new baseline, since the server doesn't
+echo it back), `armCommandGuard()`/`commandGuardBlocks(msg)` (for
+`COMMAND_GUARD_MS` after a command, ignore `state_update`s that disagree
+with it; the first that agrees ends the guard), and
+`isEchoOfRoomState(action, video)` (a video event that only brings this
+client in line with the room, e.g. a slow seek finishing after the
+suppression window, is not a new command).
 
 ### `utils/media.js`
 `getCurrentItem()`/`getCurrentItemId()` — locates the currently playing
@@ -216,6 +239,14 @@ play button navigates to the item's detail page and polls for its
 `'pending_play'` with a countdown, or `'unknown'`/"Not synced yet" —
 hidden entirely for the host, who has nothing to sync against).
 
+`renderRoom` also shows the democratic mode block (`buildDemocraticHtml`):
+for the host, an *Everyone can control playback* checkbox when
+`allowDemocraticMode` is set or the room already is democratic (so a host
+can turn off what an admin turned on), which calls
+`actions.setDemocratic()`; for everyone, an info line while the mode is
+on (*(TV devices too)* with device control). `ui/cards.js` marks
+democratic rooms in the room list with a `how_to_vote` icon.
+
 ### `ui/toasts.js`
 `showToast(message)` (centered, auto-dismissing system notifications)
 and `showChatToast(username, text)` (top-right, stacked chat
@@ -245,7 +276,20 @@ play/pause/seek uniformly): ignored entirely if not host, during the
 additionally debounced (250ms) and required to differ from the last
 sent position by at least `SEEK_THRESHOLD`. A `waiting` event also
 proactively broadcasts a `buffering` player_event so guests pause too
-instead of drifting ahead during the host's stall.
+instead of drifting ahead during the host's stall. In a democratic room
+the host also skips events that only bring it in line with the room
+(`isEchoOfRoomState`), since it now applies other members' commands.
+
+A guest's events go to `sendGuestCommand` instead, only when
+`canControlPlayback()` (democratic room that has started). It sends just
+`play`, `pause` or `seek` (never `state_update`, `buffering`, `set_media`
+or the countdown play), and not while a start is pending, while not on the
+room's item, while its stream is loading (`followerLoadingUntil`: from
+`loadstart`/bind, cut to `SUPPRESS_MS` once it can play), before it has a
+sync baseline, while buffering (pause) or seeking (play/pause), or when the
+event is an echo of the room's state. After sending, it mirrors the new
+state and arms the command guard. Outside democratic mode a guest's pause
+shows "Only the host controls playback" (`onGuestPause`).
 
 ### `playback/play.js`
 `playItem(item)` starts playback via the Jellyfin `PlaybackManager`,
@@ -288,7 +332,9 @@ track switch engages the `isSyncing` lock (see [Sync Algorithms]({{ '/technical/
 pause/seek to the room. A settle-shortcut (one-shot `canplay`/`playing`
 listeners) collapses that window back down once the reload visibly
 finishes, so a quick or no-reload switch doesn't hold the room's sync
-events back for the full safety-net duration. Called idempotently from
+events back for the full safety-net duration. In a democratic room a
+guest's track switch is guarded the same way, since a guest's events are
+sent then too. Called idempotently from
 `app/lifecycle.js`'s UI poll loop, same place `bindVideo()` runs.
 
 ## Module: `chat/` — Text Chat
@@ -316,12 +362,15 @@ room-leave cleanup.
 `send(type, payload?, roomOverride?)` — the low-level message sender
 (adds `ts` and `client` automatically). `createRoom(password?)`,
 `joinRoom(id, password?)`, and `leaveRoom()` build on top of it;
-`leaveRoom()` also resets all sync/drift state fields and hides the panel.
+`leaveRoom()` also resets all sync/drift state fields (democratic mode
+included) and hides the panel. `setDemocratic(enabled)` sends
+`set_democratic` (host only; the answer is `democratic_changed`).
 
 ### `ws/auth.js`
 `fetchAuthToken()` — calls `/JellyWatchParty/Token` with the user's
 Jellyfin access token, waiting up to 10s for `window.ApiClient` to exist
-if needed. Populates `state.userName`/`userId`/`authEnabled` regardless
+if needed. Populates `state.userName`/`userId`/`authEnabled` (and the
+plugin flags such as `allowDemocraticMode`) regardless
 of whether auth is enabled, and if enabled, stores the JWT and schedules
 a refresh (`scheduleTokenRefresh`) at 80% of the token's lifetime
 (capped at 5 minutes before expiry) that re-authenticates over the
@@ -337,13 +386,18 @@ it as new. `onWsClose` reconnects with exponential backoff
 (`RECONNECT_BASE_MS` doubling up to `RECONNECT_MAX_MS`), not a fixed
 delay. `handleMessage` dispatches each incoming message type to the
 matching function in `JWP._wsHandlers` (populated by `ws/handlers/*.js`).
+The `auth` sent on open carries `capabilities: CLIENT_CAPABILITIES`
+(only alongside an identity, since a bare `auth` would be refused where
+JWT is required).
 
 ### `ws/handlers/room.js`
 `handleRoomList`, `handleClientHello` (stores the server-assigned
 `client_id` used for the `client` message field — distinct from the
 persistent reconnect `client_id` above), `handleParticipantsUpdate`/
 `handleClientLeft` (toast + counter update), `handleRoomClosed`,
-`handleError`.
+`handleDemocraticChanged` (stores `democraticMode`/`deviceControl`, toasts
+who turned the mode on or off, clears the command guard when it goes off,
+forces a full render), `handleError`.
 
 ### `ws/handlers/playback.js`
 `handlePlayerEvent` — applies a host's play/pause/seek/buffering
@@ -351,7 +405,12 @@ command: activates `startSyncing()`, hard-corrects position if the gap
 exceeds `SEEK_THRESHOLD`, then dispatches by action (`play` schedules
 via `scheduleAt(target_server_ts, ...)` or applies immediately with lead
 compensation; `pause`/`seek`/`buffering` apply directly and reset
-sync-tracking state).
+sync-tracking state). Toasts name `payload.by_name` ("Alice paused
+playback", "Host" when missing) and stay quiet for this client's own
+command coming back (`by` equals its id). In democratic mode the host
+applies other members' `play`/`pause`/`seek` too (`hostApplies`: not its
+own, not mid media switch, not a `play` while already playing), and every
+discrete command arms the command guard.
 
 ### `ws/handlers/sync.js`
 `handleRoomState` — applies full room state on join/reattach (host
@@ -359,7 +418,9 @@ detection, initial clock offset if not yet synced, initial seek +
 play/pause, triggers `ensurePlayback` for guests) and
 `handleStateUpdate` — the periodic host position/play-state relay,
 gated by a post-command cooldown so it doesn't fight with a just-applied
-`player_event`.
+`player_event`, and by the democratic-mode command guard
+(`commandGuardBlocks`). `handleRoomState` also reads `democratic` and
+`device_control` (missing: off).
 
 ### `ws/handlers/clock.js`
 `handlePong` — the clock-sync sample handler: computes RTT and a
@@ -413,7 +474,7 @@ panel and video event listeners, resets `bound`/`initialized`.
 ├─────────────────────────────────────────────────────────────────┤
 │  Receives player_event                                          │
 │        │                                                         │
-│        ├── Validates: is host?                                  │
+│        ├── Validates: is host? (or democratic, see may_control) │
 │        ├── Updates room.state                                   │
 │        ├── Sets last_command_ts (cooldown)                      │
 │        │                                                         │

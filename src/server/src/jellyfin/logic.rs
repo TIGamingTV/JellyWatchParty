@@ -26,6 +26,13 @@ pub const COMMAND_TRUST_MS: u64 = 10_000;
 /// Default cap on how far a playing device's position is extrapolated past
 /// its last progress report (the device may have stalled).
 pub const MAX_EXTRAPOLATION_SECS: f64 = 30.0;
+/// Device control: only a progress report this long after the bridge's own
+/// last command and the room's last change can show what someone did on
+/// the device (it had time to carry out what it was told).
+pub const USER_ACTION_GRACE_MS: u64 = 3_000;
+/// Device control: a jump this big (seconds), both from where the device
+/// was heading and from the room, counts as a seek on the device.
+pub const USER_SEEK_THRESHOLD_SECS: f64 = 8.0;
 
 /// What the bridge knows about a device at one moment.
 #[derive(Debug, Clone, PartialEq)]
@@ -128,6 +135,9 @@ pub struct FollowerMemory {
     /// room's item and then left it, someone stopped it on the device: the
     /// bridge doesn't restart it until the room moves to another item.
     pub seen_on: Option<String>,
+    /// Device control: the last progress report looked at, as
+    /// `(check-in ms, position then, paused)`.
+    pub judged: Option<(u64, f64, bool)>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -270,6 +280,81 @@ pub fn follower_step(
     )
 }
 
+/// Something someone did on a receiver device itself, to apply to the room
+/// (democratic mode with device control).
+#[derive(Debug, Clone, PartialEq)]
+pub enum UserAction {
+    Play { position: f64 },
+    Pause { position: f64 },
+    Seek { position: f64 },
+}
+
+/// With device control on, tells what someone did on the receiver from
+/// what it reports. Each progress report is judged once, and only one made
+/// well after the bridge's own last command and the room's last change
+/// (`room_changed_at`) counts: before that the device may simply not have
+/// caught up. A seek must jump both from where the device was heading and
+/// away from the room.
+///
+/// On a detected action the memory is updated as if the bridge had sent
+/// it, so `follower_step` doesn't undo it before the room has changed.
+pub fn detect_user_action(
+    room: &RoomView,
+    device: Option<&DeviceView>,
+    mem: &mut FollowerMemory,
+    room_changed_at: u64,
+    now: u64,
+) -> Option<UserAction> {
+    let d = device?;
+    let media = room.media_id.as_ref()?;
+    if d.item_id.as_ref() != Some(media) || mem.seen_on.as_ref() != Some(media) || room.hold {
+        return None;
+    }
+    if d.checkin_ms == 0 || mem.judged.is_some_and(|(at, _, _)| d.checkin_ms <= at) {
+        return None;
+    }
+    let previous = mem.judged.replace((d.checkin_ms, d.position, d.paused));
+    let settled = |t: u64| d.checkin_ms > t.saturating_add(USER_ACTION_GRACE_MS);
+    if ![mem.pp_at, mem.seek_at, mem.play_now_at, room_changed_at]
+        .into_iter()
+        .all(settled)
+    {
+        return None;
+    }
+
+    let action = if d.paused == room.playing {
+        if d.paused {
+            UserAction::Pause {
+                position: d.position,
+            }
+        } else {
+            UserAction::Play {
+                position: d.position,
+            }
+        }
+    } else {
+        let (at, pos, paused) = previous?;
+        let heading = if paused {
+            pos
+        } else {
+            pos + d.checkin_ms.saturating_sub(at) as f64 / 1000.0
+        };
+        let jumped = (d.position - heading).abs() > USER_SEEK_THRESHOLD_SECS;
+        let away = (d.position - room.expected).abs() > USER_SEEK_THRESHOLD_SECS;
+        if !(jumped && away) {
+            return None;
+        }
+        UserAction::Seek {
+            position: d.position,
+        }
+    };
+    mem.pp_at = now;
+    mem.pp_paused = d.paused;
+    mem.seek_at = now;
+    mem.seek_target = d.position;
+    Some(action)
+}
+
 // --- host ------------------------------------------------------------------
 
 /// Messages a host bridge sends into its room, like a web host would.
@@ -285,6 +370,77 @@ pub enum HostEvent {
 pub struct HostMemory {
     /// Last play/pause state reported to the room; `None` until the first.
     pub last_paused: Option<bool>,
+    /// Democratic mode: the room's last command time already looked at.
+    pub seen_command_ts: Option<u64>,
+    /// Democratic mode: when the device was told to carry out someone
+    /// else's command; until it reports again, its state isn't reported.
+    pub following_since: Option<u64>,
+}
+
+/// In a democratic room another member (or a chat user) may play, pause or
+/// seek. A host device must then carry that out like a receiver would,
+/// instead of reporting its old state back to the room.
+///
+/// `last_command` is the room's last command: `(time, sent by someone
+/// else)`. Returns the commands for the device and whether the host should
+/// stay quiet this tick, because the device hasn't caught up yet.
+pub fn host_follow(
+    room: &RoomView,
+    device: Option<&DeviceView>,
+    mem: &mut HostMemory,
+    last_command: Option<(u64, bool)>,
+    now: u64,
+) -> (Vec<Command>, bool) {
+    let mut commands = Vec::new();
+    if let Some((ts, by_other)) = last_command {
+        match mem.seen_command_ts {
+            // Commands from before this device became host don't count.
+            None => mem.seen_command_ts = Some(ts),
+            // A scheduled play: act once it starts.
+            Some(seen) if ts > seen && by_other && room.hold => return (commands, true),
+            Some(seen) if ts > seen => {
+                mem.seen_command_ts = Some(ts);
+                let on_item = device.filter(|d| d.item_id.is_some() && d.item_id == room.media_id);
+                if let (true, Some(d)) = (by_other, on_item) {
+                    if d.paused == room.playing {
+                        commands.push(if room.playing {
+                            Command::Unpause
+                        } else {
+                            Command::Pause
+                        });
+                    }
+                    if (d.position - room.expected).abs() > DRIFT_THRESHOLD_SECS {
+                        let lead = if room.playing { SEEK_LEAD_SECS } else { 0.0 };
+                        commands.push(Command::Seek {
+                            to_secs: (room.expected + lead).max(0.0),
+                        });
+                    }
+                    if !commands.is_empty() {
+                        mem.following_since = Some(now);
+                    }
+                    // The room already knows this state; no need to report it.
+                    mem.last_paused = Some(!room.playing);
+                }
+            }
+            _ => {}
+        }
+    }
+    let quiet = match (mem.following_since, device) {
+        (Some(since), Some(d)) => {
+            if d.checkin_ms > since || now.saturating_sub(since) >= COMMAND_TRUST_MS {
+                mem.following_since = None;
+                false
+            } else {
+                true
+            }
+        }
+        (Some(_), None) => {
+            mem.following_since = None;
+            false
+        }
+        (None, _) => false,
+    };
+    (commands, quiet)
 }
 
 pub fn host_step(
@@ -563,6 +719,7 @@ mod tests {
     fn host_switching_items_sets_media_then_plays() {
         let mut m = HostMemory {
             last_paused: Some(false),
+            ..Default::default()
         };
         let (ev, _) = host_step(
             &room(true, 50.0),
@@ -585,6 +742,7 @@ mod tests {
     fn host_stopping_pauses_the_room_once() {
         let mut m = HostMemory {
             last_paused: Some(false),
+            ..Default::default()
         };
         let (ev, st) = host_step(&room(true, 50.0), Some(&dev(None, 0.0, true, 1)), &mut m);
         assert_eq!(ev, vec![HostEvent::Pause { position: 50.0 }]);
@@ -704,5 +862,236 @@ mod tests {
         let v = device_view(&s, 18_000, 5_000, MAX_EXTRAPOLATION_SECS);
         assert_eq!(v.checkin_ms, 15_000);
         assert!((v.position - 103.0).abs() < 1e-9);
+    }
+
+    // --- democratic mode ---------------------------------------------------
+
+    /// A receiver that has been following the room's item.
+    fn following() -> FollowerMemory {
+        FollowerMemory {
+            seen_on: Some(ITEM.into()),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_pause_on_the_device_is_detected_once() {
+        let mut m = following();
+        let r = room(true, 100.0);
+        let a = detect_user_action(
+            &r,
+            Some(&dev(Some(ITEM), 100.0, true, 50_000)),
+            &mut m,
+            0,
+            50_100,
+        );
+        assert_eq!(a, Some(UserAction::Pause { position: 100.0 }));
+        // The bridge now treats it as its own command: no undo...
+        assert_eq!(m.pp_at, 50_100);
+        assert!(m.pp_paused);
+        // ...and the same report isn't judged twice.
+        let a = detect_user_action(
+            &r,
+            Some(&dev(Some(ITEM), 100.0, true, 50_000)),
+            &mut m,
+            0,
+            50_200,
+        );
+        assert_eq!(a, None);
+    }
+
+    #[test]
+    fn a_device_still_catching_up_is_not_a_user_action() {
+        let r = room(false, 100.0);
+        // The room paused at 49 s; the device's report from 50 s still
+        // shows it playing: it hasn't caught up.
+        let mut m = following();
+        let a = detect_user_action(
+            &r,
+            Some(&dev(Some(ITEM), 100.0, false, 50_000)),
+            &mut m,
+            49_000,
+            50_100,
+        );
+        assert_eq!(a, None);
+        // Same when the bridge itself just told it to pause.
+        let mut m = following();
+        m.pp_at = 49_000;
+        m.pp_paused = true;
+        let a = detect_user_action(
+            &r,
+            Some(&dev(Some(ITEM), 100.0, false, 50_000)),
+            &mut m,
+            0,
+            50_100,
+        );
+        assert_eq!(a, None);
+        // A later report that still disagrees is someone pressing play.
+        let a = detect_user_action(
+            &r,
+            Some(&dev(Some(ITEM), 101.0, false, 60_000)),
+            &mut m,
+            0,
+            60_100,
+        );
+        assert_eq!(a, Some(UserAction::Play { position: 101.0 }));
+    }
+
+    #[test]
+    fn a_seek_needs_a_jump_away_from_the_room() {
+        let mut m = following();
+        let r = room(true, 110.0);
+        // First report: in sync, nothing to compare with yet.
+        assert_eq!(
+            detect_user_action(
+                &r,
+                Some(&dev(Some(ITEM), 110.0, false, 50_000)),
+                &mut m,
+                0,
+                50_000
+            ),
+            None
+        );
+        // 10 s later it is 3 s off (drift, not a seek): left to the follower.
+        let r = room(true, 120.0);
+        assert_eq!(
+            detect_user_action(
+                &r,
+                Some(&dev(Some(ITEM), 117.0, false, 60_000)),
+                &mut m,
+                0,
+                60_000
+            ),
+            None
+        );
+        // Then it jumps 5 minutes ahead.
+        let r = room(true, 130.0);
+        assert_eq!(
+            detect_user_action(
+                &r,
+                Some(&dev(Some(ITEM), 427.0, false, 70_000)),
+                &mut m,
+                0,
+                70_000
+            ),
+            Some(UserAction::Seek { position: 427.0 })
+        );
+        assert!((m.seek_target - 427.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn nothing_is_detected_off_the_item_or_during_a_scheduled_play() {
+        let mut m = following();
+        let r = room(true, 100.0);
+        assert_eq!(
+            detect_user_action(
+                &r,
+                Some(&dev(Some(OTHER), 100.0, true, 50_000)),
+                &mut m,
+                0,
+                50_000
+            ),
+            None
+        );
+        let held = RoomView::new(Some(ITEM), true, 100.0, true);
+        assert_eq!(
+            detect_user_action(
+                &held,
+                Some(&dev(Some(ITEM), 100.0, true, 60_000)),
+                &mut m,
+                0,
+                60_000
+            ),
+            None
+        );
+        // Never followed the item (still starting it): nothing to judge.
+        let mut fresh = FollowerMemory::default();
+        assert_eq!(
+            detect_user_action(
+                &r,
+                Some(&dev(Some(ITEM), 100.0, true, 70_000)),
+                &mut fresh,
+                0,
+                70_000
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn a_host_device_carries_out_someone_elses_pause() {
+        let mut m = HostMemory::default();
+        let playing = room(true, 100.0);
+        // First look: the room's earlier commands don't count.
+        let (cmds, quiet) = host_follow(
+            &playing,
+            Some(&dev(Some(ITEM), 100.0, false, 1_000)),
+            &mut m,
+            Some((500, true)),
+            1_000,
+        );
+        assert!(cmds.is_empty() && !quiet);
+
+        // A guest pauses at 120 s; the device is still playing at 121 s.
+        let paused = room(false, 120.0);
+        let d = dev(Some(ITEM), 121.0, false, 1_500);
+        let (cmds, quiet) = host_follow(&paused, Some(&d), &mut m, Some((2_000, true)), 2_100);
+        assert_eq!(cmds, vec![Command::Pause]);
+        assert!(quiet, "the device's old state isn't reported back");
+        assert_eq!(m.last_paused, Some(true));
+        // Until the device reports again, the host stays quiet.
+        let (cmds, quiet) = host_follow(&paused, Some(&d), &mut m, Some((2_000, true)), 3_000);
+        assert!(cmds.is_empty() && quiet);
+        let (_, quiet) = host_follow(
+            &paused,
+            Some(&dev(Some(ITEM), 120.0, true, 3_500)),
+            &mut m,
+            Some((2_000, true)),
+            3_600,
+        );
+        assert!(!quiet);
+    }
+
+    #[test]
+    fn a_host_device_ignores_its_own_commands_and_seeks_for_others() {
+        let mut m = HostMemory {
+            seen_command_ts: Some(1_000),
+            ..Default::default()
+        };
+        let r = room(true, 300.0);
+        // Its own play: nothing to do.
+        let (cmds, quiet) = host_follow(
+            &r,
+            Some(&dev(Some(ITEM), 100.0, false, 1_500)),
+            &mut m,
+            Some((2_000, false)),
+            2_100,
+        );
+        assert!(cmds.is_empty() && !quiet);
+        // A chat user seeks to 300 s.
+        let (cmds, _) = host_follow(
+            &r,
+            Some(&dev(Some(ITEM), 100.0, false, 1_500)),
+            &mut m,
+            Some((3_000, true)),
+            3_100,
+        );
+        assert_eq!(
+            cmds,
+            vec![Command::Seek {
+                to_secs: 300.0 + SEEK_LEAD_SECS
+            }]
+        );
+        // A scheduled play waits until it starts.
+        let held = RoomView::new(Some(ITEM), true, 300.0, true);
+        let (cmds, quiet) = host_follow(
+            &held,
+            Some(&dev(Some(ITEM), 300.0, true, 4_000)),
+            &mut m,
+            Some((5_000, true)),
+            5_100,
+        );
+        assert!(cmds.is_empty() && quiet);
+        assert_eq!(m.seen_command_ts, Some(3_000));
     }
 }

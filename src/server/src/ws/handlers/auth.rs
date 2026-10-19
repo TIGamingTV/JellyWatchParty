@@ -63,6 +63,18 @@ async fn handle_identity(client_id: &str, payload: &serde_json::Value, clients: 
     }
 }
 
+/// What the client says it supports (`capabilities: ["democratic", ...]`).
+/// It only widens what the client may do in rooms that opted in.
+async fn note_capabilities(client_id: &str, payload: &serde_json::Value, clients: &Clients) {
+    let Some(caps) = payload.get("capabilities").and_then(|v| v.as_array()) else {
+        return;
+    };
+    let democratic = caps.iter().any(|c| c.as_str() == Some("democratic"));
+    if let Some(client) = clients.write().await.get_mut(client_id) {
+        client.democratic_capable = democratic;
+    }
+}
+
 pub(in crate::ws) async fn handle_auth(
     client_id: &str,
     parsed: &IncomingMessage,
@@ -70,6 +82,7 @@ pub(in crate::ws) async fn handle_auth(
     jwt_config: &Arc<JwtConfig>,
 ) {
     if let Some(payload) = &parsed.payload {
+        note_capabilities(client_id, payload, clients).await;
         if let Some(token) = payload.get("token").and_then(|v| v.as_str()) {
             if handle_jwt_auth(client_id, token, clients, jwt_config).await {
                 return;

@@ -29,8 +29,15 @@ fn key(p: &PanelRef) -> Option<Key> {
     Some((p.channel_id.parse().ok()?, p.message_id.parse().ok()?))
 }
 
-pub fn apply(panels: &mut TgPanels, rooms: &[Room]) {
-    panels.apply(rooms, key, panel::render, panel::render_closed);
+/// Notes what every panel should show now (`democratic`: the admin turned
+/// on democratic mode commands).
+pub fn apply(panels: &mut TgPanels, rooms: &[Room], democratic: bool) {
+    panels.apply(
+        rooms,
+        key,
+        |r| panel::render(r, democratic),
+        panel::render_closed,
+    );
 }
 
 /// Which due edits may go out now; the rest wait for their chat's turn.
@@ -154,9 +161,16 @@ mod tests {
             message_id: "17".into(),
         });
         let mut p = new_panels();
-        apply(&mut p, &r.rooms);
-        let d = p.due(Instant::now());
+        apply(&mut p, &r.rooms, false);
+        let t0 = Instant::now();
+        let d = p.due(t0);
         assert_eq!(d[0].key, (-1001234567890, 17));
         assert!(d[0].view.text.contains("Friday movie night"));
+        assert_eq!(d[0].view.rows.len(), 3);
+        // Turning democratic mode commands on edits the panel.
+        apply(&mut p, &r.rooms, true);
+        let d = p.due(t0 + MIN_EDIT_GAP);
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].view.rows.len(), 4);
     }
 }

@@ -72,11 +72,17 @@ Authenticate with a JWT token (if authentication is enabled).
 {
   "type": "auth",
   "payload": {
-    "token": "eyJhbGciOiJIUzI1NiIs..."
+    "token": "eyJhbGciOiJIUzI1NiIs...",
+    "capabilities": ["democratic"]
   },
   "ts": 1678900000000
 }
 ```
+
+| Payload Field | Type | Description |
+|---------------|------|-------------|
+| `token` | string | JWT from the plugin's `/JellyWatchParty/Token` |
+| `capabilities` | array of strings | Optional. `"democratic"`: this client applies and echo-suppresses other members' play/pause/seek, so it may control a [democratic room](#democratic-mode). The injected web client sends it with every `auth`; clients that leave it out (older clients, plugin bridges) stay follow-only in democratic rooms. |
 
 ### `list_rooms`
 
@@ -194,7 +200,8 @@ Indicate client is ready to receive playback commands.
 
 ### `player_event`
 
-Send a playback event (host only).
+Send a playback event. Host only, except in a [democratic room](#democratic-mode),
+where other members may send `play`, `pause` and `seek`.
 
 ```json
 {
@@ -224,12 +231,15 @@ Send a playback event (host only).
 
 **Effects:**
 - Updates `room.state`
-- Updates `room.last_command_ts` (cooldown)
-- Broadcasts to other participants
+- Updates `room.last_command_ts` (cooldown) and `room.last_command_by`
+- Broadcasts to other participants, with `by` and `by_name` added (see
+  [`player_event`](#player_event-1) below)
+
+A message the sender isn't allowed to send is dropped without an answer.
 
 ### `state_update`
 
-Periodic playback state update (host only).
+Periodic playback state update (host only, also in democratic rooms).
 
 ```json
 {
@@ -249,7 +259,11 @@ Periodic playback state update (host only).
 | `play_state` | string | `"playing"` or `"paused"` |
 
 **Server filtering:**
-1. Ignored if `now - last_command_ts < 2000ms` (cooldown)
+1. Ignored if `now - last_command_ts < 2000ms` (cooldown). When the last
+   command came from someone else (a democratic-mode member or a chat bot
+   user), this applies to every update, `play_state` changes included, so
+   the host's stale state can't undo the command before its player has
+   carried it out
 2. Ignored if `now - last_state_ts < 500ms` (rate limit)
 3. Ignored if position moves back 0.5s-2s (HLS jitter)
 4. Ignored if position advances < 0.5s (insignificant)
@@ -362,6 +376,59 @@ A participant reports its own playback status, for the room's participant list. 
 
 **Effects:** ignored unless the value is one of the above, the sender is in the room and the status changed; otherwise everyone in the room gets `participants`.
 
+### `set_democratic`
+
+Turn the room's [democratic mode](#democratic-mode) on or off. Host only.
+
+```json
+{
+  "type": "set_democratic",
+  "room": "uuid-room-id",
+  "payload": { "enabled": true },
+  "ts": 1678900000000
+}
+```
+
+| Payload Field | Type | Description |
+|---------------|------|-------------|
+| `enabled` | boolean | Required |
+
+**Effects:**
+- On a change: sets `room.democratic`, sends `democratic_changed` to every
+  member (sender included), and broadcasts `room_list` to all. No change,
+  no messages.
+- The plugin's *Allow democratic mode* setting only decides whether the web
+  client shows the switch; the server doesn't know it.
+
+**Error responses:**
+- `"enabled is required"` - Missing or non-boolean `enabled`
+- `"Only the host can change this setting"` - Sender isn't the host
+
+### Democratic mode
+
+A room has two flags, both off when it is created:
+
+- `democratic`: set by the host (`set_democratic`), an admin
+  (`PATCH /api/rooms/{id}` on the admin panel) or a chat room's owner
+  ([integration API]({{ '/technical/integration-api/' | relative_url }})).
+- `device_control`: admin only. Lets bridged Jellyfin devices take part.
+
+The host may always send anything. Another member's message is accepted
+only if all of these hold:
+
+1. the room is `democratic` and has started (the first, countdown play
+   stays with the host);
+2. it is a `player_event` with `action` `play`, `pause` or `seek`
+   (`state_update`, `buffering` and `set_media` stay host only, so the host
+   remains the room's position source);
+3. the sender is in the room, and is either a client that announced
+   `capabilities: ["democratic"]` and isn't a plugin bridge, or a device
+   bridge (admin panel / chat bot) while `device_control` is on.
+
+Anything else from a non-host is dropped silently. Chat bot users send
+commands through the integration API instead; those reach every member,
+host included, with `by: ""`.
+
 ## Server → Client Messages
 
 ### `client_hello`
@@ -402,7 +469,8 @@ List of active rooms.
       "name": "Movie Night",
       "count": 3,
       "media_id": "abc123def456",
-      "has_password": false
+      "has_password": false,
+      "democratic": false
     }
   ],
   "ts": 1678900000000,
@@ -445,6 +513,8 @@ Full room state. Sent after `create_room` or `join_room`.
 | Payload Field | Type | Description |
 |---------------|------|-------------|
 | `started` | boolean | `false` until the room's first play has gone out (see [Start countdown](#start-countdown)). Clients treat a missing value as `true`. |
+| `democratic` | boolean | The room is in [democratic mode](#democratic-mode). Clients treat a missing value (older servers) as `false`. |
+| `device_control` | boolean | Bridged Jellyfin devices may control the room too (admin setting; only matters with `democratic`). |
 | `chat_history` | array | Up to the last 50 chat messages sent in this room, oldest first — empty for a freshly created room. Replayed on both initial join and reconnect-reattach so late joiners and reconnecting clients aren't missing context. |
 | `admin_moved` | boolean | Only present (`true`) when an admin put this client into the room from the [admin panel]({{ '/admin-panel/' | relative_url }}). The client may have been in another room a moment ago; the server already took it out of that one (that room sees a normal leave). The web client drops its old room state and shows a toast. |
 
@@ -518,7 +588,8 @@ The room's participant list, in join order. Sent to the whole room when someone 
 
 ### `player_event`
 
-Playback command relayed from host.
+Playback command relayed from the host, or, in a democratic room, from
+another member or a chat bot user.
 
 ```json
 {
@@ -527,7 +598,9 @@ Playback command relayed from host.
   "payload": {
     "action": "play",
     "position": 120.5,
-    "target_server_ts": 1678900001000
+    "target_server_ts": 1678900001000,
+    "by": "uuid-sender-id",
+    "by_name": "Alice"
   },
   "ts": 1678900000000,
   "server_ts": 1678900001000
@@ -539,11 +612,21 @@ Playback command relayed from host.
 | `action` | string | `"play"`, `"pause"`, `"seek"`, or `"buffering"` |
 | `position` | number | Reference position (seconds) |
 | `target_server_ts` | number | Target server timestamp for execution |
+| `by` | string | Client id of the sender; empty for commands from the server itself (chat bot users). Not set on a held play that the server releases later. |
+| `by_name` | string | Sender's display name (the chat user's name for bot commands), for toasts like "Alice paused playback". |
+
+A member's command goes to everyone else in the room; a chat bot user's
+command goes to everyone, host included.
 
 **Client processing:**
 1. Enable `isSyncing` lock (2s)
 2. Calculate adjusted position with elapsed time
 3. Schedule action at `target_server_ts`
+
+The host normally ignores relayed events. In a democratic room it applies
+other members' `play`/`pause`/`seek` like a guest would (not its own, not
+during a media switch, and not a `play` while already playing), but keeps
+sending `state_update` as the position source.
 
 ### `state_update`
 
@@ -626,6 +709,35 @@ stays open — and when an admin hands the host role to another member.
 to the local `client_id`) and force a full UI re-render — the host-only
 Close/Leave button label only updates on a forced render, not the
 normal fast-render path.
+
+### `democratic_changed`
+
+The room's [democratic mode](#democratic-mode) or device control changed.
+Sent to every member, including the host who changed it.
+
+```json
+{
+  "type": "democratic_changed",
+  "room": "uuid-room-id",
+  "payload": {
+    "enabled": true,
+    "device_control": false,
+    "by": "Alice"
+  },
+  "ts": 1678900000000,
+  "server_ts": 1678900000000
+}
+```
+
+| Payload Field | Type | Description |
+|---------------|------|-------------|
+| `enabled` | boolean | Democratic mode is on |
+| `device_control` | boolean | Bridged devices may control the room too |
+| `by` | string | Who changed it: the host's or chat user's name, or `"an admin"` |
+
+**Client processing:** update `state.democraticMode` / `state.deviceControl`,
+show a toast if the mode changed, and force a full re-render (the host's
+switch and the info line aren't on the fast render path).
 
 ### `media_changed`
 
@@ -720,7 +832,7 @@ Error response.
 | Payload Field | Type | Description |
 |---------------|------|-------------|
 | `message` | string | Human-readable error description |
-| `reason` | string | Optional machine-readable code for errors a client may want to special-case. Currently `"wrong_password"`, `"too_many_attempts"` and `"room_not_found"` from `join_room`, and `"device_already_bridged"` from `create_room` / `join_room` |
+| `reason` | string | Optional machine-readable code for errors a client may want to special-case. Currently `"wrong_password"`, `"too_many_attempts"` and `"room_not_found"` from `join_room`, and `"device_already_bridged"` from `create_room` / `join_room`. `set_democratic` errors carry no `reason`. |
 | `retry_after_ms` | number | Only with `reason: "too_many_attempts"`: milliseconds until the user may try the room's password again |
 
 ## Sequence Diagram: Complete Session

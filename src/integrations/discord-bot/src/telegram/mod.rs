@@ -66,12 +66,29 @@ const OTHER_GROUP_COMMANDS: &[(&str, &str)] = &[
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Conv {
     LinkName,
-    LinkCode { username: String },
-    NewName { topic: Option<i64> },
-    NewPassword { name: String, topic: Option<i64> },
-    JoinPassword { room: String },
-    Rename { room: String },
-    SetPassword { room: String },
+    LinkCode {
+        username: String,
+    },
+    NewName {
+        topic: Option<i64>,
+    },
+    NewPassword {
+        name: String,
+        topic: Option<i64>,
+    },
+    JoinPassword {
+        room: String,
+    },
+    Rename {
+        room: String,
+    },
+    SetPassword {
+        room: String,
+    },
+    /// A time to seek to in a democratic room.
+    Seek {
+        room: String,
+    },
 }
 
 /// The Telegram platform's state. Derefs to `Core` (API, settings, rooms).
@@ -110,10 +127,16 @@ impl Platform for Tg {
     }
 
     fn rooms_changed(&self, rooms: &[Room]) {
-        flush::apply(&mut self.panels(), rooms);
+        flush::apply(&mut self.panels(), rooms, self.democratic());
     }
 
     async fn settings_checked(&self) {
+        if self.democratic_changed() {
+            // Panels show the switch: look at them again. Rooms are read
+            // under the panels lock, so a rooms update can't be undone.
+            let mut panels = self.panels();
+            flush::apply(&mut panels, &self.rooms(), self.democratic());
+        }
         self.sync_commands().await;
     }
 }

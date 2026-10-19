@@ -21,7 +21,7 @@ mod view;
 #[cfg(test)]
 mod tests;
 
-pub use actions::{DeviceRole, KickTarget, RoomUpdate};
+pub use actions::{DeviceRole, KickTarget, PlaybackRequest, RoomUpdate};
 
 use crate::jellyfin::api::JfUser;
 use crate::jellyfin::Bridges;

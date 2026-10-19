@@ -274,6 +274,14 @@ public class PluginConfiguration : BasePluginConfiguration
     public string SessionServerUrl { get; set; } = string.Empty;
 
     /// <summary>
+    /// Shows hosts on Jellyfin Web / Jellyfin Desktop an "Everyone can
+    /// control playback" switch. Only gates the widget; defaults to false.
+    /// </summary>
+    public bool AllowDemocraticMode { get; set; }
+
+    // ... HideNativeSyncButton, EnablePanelBridging and the bridging options
+
+    /// <summary>
     /// Checks a Session Server URL for common misconfigurations (wrong
     /// scheme, malformed URL, bare internal hostname) and returns
     /// human-readable warnings. Never rejects a value - empty result means
@@ -301,6 +309,7 @@ Admin configuration page rendered in Jellyfin dashboard.
 - **JWT Audience** - Configurable audience claim
 - **JWT Issuer** - Configurable issuer claim
 - **Session Server URL** - Live warning indicator (updates on input/blur) that flags suspicious values without blocking save
+- **Interface** - `HideNativeSyncButton`, and `AllowDemocraticMode` (*Allow democratic mode*, default off): room hosts on Jellyfin Web / Jellyfin Desktop get an *Everyone can control playback* switch in the Watch Party panel. Only a UI gate: the session server never sees it, and admins can turn democratic mode on per room from the admin panel regardless. Independent of panel bridging
 - **Watch Party Panel Bridging (trusted servers only)** - Master switch `EnablePanelBridging` plus the two per-role options, which are disabled while the switch is off
 - **Save button** - Persists configuration
 
@@ -394,11 +403,20 @@ curl -H "X-Emby-Token: YOUR_API_KEY" "http://localhost:8096/JellyWatchParty/Toke
   "auth_enabled": true,
   "expires_in": 3600,
   "user_id": "abc123",
-  "user_name": "John"
+  "user_name": "John",
+  "session_server_url": "",
+  "hide_native_sync_button": false,
+  "allow_third_party_host": false,
+  "allow_supported_receiver": false,
+  "allow_democratic_mode": false
 }
 ```
 
-When JWT isn't configured, `token` is `null` and `auth_enabled` is `false`.
+When JWT isn't configured, `token` is `null` and `auth_enabled` is `false`
+(no `expires_in`); the other fields are sent either way.
+`allow_democratic_mode` mirrors `AllowDemocraticMode`: the web client only
+shows the host's *Everyone can control playback* switch when it is `true`
+(or the room already is democratic).
 
 | Status | Meaning |
 |--------|---------|

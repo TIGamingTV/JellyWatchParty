@@ -26,6 +26,10 @@ pub struct Settings {
     pub allow_host: bool,
     pub allow_receiver: bool,
     pub empty_room_minutes: u32,
+    /// Democratic mode from chat: owners and admins may turn it on for a
+    /// room, then every participant may play, pause and seek. Off: the bot
+    /// offers none of it (and the server refuses it).
+    pub democratic_commands: bool,
 }
 
 impl Default for Settings {
@@ -42,6 +46,7 @@ impl Default for Settings {
             allow_host: true,
             allow_receiver: true,
             empty_room_minutes: 30,
+            democratic_commands: false,
         }
     }
 }
@@ -93,6 +98,9 @@ pub struct Room {
     pub id: String,
     pub name: String,
     pub has_password: bool,
+    /// Every participant may play, pause and seek (older servers: never).
+    #[serde(default)]
+    pub democratic: bool,
     pub owner: Person,
     pub participants: Vec<Person>,
     #[serde(default)]
@@ -372,6 +380,29 @@ pub fn room_path(room_id: &str, action: &str) -> String {
     format!("rooms/{}/{}", path(room_id), action)
 }
 
+/// A play, pause or seek in a democratic room (`POST rooms/<id>/playback`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Playback {
+    Play,
+    Pause,
+    /// To this position (seconds).
+    SeekTo(u64),
+    /// By this many seconds (negative: back).
+    SeekBy(i64),
+}
+
+impl Playback {
+    /// The request body (without the actor).
+    pub fn body(self) -> Value {
+        match self {
+            Playback::Play => serde_json::json!({ "action": "play" }),
+            Playback::Pause => serde_json::json!({ "action": "pause" }),
+            Playback::SeekTo(p) => serde_json::json!({ "action": "seek", "position": p }),
+            Playback::SeekBy(d) => serde_json::json!({ "action": "seek", "offset": d }),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -521,6 +552,42 @@ mod tests {
         let s: Settings = serde_json::from_str("{}").unwrap();
         assert!(s.allow_host && s.allow_receiver && !s.enabled);
         assert_eq!(s.empty_room_minutes, 30);
+        assert!(!s.democratic_commands);
+        assert_eq!(s, Settings::default());
+        let s: Settings = serde_json::from_str(r#"{"democratic_commands":true}"#).unwrap();
+        assert!(s.democratic_commands);
+    }
+
+    #[test]
+    fn rooms_say_whether_they_are_democratic() {
+        let r: RoomsResponse =
+            serde_json::from_str(include_str!("../../fixtures/rooms.json")).unwrap();
+        assert!(r.rooms[0].democratic);
+        // An older server doesn't send it.
+        let mut v: Value = serde_json::from_str(include_str!("../../fixtures/rooms.json")).unwrap();
+        v["rooms"][0].as_object_mut().unwrap().remove("democratic");
+        let r: RoomsResponse = serde_json::from_value(v).unwrap();
+        assert!(!r.rooms[0].democratic);
+    }
+
+    #[test]
+    fn playback_bodies_match_the_server() {
+        assert_eq!(
+            Playback::Play.body(),
+            serde_json::json!({ "action": "play" })
+        );
+        assert_eq!(
+            Playback::Pause.body(),
+            serde_json::json!({ "action": "pause" })
+        );
+        assert_eq!(
+            Playback::SeekTo(83).body(),
+            serde_json::json!({ "action": "seek", "position": 83 })
+        );
+        assert_eq!(
+            Playback::SeekBy(-10).body(),
+            serde_json::json!({ "action": "seek", "offset": -10 })
+        );
     }
 
     #[test]

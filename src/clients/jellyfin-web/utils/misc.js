@@ -8,6 +8,76 @@
 
   const suppress = (ms = SUPPRESS_MS) => { state.suppressUntil = utils.nowMs() + ms; };
 
+  // --- Democratic mode --------------------------------------------------------
+  // Once the room has started (its first, host-only countdown play is done),
+  // a democratic room lets any participant play/pause/seek for everyone.
+  const canControlPlayback = () => !!(state.isHost || (state.democraticMode && state.roomStarted));
+
+  // Where the room is now according to the last sync baseline.
+  const expectedRoomPosition = () => {
+    const base = state.lastSyncPosition || 0;
+    if (state.lastSyncPlayState !== 'playing' || !state.lastSyncServerTs) return base;
+    return base + Math.max(0, utils.getServerNow() - state.lastSyncServerTs) / 1000;
+  };
+
+  // Takes a command this client just sent as the room's new state. The
+  // server never echoes it back, and a guest's syncLoop would otherwise
+  // drift-correct straight back to the state from before it.
+  const mirrorRoomState = (position, playState) => {
+    state.lastSyncServerTs = utils.getServerNow();
+    state.lastSyncPosition = position;
+    state.lastSyncPlayState = playState;
+  };
+
+  // After a play/pause/seek (sent or applied), the host's next state_update
+  // may already have been on its way with the old state; ignore updates that
+  // disagree for a moment (see ws/handlers/sync.js handleStateUpdate).
+  const armCommandGuard = (position, playState) => {
+    const { COMMAND_GUARD_MS } = JWP.constants;
+    state.commandGuardUntil = utils.nowMs() + COMMAND_GUARD_MS;
+    state.commandGuardPlayState = playState;
+    state.commandGuardPosition = typeof position === 'number' ? position : 0;
+    state.commandGuardServerTs = utils.getServerNow();
+  };
+
+  // True when this state_update contradicts the guarded command and should be
+  // ignored. The first one that agrees ends the guard early.
+  const commandGuardBlocks = (msg) => {
+    if (!state.commandGuardUntil) return false;
+    if (utils.nowMs() >= state.commandGuardUntil) {
+      state.commandGuardUntil = 0;
+      return false;
+    }
+    const { COMMAND_GUARD_TOLERANCE_SEC } = JWP.constants;
+    const p = (msg && msg.payload) || {};
+    const ts = typeof msg.server_ts === 'number' ? msg.server_ts : utils.getServerNow();
+    const playing = state.commandGuardPlayState === 'playing';
+    const expected = state.commandGuardPosition
+      + (playing ? Math.max(0, ts - state.commandGuardServerTs) / 1000 : 0);
+    const agrees = p.play_state === state.commandGuardPlayState
+      && (typeof p.position !== 'number' || Math.abs(p.position - expected) < COMMAND_GUARD_TOLERANCE_SEC);
+    if (agrees) {
+      state.commandGuardUntil = 0;
+      return false;
+    }
+    return true;
+  };
+
+  // Echo filter for democratic mode: a video event that only brings this
+  // client in line with the room (we were moved there by a sync, a remote
+  // command or a stream reload) is not a user command. A real command moves
+  // away from the room's state. Complements the time-based suppression
+  // (shouldSend/isSyncing), which can expire before a slow seek completes.
+  const isEchoOfRoomState = (action, video) => {
+    if (action === 'play') return state.lastSyncPlayState === 'playing';
+    if (action === 'pause') return state.lastSyncPlayState === 'paused';
+    if (action === 'seek') {
+      return !!state.lastSyncServerTs && !!video
+        && Math.abs(video.currentTime - expectedRoomPosition()) < JWP.constants.SEEK_THRESHOLD;
+    }
+    return false;
+  };
+
   const HTML_ENTITIES = {
     '&': '&amp;',
     '<': '&lt;',
@@ -79,5 +149,18 @@
     return `MediaBrowser ${parts.join(', ')}`;
   };
 
-  Object.assign(utils, { shouldSend, suppress, escapeHtml, getItemImageUrl, isHomeView, buildAuthHeader });
+  Object.assign(utils, {
+    shouldSend,
+    suppress,
+    canControlPlayback,
+    expectedRoomPosition,
+    mirrorRoomState,
+    armCommandGuard,
+    commandGuardBlocks,
+    isEchoOfRoomState,
+    escapeHtml,
+    getItemImageUrl,
+    isHomeView,
+    buildAuthHeader
+  });
 })();

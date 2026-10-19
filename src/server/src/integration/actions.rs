@@ -91,6 +91,23 @@ fn not_owner() -> IntError {
     )
 }
 
+fn democratic_off() -> IntError {
+    IntError::forbidden(
+        "democratic_off",
+        "Democratic mode commands are turned off for this bot",
+    )
+}
+
+/// A play, pause or seek a participant sends from chat.
+pub enum PlaybackRequest {
+    Play,
+    Pause,
+    /// To this position (seconds).
+    SeekTo(f64),
+    /// By this many seconds (negative: back).
+    SeekBy(f64),
+}
+
 fn not_participant() -> IntError {
     IntError::forbidden("not_participant", "Join the room first")
 }
@@ -153,6 +170,17 @@ fn chat(room: &Room) -> &ChatRoom {
 
 fn chat_mut(room: &mut Room) -> &mut ChatRoom {
     room.chat.as_mut().expect("checked by chat_room")
+}
+
+/// `h:mm:ss` / `m:ss`, for the activity log.
+fn clock(secs: f64) -> String {
+    let s = secs.max(0.0) as u64;
+    let (h, m, s) = (s / 3600, s / 60 % 60, s % 60);
+    if h > 0 {
+        format!("{}:{:02}:{:02}", h, m, s)
+    } else {
+        format!("{}:{:02}", m, s)
+    }
 }
 
 fn clean_password(p: Option<&str>) -> Result<Option<String>, IntError> {
@@ -886,6 +914,117 @@ impl Integration {
         );
         broadcast_room_list(&self.0.clients, &self.0.rooms).await;
         Ok(serde_json::json!({ "ok": true }))
+    }
+
+    // --- democratic mode ---------------------------------------------------
+
+    /// Owner or admin: turns the room's democratic mode on or off.
+    pub async fn set_democratic(
+        &self,
+        provider: &str,
+        actor: Actor,
+        room_id: &str,
+        enabled: bool,
+    ) -> IntResult {
+        let me = self.me_for(provider, actor).await?;
+        if !me.caller.settings.democratic_commands {
+            return Err(democratic_off());
+        }
+        let changed = {
+            let mut rooms = self.0.rooms.write().await;
+            let clients = self.0.clients.read().await;
+            let room = chat_room(&mut rooms, room_id, provider)?;
+            if !me.manages(chat(room)) {
+                return Err(not_owner());
+            }
+            ops::set_democratic(
+                room_id,
+                Some(enabled),
+                None,
+                &me.user_name,
+                &mut rooms,
+                &clients,
+            )
+            .map_err(op_error)?
+        };
+        if changed {
+            self.audit(
+                "room_democratic",
+                me.label(),
+                format!(
+                    "turned democratic mode {} for room {}",
+                    if enabled { "on" } else { "off" },
+                    self.room_label(room_id).await
+                ),
+                false,
+            );
+            broadcast_room_list(&self.0.clients, &self.0.rooms).await;
+        }
+        Ok(serde_json::json!({ "ok": true, "democratic": enabled }))
+    }
+
+    /// Any participant of a democratic room (and its owner and admins):
+    /// play, pause or seek for everyone in it.
+    pub async fn playback(
+        &self,
+        provider: &str,
+        actor: Actor,
+        room_id: &str,
+        request: PlaybackRequest,
+    ) -> IntResult {
+        if let PlaybackRequest::SeekTo(v) | PlaybackRequest::SeekBy(v) = request {
+            if !v.is_finite() {
+                return Err(IntError::invalid("Give a time to seek to"));
+            }
+        }
+        let me = self.me_for(provider, actor).await?;
+        if !me.caller.settings.democratic_commands {
+            return Err(democratic_off());
+        }
+        let (action, position) = {
+            let mut rooms = self.0.rooms.write().await;
+            let clients = self.0.clients.read().await;
+            let room = chat_room(&mut rooms, room_id, provider)?;
+            if !me.manages(chat(room)) && !chat(room).is_participant(&me.user_id) {
+                return Err(not_participant());
+            }
+            if !room.democratic {
+                return Err(IntError::forbidden(
+                    "not_democratic",
+                    "Only the host controls this room; the owner can turn on democratic mode",
+                ));
+            }
+            if !room.started || room.media_id.is_none() || room.clients.is_empty() {
+                return Err(IntError::conflict(
+                    "not_started",
+                    "Nothing is playing in this room yet",
+                ));
+            }
+            let now = now_ms();
+            let cmd = match request {
+                PlaybackRequest::Play => crate::ws::RoomCommand::Play,
+                PlaybackRequest::Pause => crate::ws::RoomCommand::Pause,
+                PlaybackRequest::SeekTo(p) => crate::ws::RoomCommand::Seek(p),
+                PlaybackRequest::SeekBy(d) => {
+                    crate::ws::RoomCommand::Seek(room.expected_position(now) + d)
+                }
+            };
+            let position = crate::ws::server_command(room, &clients, cmd, &me.user_name, now);
+            (cmd.action(), position)
+        };
+        self.audit(
+            "room_playback",
+            me.label(),
+            format!(
+                "{} at {} in room {}",
+                action,
+                clock(position),
+                self.room_label(room_id).await
+            ),
+            false,
+        );
+        crate::events::bump();
+        Ok(serde_json::json!({ "ok": true, "action": action, "position": position }))
     }
 
     // --- devices -----------------------------------------------------------

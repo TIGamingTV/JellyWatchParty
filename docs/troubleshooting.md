@@ -88,6 +88,42 @@ Usually caused by rapid page refreshes/reconnection attempts (token limit) or sp
 
 Wait for the WebSocket to finish connecting ("Connecting..." status), check the browser console (F12) for JavaScript/script-loading errors, and clear the browser cache in case an old script version is cached.
 
+### Democratic Mode
+
+See [Features: Democratic Mode]({{ '/features/' | relative_url }}#democratic-mode) for how it works.
+
+1. **The host has no *Everyone can control playback* switch.** The plugin
+   setting **Allow democratic mode** (Dashboard > Plugins > JellyWatchParty,
+   Interface section) is off; turn it on and reload the page. Only the host
+   sees the switch. An admin can turn the mode on for any room from the
+   [admin panel]({{ '/admin-panel/' | relative_url }}#democratic-mode) without that setting.
+2. **"Only the host can change this setting".** Someone who isn't the host
+   tried to switch it.
+3. **A guest's pause or seek is undone.** The room hasn't started yet (the
+   first play, with its countdown, is the host's), the guest is still
+   loading the item or is on another item, or the guest's page still runs
+   an old client script (hard refresh). Changing the item always stays with
+   the host.
+4. **Pausing on a TV app isn't applied to the room.** TV apps only follow
+   unless an admin turned on **Devices control too** for the room. Even
+   then Jellyfin only hears about it when the app reports (often several
+   seconds), the app must accept remote control, and a seek must be more
+   than about 8 seconds.
+5. **A TV app pauses the room on its own.** With **Devices control too**, a
+   device that pauses to buffer looks like someone pressing pause. Turn it
+   off (**Devices follow only**) if that keeps happening.
+6. **Others' commands are undone a moment later when a TV app is host.**
+   The host app doesn't accept remote control (Fladder, for example), so it
+   can't carry them out and its own state wins. Make a device that accepts
+   remote control, or a person, the host. A host bridged from the Watch
+   Party panel (plugin bridge) never follows others' commands.
+7. **No democratic commands or playback buttons in Discord or Telegram.**
+   **Democratic mode commands** is off in the bot's settings in the admin
+   panel. After turning it on, `/jwp` is updated within about 30 seconds.
+   The playback buttons only show on democratic rooms, and the commands
+   answer "Only the host controls this room" until the owner turns the mode
+   on, and "Nothing is playing in this room yet" until the host starts.
+
 ### Discord Bot
 
 Setup is in the [Discord Bot guide]({{ '/discord-bot/' | relative_url }}).
@@ -247,7 +283,7 @@ Or open Developer Tools (F12) > Network tab > filter "WS" to inspect WebSocket m
 
 ### Usage
 
-**Who controls playback?** The host (room creator) — their play/pause/seek actions are mirrored to all participants. Democratic mode (all participants controlling playback) is planned.
+**Who controls playback?** The host (room creator) — their play/pause/seek actions are mirrored to all participants. In [democratic mode]({{ '/features/' | relative_url }}#democratic-mode) any participant on Jellyfin Web or Jellyfin Desktop (and chat bot users, if allowed) can play, pause and seek too. The host turns it on with *Everyone can control playback* in the Watch Party panel (needs the plugin setting *Allow democratic mode*); an admin can turn it on for any room from the admin panel. See [Democratic Mode](#democratic-mode) below if it doesn't work.
 
 **What happens if the host leaves?** A brief disconnect (network blip, backgrounded app) is invisible to participants for 90 seconds while the server waits for reconnection. If the host doesn't return and other participants remain, the earliest-joined one is automatically promoted to host and the room stays open. It only closes if no one is left.
 

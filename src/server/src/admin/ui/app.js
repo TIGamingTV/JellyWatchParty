@@ -328,7 +328,14 @@
       room.chat
         ? el('span', { className: `badge badge-${room.chat.provider}`, text: `${platformLabel(room.chat.provider)} room` })
         : room.admin_created ? el('span', { className: 'badge badge-admin', text: 'Group' }) : el('span', { className: 'badge', text: 'User room' }),
-      el('span', { className: 'badge', text: room.has_password ? 'Password' : 'Open' }));
+      el('span', { className: 'badge', text: room.has_password ? 'Password' : 'Open' }),
+      room.democratic ? el('span', {
+        className: 'badge badge-democratic',
+        text: room.device_control ? 'Democratic + devices' : 'Democratic',
+        title: room.device_control ? 'Everyone, devices included, controls playback' : 'Everyone with the Watch Party panel or a chat bot controls playback'
+      }) : null);
+
+    const hasDevices = room.members.some((m) => m.kind === 'jellyfin');
 
     const actions = el('div', { className: 'room-actions' },
       el('button', {
@@ -349,6 +356,44 @@
           if (pw) act('New password for the room:', () => api('PATCH', `api/rooms/${enc(room.id)}`, { password: pw }), { secret: pw });
         }
       }),
+      el('button', {
+        className: 'btn btn-ghost btn-small', type: 'button',
+        text: room.democratic ? 'Host-only control' : 'Democratic',
+        title: room.democratic
+          ? 'Only the host controls playback again'
+          : 'Everyone in the room may play, pause and seek',
+        onclick: async () => {
+          if (room.democratic) {
+            act('Only the host controls playback now', () => api('PATCH', `api/rooms/${enc(room.id)}`, { democratic: false }));
+            return;
+          }
+          const ok = await ask({
+            title: 'Turn on democratic mode?',
+            message: 'Everyone with the Watch Party panel (Jellyfin in a browser or Jellyfin Desktop) and chat bot users in the room can play, pause and seek for everyone.',
+            okLabel: 'Turn on'
+          });
+          if (ok) act('Democratic mode on', () => api('PATCH', `api/rooms/${enc(room.id)}`, { democratic: true }));
+        }
+      }),
+      room.democratic && (hasDevices || room.device_control) ? el('button', {
+        className: 'btn btn-ghost btn-small', type: 'button',
+        text: room.device_control ? 'Devices follow only' : 'Devices control too',
+        title: room.device_control
+          ? 'Receiver devices go back to only following'
+          : 'Pausing or seeking on a receiver device (TV app) applies to everyone',
+        onclick: async () => {
+          if (room.device_control) {
+            act('Devices only follow now', () => api('PATCH', `api/rooms/${enc(room.id)}`, { device_control: false }));
+            return;
+          }
+          const ok = await ask({
+            title: 'Let devices control the room?',
+            message: 'When someone pauses, resumes or seeks on a receiver device (a TV app), everyone follows. Jellyfin only learns about it when the device reports, so it can take a few seconds, and a device pausing to buffer may pause the room. The device must accept remote control.',
+            okLabel: 'Let devices control'
+          });
+          if (ok) act('Devices control the room too', () => api('PATCH', `api/rooms/${enc(room.id)}`, { device_control: true }));
+        }
+      }) : null,
       room.has_password ? el('button', {
         className: 'btn btn-ghost btn-small', type: 'button', text: 'Remove password',
         onclick: async () => {
@@ -570,7 +615,8 @@
         empty_room_minutes: ['dc-empty', 'int'],
         require_password: ['dc-require-pw', 'bool'],
         allow_host: ['dc-host', 'bool'],
-        allow_receiver: ['dc-receiver', 'bool']
+        allow_receiver: ['dc-receiver', 'bool'],
+        democratic_commands: ['dc-democratic', 'bool']
       },
       fill: (s) => { $('dc-channels').value = (s.channel_ids || []).join(', '); },
       read: (out) => { out.channel_ids = $('dc-channels').value.split(/[\s,]+/).filter(Boolean); }
@@ -588,7 +634,8 @@
         empty_room_minutes: ['tg-empty', 'int'],
         require_password: ['tg-require-pw', 'bool'],
         allow_host: ['tg-host', 'bool'],
-        allow_receiver: ['tg-receiver', 'bool']
+        allow_receiver: ['tg-receiver', 'bool'],
+        democratic_commands: ['tg-democratic', 'bool']
       },
       // Telegram has no roles: the bot reports group administrators as "admin".
       fill: (s) => { $('tg-admins').checked = s.admin_role_id === 'admin'; },

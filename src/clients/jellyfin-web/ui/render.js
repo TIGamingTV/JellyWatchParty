@@ -164,6 +164,33 @@
     ui.updateBridgeListUI();
   };
 
+  // Democratic mode: the host's switch (offered when an admin allows the
+  // mode, or while it is on so a host can turn off what an admin turned on)
+  // and, for everyone, a note while it is on. No user-provided text here.
+  const DEMOCRATIC_TOGGLE_ID = 'jwp-democratic-toggle';
+  const buildDemocraticHtml = () => {
+    let html = '';
+    if (state.isHost && (state.allowDemocraticMode || state.democraticMode)) {
+      html += `<label class="jwp-checkbox-row"><input type="checkbox" id="${DEMOCRATIC_TOGGLE_ID}"${state.democraticMode ? ' checked' : ''}>`
+        + '<span>Everyone can control playback</span></label>';
+    }
+    if (state.democraticMode) {
+      html += '<div class="jwp-democratic-info">'
+        + '<span class="material-icons" aria-hidden="true">how_to_vote</span>'
+        + `<span>Everyone can control playback${state.deviceControl ? ' (TV devices too)' : ''}</span></div>`;
+    }
+    return html;
+  };
+
+  const bindDemocraticToggle = (panel) => {
+    const toggle = panel.querySelector(`#${DEMOCRATIC_TOGGLE_ID}`);
+    if (!toggle) return;
+    // The server confirms with democratic_changed, which re-renders.
+    toggle.onchange = () => {
+      if (JWP.actions && JWP.actions.setDemocratic) JWP.actions.setDemocratic(!!toggle.checked);
+    };
+  };
+
   const renderRoom = (panel) => {
     const syncIndicator = ui.buildSyncStatusIndicator();
     // Attaching a supported client (e.g. Android TV) as a receiver of this
@@ -185,6 +212,7 @@
         <div class="jwp-label">Participants</div>
         <div id="jwp-participants-list" style="font-size:13px;">${ui.buildParticipantsHtml ? ui.buildParticipantsHtml() : `Online: ${state.participantCount || 1}`}</div>
         ${syncIndicator}
+        ${buildDemocraticHtml()}
       </div>
       <div id="jwp-chat-section">
         <div class="jwp-label">Chat <span id="jwp-chat-badge" class="jwp-chat-badge"></span></div>
@@ -202,6 +230,7 @@
     `;
     const leaveBtn = panel.querySelector('#jwp-btn-leave');
     if (leaveBtn) leaveBtn.onclick = () => JWP.actions && JWP.actions.leaveRoom && JWP.actions.leaveRoom();
+    bindDemocraticToggle(panel);
     bindCloseButton(panel);
     ui.updateBridgeListUI();
   };

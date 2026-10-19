@@ -66,6 +66,11 @@ pub struct Client {
     /// Used to show plugin bridges in the admin panel and to never drive
     /// one device from two places.
     pub bridge_device: Option<String>,
+    /// The client announced (`capabilities: ["democratic"]` in `auth`) that
+    /// it can take part in democratic mode: the injected web client does.
+    /// Only such clients (and bridged devices, with device control on) may
+    /// control a democratic room's playback without being its host.
+    pub democratic_capable: bool,
 }
 
 impl Client {
@@ -143,6 +148,24 @@ pub struct Room {
     /// empty-room timeout.
     #[serde(skip)]
     pub chat: Option<ChatRoom>,
+    /// Democratic mode: besides the host, any member on a supporting client
+    /// may play, pause and seek (see `ws::handlers::playback::may_control`).
+    #[serde(skip)]
+    pub democratic: bool,
+    /// With democratic mode on, bridged Jellyfin devices (TV apps) may
+    /// control playback too: what someone does on the device itself is
+    /// detected and applied to the room. Admin-only.
+    #[serde(skip)]
+    pub device_control: bool,
+    /// Who sent the last play/pause/seek (client id; empty for commands
+    /// from the server itself, e.g. a chat bot user).
+    #[serde(skip)]
+    pub last_command_by: String,
+    /// When the room's play state or position last changed other than by
+    /// playing on (ms since epoch). Bridged devices use it to tell what
+    /// someone did on the device from a change they haven't caught up with.
+    #[serde(skip)]
+    pub last_change_ts: u64,
 }
 
 /// A Jellyfin user taking part in a chat-created room.
@@ -189,6 +212,16 @@ impl Room {
     pub fn is_hostless(&self) -> bool {
         self.host_id.is_empty()
     }
+
+    /// Where playback is now: the last known position, played on since
+    /// then if the room is playing.
+    pub fn expected_position(&self, now: u64) -> f64 {
+        if self.state.play_state == "playing" {
+            self.state.position + now.saturating_sub(self.last_state_ts) as f64 / 1000.0
+        } else {
+            self.state.position
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -231,6 +264,8 @@ pub enum ClientMessageType {
     /// room). See ws::handlers::media::handle_set_media.
     SetMedia,
     ClientStatus,
+    /// Host-only: turns the room's democratic mode on or off.
+    SetDemocratic,
     #[serde(other)]
     Unknown,
 }
@@ -254,6 +289,7 @@ pub enum ServerMessageType {
     ChatMessage,
     HostChanged,
     MediaChanged,
+    DemocraticChanged,
 }
 
 /// Incoming WebSocket message from client

@@ -33,11 +33,15 @@
     video.addEventListener('canplay', settleHandler);
   };
 
+  // Whose track-switch reloads must not be broadcast: the host's, and in
+  // democratic mode a guest's too (their play/seek events are sent then).
+  const sendsPlaybackEvents = () => state.inRoom && (state.isHost || state.democraticMode);
+
   const patchMethod = (pm, methodName) => {
     const original = pm[methodName];
     if (typeof original !== 'function' || original.__jwpWrapped) return;
     const wrapped = function (...args) {
-      if (state.isHost && state.inRoom) {
+      if (sendsPlaybackEvents()) {
         utils.startSyncing(TRACK_SWITCH_SUPPRESS_MS);
         armSettleShortcut();
       }
@@ -61,7 +65,7 @@
   // <video> element; suppress broadcasting for that reload the same way.
   const onStreamReload = () => {
     if (utils.getPlaybackManager()) return; // patched methods already cover it
-    if (!state.isHost || !state.inRoom) return;
+    if (!sendsPlaybackEvents()) return;
     utils.startSyncing(TRACK_SWITCH_SUPPRESS_MS);
     armSettleShortcut();
   };

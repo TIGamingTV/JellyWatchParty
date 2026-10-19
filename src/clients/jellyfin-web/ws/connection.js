@@ -105,6 +105,11 @@
     if (state.userName) authPayload.user_name = state.userName;
     if (state.userId) authPayload.user_id = state.userId;
     if (Object.keys(authPayload).length > 0) {
+      // Lets the server know this client handles democratic mode (applies
+      // and echo-suppresses other participants' commands), so it may
+      // control playback in democratic rooms. Only sent alongside an
+      // identity: a bare auth would be rejected where JWT is required.
+      authPayload.capabilities = JWP.constants.CLIENT_CAPABILITIES.slice();
       state.ws.send(JSON.stringify({ type: 'auth', payload: authPayload, ts: utils.nowMs() }));
     }
     actions.send('ping', { client_ts: utils.nowMs() });
@@ -142,6 +147,7 @@
       case 'client_left': h.handleClientLeft(msg); break;
       case 'room_closed': h.handleRoomClosed(msg); break;
       case 'host_changed': h.handleHostChanged(msg); break;
+      case 'democratic_changed': h.handleDemocraticChanged(msg); break;
       case 'media_changed': h.handleMediaChanged(msg, video); break;
       case 'player_event': h.handlePlayerEvent(msg, video); break;
       case 'start_pending': h.handleStartPending(msg); break;

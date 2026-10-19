@@ -470,6 +470,40 @@ async fn group_lifecycle_through_the_api() {
         assert!(lr[&room].password_hash.is_none());
         assert_eq!(lr[&room].name, "Renamed");
     }
+
+    // Democratic mode, with devices too; members are told.
+    let r = call(
+        &s,
+        "PATCH",
+        &format!("/api/rooms/{}", room),
+        t,
+        Some(serde_json::json!({ "democratic": true, "device_control": true })),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK);
+    let changed: Vec<_> = drain_types(&mut rx_b)
+        .into_iter()
+        .filter(|(ty, _)| ty == "democratic_changed")
+        .collect();
+    assert_eq!(changed.len(), 1);
+    assert_eq!(changed[0].1["enabled"], true);
+    assert_eq!(changed[0].1["device_control"], true);
+    assert_eq!(changed[0].1["by"], "an admin");
+    let ov = call(&s, "GET", "/api/overview", t, None).await;
+    let r0 = &ov.json["rooms"][0];
+    assert_eq!(r0["democratic"], true);
+    assert_eq!(r0["device_control"], true);
+    assert_eq!(r0["name"], "Renamed", "name untouched");
+    let r = call(
+        &s,
+        "PATCH",
+        "/api/rooms/nope",
+        t,
+        Some(serde_json::json!({ "democratic": true })),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND);
+
     let r = call(&s, "DELETE", &format!("/api/rooms/{}", room), t, None).await;
     assert_eq!(r.status, StatusCode::OK);
     assert!(s.rooms.read().await.is_empty());

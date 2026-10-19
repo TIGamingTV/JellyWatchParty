@@ -76,6 +76,10 @@
     state.startPending = false;
     state.startQueued = false;
     state.roomStarted = true;
+    state.democraticMode = false;
+    state.deviceControl = false;
+    state.commandGuardUntil = 0;
+    state.followerLoadingUntil = 0;
     if (state.startSafetyTimer) {
       clearTimeout(state.startSafetyTimer);
       state.startSafetyTimer = null;
@@ -95,5 +99,11 @@
     if (JWP.chat) JWP.chat.clear();
   };
 
-  Object.assign(actions, { send, createRoom, joinRoom, leaveRoom, resetRoomState });
+  // Host only (the server answers anyone else with an error). The new
+  // setting comes back to everyone, sender included, as democratic_changed.
+  const setDemocratic = (enabled) => {
+    send('set_democratic', { enabled: !!enabled });
+  };
+
+  Object.assign(actions, { send, createRoom, joinRoom, leaveRoom, resetRoomState, setDemocratic });
 })();
