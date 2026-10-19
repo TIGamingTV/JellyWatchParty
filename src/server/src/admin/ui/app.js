@@ -895,6 +895,17 @@
       try {
         await api('POST', 'api/login', { username: $('login-user').value, password: $('login-pass').value });
         $('login-pass').value = '';
+        // The login worked, but the browser may refuse the cookie (a Secure
+        // cookie over plain http): every later request would bounce back here
+        // without a word.
+        try {
+          await api('GET', 'api/me');
+        } catch (err) {
+          $('login-error').textContent = location.protocol === 'https:'
+            ? 'Signed in, but your browser did not keep the login cookie. Allow cookies for this site and try again.'
+            : 'Signed in, but your browser did not keep the login cookie. Over http:// set ADMIN_COOKIE_SECURE=false on the session server (true is only for https), or open the panel over https.';
+          return;
+        }
         showApp();
       } catch (err) {
         $('login-error').textContent = err.message;

@@ -92,9 +92,14 @@ pub async fn login(
         }
         return res;
     }
-    if !auth::credentials_match(&creds, &body.username, &body.password) {
+    let check = auth::check_login(&creds, &body.username, &body.password);
+    if check != auth::LoginCheck::Ok {
         store.record_failure(ip, now);
-        warn!("admin: failed login from {}", ip);
+        warn!(
+            "admin: failed login from {}: {}",
+            ip,
+            login_failure_hint(check, &creds, &body.username, &body.password)
+        );
         return error_response(StatusCode::UNAUTHORIZED, "Wrong username or password");
     }
     store.clear_failures(ip);
@@ -107,6 +112,40 @@ pub async fn login(
         Json(serde_json::json!({ "username": creds.username })),
     )
         .into_response()
+}
+
+/// What went wrong with a login, for the server log. Never includes a
+/// password; the typed username is shown (shortened and escaped) like
+/// other servers log it.
+pub(super) fn login_failure_hint(
+    check: auth::LoginCheck,
+    creds: &auth::Credentials,
+    username: &str,
+    password: &str,
+) -> String {
+    let shown: String = username.chars().take(64).collect();
+    match check {
+        auth::LoginCheck::UnknownUser => {
+            let hint = if username.trim().eq_ignore_ascii_case(&creds.username) {
+                " (differs only in upper/lower case or spaces; usernames are exact)"
+            } else {
+                ""
+            };
+            format!(
+                "unknown username {:?}, expected the ADMIN_USERNAME from the startup log{}",
+                shown, hint
+            )
+        }
+        auth::LoginCheck::WrongPassword => {
+            let hint = if auth::credentials_match(creds, username, password.trim()) {
+                " (it would match without the surrounding spaces)"
+            } else {
+                ""
+            };
+            format!("wrong password for {:?}{}", shown, hint)
+        }
+        auth::LoginCheck::Ok => "ok".to_string(),
+    }
 }
 
 pub async fn logout(State(state): State<AdminState>, headers: HeaderMap) -> Response {

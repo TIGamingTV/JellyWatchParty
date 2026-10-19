@@ -1,6 +1,6 @@
 //! Admin login: one shared account, in-memory sessions, brute-force throttle.
 
-use super::config::{normalize_username, AdminConfig, CredentialSources};
+use super::config::{clean_credential, normalize_username, AdminConfig, CredentialSources};
 use crate::password::ct_eq;
 use crate::utils::random_token;
 use axum::http::{header, HeaderMap};
@@ -148,7 +148,11 @@ impl LiveCredentials {
                 .unwrap_or_else(|| "admin".to_string());
         }
         if let Some(r) = self.sources.password.reread() {
-            next.password = r?;
+            let (p, _) = clean_credential(&r?);
+            if p.is_empty() {
+                return Err("ADMIN_PASSWORD_FILE holds only quotes or spaces".to_string());
+            }
+            next.password = p;
         }
         Ok(next)
     }
@@ -208,12 +212,29 @@ fn digest(s: &str) -> [u8; 32] {
     Sha256::digest(s.as_bytes()).into()
 }
 
+/// Which part of a login attempt was wrong (for the server log only; the
+/// browser always gets the same answer).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoginCheck {
+    Ok,
+    UnknownUser,
+    WrongPassword,
+}
+
 /// Compares fixed-length digests in constant time, so neither the content
 /// nor the length of the configured credentials leaks through timing.
-pub fn credentials_match(creds: &Credentials, username: &str, password: &str) -> bool {
+pub fn check_login(creds: &Credentials, username: &str, password: &str) -> LoginCheck {
     let user_ok = ct_eq(&digest(username), &digest(&creds.username));
     let pass_ok = ct_eq(&digest(password), &digest(&creds.password));
-    user_ok & pass_ok
+    match (user_ok, pass_ok) {
+        (true, true) => LoginCheck::Ok,
+        (false, _) => LoginCheck::UnknownUser,
+        (true, false) => LoginCheck::WrongPassword,
+    }
+}
+
+pub fn credentials_match(creds: &Credentials, username: &str, password: &str) -> bool {
+    check_login(creds, username, password) == LoginCheck::Ok
 }
 
 pub fn cookie_token(headers: &HeaderMap) -> Option<String> {
