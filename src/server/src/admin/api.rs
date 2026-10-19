@@ -70,6 +70,10 @@ pub async fn login(
     Json(body): Json<LoginBody>,
 ) -> Response {
     let now = now_ms();
+    // A rotated secret file applies on the next login, not only on the
+    // next periodic check.
+    state.refresh_credentials();
+    let creds = state.creds.get();
     let mut store = state.auth();
     if let Some(wait) = store.login_blocked(ip, now) {
         warn!(
@@ -88,7 +92,7 @@ pub async fn login(
         }
         return res;
     }
-    if !auth::credentials_match(&state.cfg, &body.username, &body.password) {
+    if !auth::credentials_match(&creds, &body.username, &body.password) {
         store.record_failure(ip, now);
         warn!("admin: failed login from {}", ip);
         return error_response(StatusCode::UNAUTHORIZED, "Wrong username or password");
@@ -100,7 +104,7 @@ pub async fn login(
     let cookie = auth::session_cookie(&token, state.cfg.session_ttl_ms, state.cfg.cookie_secure);
     (
         [(header::SET_COOKIE, cookie)],
-        Json(serde_json::json!({ "username": state.cfg.username })),
+        Json(serde_json::json!({ "username": creds.username })),
     )
         .into_response()
 }
@@ -121,7 +125,7 @@ pub async fn logout(State(state): State<AdminState>, headers: HeaderMap) -> Resp
 }
 
 pub async fn me(State(state): State<AdminState>) -> Response {
-    Json(serde_json::json!({ "username": state.cfg.username })).into_response()
+    Json(serde_json::json!({ "username": state.creds.get().username })).into_response()
 }
 
 // --- overview --------------------------------------------------------------
