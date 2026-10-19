@@ -2704,7 +2704,7 @@ replacing the rest.
 - **Plugin**: `PluginConfiguration.AllowDemocraticMode` (default off,
   Interface section of the config page), passed to the widget as
   `allow_democratic_mode` on `/JellyWatchParty/Token`. Plugin version
-  stays 4.1.2.0.
+  4.1.3.0.
 - **Device bridges** (`jellyfin/logic.rs`, `bridge.rs`): a host device in
   a democratic room is now driven by remote control to carry out other
   members' commands (`host_follow`); before, a host device was only read.
