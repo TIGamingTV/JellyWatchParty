@@ -40,6 +40,7 @@ services:
       - BRIDGE_POLL_INTERVAL_MS=${BRIDGE_POLL_INTERVAL_MS:-1000}
       - ADMIN_HOST=${ADMIN_HOST:-0.0.0.0}
       - ADMIN_PASSWORD_FILE=${ADMIN_PASSWORD_FILE:-}
+      - ADMIN_USERNAME_FILE=${ADMIN_USERNAME_FILE:-}
       # Chat integrations (Discord and Telegram bots). Link codes and
       # settings are kept in DATA_DIR (the jwp-data volume). The integration
       # API listens on INTEGRATION_PORT for the bot container only: never

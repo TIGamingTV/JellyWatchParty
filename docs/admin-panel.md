@@ -57,11 +57,32 @@ services:
     environment:
       - ALLOWED_ORIGINS=https://jellyfin.example.com
       - JWT_SECRET=${JWT_SECRET}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
 ```
 
 Then open `http://<server>:3001/` and sign in. All admins share the one
-account set in the environment.
+account set in the environment. At startup the log shows which login is
+in use and where it came from, e.g.
+`Admin panel: login 'admin' (username from ADMIN_USERNAME, password from ADMIN_PASSWORD)`.
+
+### Changing the username or password
+
+Compose passes a variable to the container only when it is listed under
+`environment:`, so `ADMIN_USERNAME` must be there (as above), not only in
+`.env`.
+
+- **Variables** (`ADMIN_USERNAME`, `ADMIN_PASSWORD`): change `.env`, then
+  recreate the container with `docker compose up -d`. `docker restart` and
+  `docker compose restart` keep the container's old environment, so the old
+  login keeps working.
+- **Files** (`ADMIN_USERNAME_FILE`, `ADMIN_PASSWORD_FILE`): edit the file.
+  The server re-reads it on every login and every 10 seconds; no restart is
+  needed. A change signs everyone out. If the file can't be read or is
+  empty, the current login stays and the log says why.
+
+Restarting the server always signs everyone out, since logins are kept in
+memory.
 
 ## Environment variables
 
@@ -69,8 +90,9 @@ account set in the environment.
 |----------|---------|-------------|
 | `ADMIN_ENABLED` | `true` | Set to `false` to switch the panel off. |
 | `ADMIN_USERNAME` | `admin` | Login name. |
+| `ADMIN_USERNAME_FILE` | (empty) | Read the login name from this file instead (Docker secrets). Used only when `ADMIN_USERNAME` is empty; re-read while running. |
 | `ADMIN_PASSWORD` | (empty) | Login password. **Required**; the panel doesn't start without it. Use a long random value (`openssl rand -base64 18`); shorter than 12 characters logs a warning. |
-| `ADMIN_PASSWORD_FILE` | (empty) | Read the password from this file instead (Docker secrets). Used only when `ADMIN_PASSWORD` is empty. |
+| `ADMIN_PASSWORD_FILE` | (empty) | Read the password from this file instead (Docker secrets). Used only when `ADMIN_PASSWORD` is empty (setting both logs a warning). Re-read while running, so a new password applies without a restart and signs everyone out. |
 | `ADMIN_HOST` | `0.0.0.0` | IP address the panel listens on (`0.0.0.0` all IPv4, `::` all IPv6, `127.0.0.1` local only). |
 | `ADMIN_PORT` | `3001` | Port the panel listens on; must differ from `PORT`. In the compose files, `ADMIN_PANEL_PORT` sets the published host port. |
 | `ADMIN_SESSION_TTL_SECS` | `43200` | How long a login stays valid (12 hours). |
@@ -134,7 +156,8 @@ themselves and join as normal clients), and you can put them into rooms.
      - JELLYFIN_API_KEY=${JELLYFIN_API_KEY}
    ```
 
-3. Restart the session server. Its log says
+3. Recreate the session server (`docker compose up -d`; a plain restart
+   keeps the old environment). Its log says
    `Admin panel: Jellyfin devices enabled`, and the panel header shows
    *Jellyfin connected*.
 

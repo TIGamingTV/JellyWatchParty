@@ -1137,6 +1137,7 @@ async fn admins_manage_codes_and_settings_in_the_panel() {
             addr: "127.0.0.1:0".parse().unwrap(),
             username: "admin".into(),
             password: "pw-pw-pw-pw-pw".into(),
+            sources: Default::default(),
             session_ttl_ms: 60_000,
             cookie_secure: false,
             empty_group_ttl_ms: 60_000,
