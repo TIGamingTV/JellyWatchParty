@@ -116,29 +116,63 @@ fn secret(
                 name
             );
         }
-        return Ok(Some((v, Source::Env(name))));
+        return Ok(Some((cleaned(name, &v), Source::Env(name))));
     }
     match file {
         None => Ok(None),
         Some(path) => {
             let path = path.trim().to_string();
-            read_secret_file(file_var, &path).map(|v| {
-                Some((
-                    v,
-                    Source::File {
-                        var: file_var,
-                        path,
-                    },
-                ))
-            })
+            let v = read_secret_file(file_var, &path)?;
+            let v = cleaned(file_var, &v);
+            if v.is_empty() {
+                return Err(format!("{} ({}) is empty", file_var, path));
+            }
+            Ok(Some((
+                v,
+                Source::File {
+                    var: file_var,
+                    path,
+                },
+            )))
         }
     }
 }
 
-/// `ADMIN_USERNAME` is trimmed and falls back to `admin`.
+/// Removes what a config tool most likely added around a credential:
+/// surrounding spaces, and one pair of matching quotes (compose's list
+/// syntax `- ADMIN_PASSWORD="secret"`, Portainer and Unraid fields keep
+/// them as part of the value). Returns the value and whether it changed.
+pub fn clean_credential(raw: &str) -> (String, bool) {
+    let trimmed = raw.trim();
+    let unquoted = ['"', '\'']
+        .iter()
+        .find_map(|q| {
+            trimmed
+                .strip_prefix(*q)
+                .and_then(|s| s.strip_suffix(*q))
+                .filter(|_| trimmed.len() >= 2)
+        })
+        .map(str::trim)
+        .unwrap_or(trimmed);
+    (unquoted.to_string(), unquoted != raw)
+}
+
+/// `clean_credential`, with a warning naming the variable (never the value).
+fn cleaned(var: &str, raw: &str) -> String {
+    let (v, changed) = clean_credential(raw);
+    if changed {
+        log::warn!(
+            "Admin panel: removed surrounding spaces or quotes from {}; type the value without them to sign in",
+            var
+        );
+    }
+    v
+}
+
+/// `ADMIN_USERNAME` is cleaned like the password and falls back to `admin`.
 pub fn normalize_username(u: &str) -> Option<String> {
-    let u = u.trim();
-    (!u.is_empty()).then(|| u.to_string())
+    let (u, _) = clean_credential(u);
+    (!u.is_empty()).then_some(u)
 }
 
 impl AdminSetup {
@@ -165,6 +199,11 @@ impl AdminSetup {
 
         let (password, password_source) =
             match secret(&get, "ADMIN_PASSWORD", "ADMIN_PASSWORD_FILE") {
+                Ok(Some((p, _))) if p.is_empty() => {
+                    return AdminSetup::Misconfigured(
+                        "ADMIN_PASSWORD is only quotes or spaces".to_string(),
+                    )
+                }
                 Ok(Some(p)) => p,
                 Ok(None) => {
                     return AdminSetup::Misconfigured(
@@ -424,6 +463,58 @@ mod tests {
         };
         assert_eq!(c.username, "chief");
         assert_eq!(c.sources.username, Source::Env("ADMIN_USERNAME"));
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn special_characters_are_kept() {
+        let AdminSetup::Enabled(c) = setup(&[
+            ("ADMIN_USERNAME", "jwp_boss"),
+            ("ADMIN_PASSWORD", "Movie2Night!xy"),
+        ]) else {
+            panic!("expected enabled");
+        };
+        assert_eq!(c.username, "jwp_boss");
+        assert_eq!(c.password, "Movie2Night!xy");
+    }
+
+    #[test]
+    fn quotes_and_spaces_around_credentials_are_removed() {
+        for (raw, want) in [
+            ("\"Movie2Night!xy\"", "Movie2Night!xy"),
+            ("'Movie2Night!xy'", "Movie2Night!xy"),
+            (" Movie2Night!xy ", "Movie2Night!xy"),
+            ("\" Movie2Night!xy \"", "Movie2Night!xy"),
+            // Only a matching pair counts.
+            ("\"Movie2Night!xy'", "\"Movie2Night!xy'"),
+            ("a\"b\"", "a\"b\""),
+            ("\"", "\""),
+        ] {
+            assert_eq!(clean_credential(raw).0, want, "{:?}", raw);
+        }
+        let AdminSetup::Enabled(c) = setup(&[
+            ("ADMIN_USERNAME", "\"jwp_boss\""),
+            ("ADMIN_PASSWORD", "\"Movie2Night!xy\""),
+        ]) else {
+            panic!("expected enabled");
+        };
+        assert_eq!(c.username, "jwp_boss");
+        assert_eq!(c.password, "Movie2Night!xy");
+        assert!(matches!(
+            setup(&[("ADMIN_PASSWORD", "\"\"")]),
+            AdminSetup::Misconfigured(_)
+        ));
+    }
+
+    #[test]
+    fn password_file_with_stray_space_or_quotes() {
+        let path = std::env::temp_dir().join(format!("jwp-admin-pw-{}", uuid::Uuid::new_v4()));
+        std::fs::write(&path, "'Movie2Night!xy' \n").unwrap();
+        let p = path.to_string_lossy().to_string();
+        let AdminSetup::Enabled(c) = setup(&[("ADMIN_PASSWORD_FILE", &p)]) else {
+            panic!("expected enabled");
+        };
+        assert_eq!(c.password, "Movie2Night!xy");
         std::fs::remove_file(&path).ok();
     }
 }

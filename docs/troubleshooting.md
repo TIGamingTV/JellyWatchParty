@@ -255,7 +255,7 @@ Or open Developer Tools (F12) > Network tab > filter "WS" to inspect WebSocket m
 
 **Server:** `docker restart session-server` (clears all rooms). After changing environment variables use `docker compose up -d` instead: a restart keeps the container's old environment.
 
-**Admin panel login didn't change:** see [Changing the username or password]({{ '/admin-panel/' | relative_url }}#changing-the-username-or-password). Variables need the container recreated (`docker compose up -d`) and `ADMIN_USERNAME` must be listed under `environment:` in your compose file; `*_FILE` secrets are picked up within 10 seconds. The startup log line `Admin panel: login '...'` shows what the server is using.
+**Admin panel login didn't change:** see [Changing the username or password]({{ '/admin-panel/' | relative_url }}#changing-the-username-or-password). Variables need the container recreated (`docker compose up -d`) and `ADMIN_USERNAME` must be listed under `environment:` in your compose file; `*_FILE` secrets are picked up within 10 seconds. The startup log line `Admin panel: login '...'` shows what the server is using, and each failed login logs whether the username or the password was wrong. More in [If you can't sign in]({{ '/admin-panel/' | relative_url }}#if-you-cant-sign-in).
 
 **Plugin:** Dashboard > Plugins > JellyWatchParty > clear all fields > Save > restart Jellyfin
 

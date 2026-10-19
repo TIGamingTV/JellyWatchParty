@@ -634,3 +634,44 @@ async fn plugin_bridges_cannot_be_moved() {
     .await;
     assert_eq!(r.status, StatusCode::CONFLICT);
 }
+
+#[tokio::test]
+async fn failed_logins_say_what_was_wrong_in_the_log_only() {
+    let creds = auth::Credentials {
+        username: "jwp_boss".into(),
+        password: "Movie2Night!xy".into(),
+    };
+    assert_eq!(
+        auth::check_login(&creds, "jwp_boss", "Movie2Night!xy"),
+        auth::LoginCheck::Ok
+    );
+    assert_eq!(
+        auth::check_login(&creds, "JWP_boss", "Movie2Night!xy"),
+        auth::LoginCheck::UnknownUser
+    );
+    assert_eq!(
+        auth::check_login(&creds, "jwp_boss", "Movie2Night"),
+        auth::LoginCheck::WrongPassword
+    );
+    let hint = api::login_failure_hint(auth::LoginCheck::UnknownUser, &creds, "JWP_Boss ", "");
+    assert!(hint.contains("upper/lower case"), "{}", hint);
+    let hint = api::login_failure_hint(
+        auth::LoginCheck::WrongPassword,
+        &creds,
+        "jwp_boss",
+        " Movie2Night!xy",
+    );
+    assert!(hint.contains("without the surrounding spaces"), "{}", hint);
+    assert!(!hint.contains("Movie2Night"), "never logs the password");
+
+    // The browser gets the same answer either way.
+    let s = state();
+    for body in [
+        serde_json::json!({ "username": "nobody", "password": "s3cret-admin-pw" }),
+        serde_json::json!({ "username": "admin", "password": "nope" }),
+    ] {
+        let r = call(&s, "POST", "/api/login", None, Some(body)).await;
+        assert_eq!(r.status, StatusCode::UNAUTHORIZED);
+        assert_eq!(r.json["error"], "Wrong username or password");
+    }
+}

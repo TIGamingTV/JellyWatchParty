@@ -86,6 +86,28 @@ Compose passes a variable to the container only when it is listed under
 Restarting the server always signs everyone out, since logins are kept in
 memory.
 
+### If you can't sign in
+
+Any characters work in the username and password (`!`, `_`, `#`, ...).
+In `.env`, write the value as is. Only a `$` needs doubling (`$$`),
+because compose reads `$` as the start of a variable.
+
+- **Check the startup log.** `Admin panel: login '<name>' (...)` shows
+  the username the server uses and where the password came from. Surrounding
+  spaces and one pair of matching quotes (`"..."` or `'...'`) are removed
+  from both values, with a warning, since tools like compose's list syntax
+  (`- ADMIN_PASSWORD="secret"`), Portainer and Unraid keep them as part of
+  the value. Type the password without them.
+- **Check the failed-login line.** It says whether the username was unknown
+  (usernames are case-sensitive) or the password was wrong, and hints at
+  case or space mistakes. The password itself is never logged.
+- **Too many failed logins:** after 5 wrong tries from one address, even
+  the right password is refused for a minute. Wait and try once.
+- **Signed in, but sent back to the sign-in form:** the browser didn't
+  keep the login cookie. The form then says so. The usual cause is
+  `ADMIN_COOKIE_SECURE=true` while the panel is opened over `http://`. Set
+  it to `false` or use https.
+
 ## Environment variables
 
 | Variable | Default | Description |
