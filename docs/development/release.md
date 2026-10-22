@@ -104,8 +104,8 @@ just build plugin     # src/plugins/jellyfin/JellyWatchParty/dist/ (JellyWatchPa
 just release          # JellyWatchParty-release.zip (plugin + Linux server binary)
 ```
 
-`just build plugin` writes a dev `meta.json` (version `1.0.0.0`) for the
-local Jellyfin container; it is not what the release ships.
+`just build plugin` writes a dev `meta.json` (version `1.0.0.0`, `targetAbi`
+`12.0.0.0`) for the local Jellyfin container; it is not what the release ships.
 
 ## Docker Images
 
@@ -124,13 +124,12 @@ A release always rebuilds both.
 | Tag | Content | Updated |
 |-----|---------|---------|
 | `latest` | Last release | On release |
+| `A.B.C.D` (e.g. `4.1.5.0`) | That release | On release |
+| `A.B` (e.g. `4.1`) | Last release of that minor version | On release |
 | `beta` | Last build from `main` | Push to `main` that changed the image |
 | `dev` | Last build from `develop` | Push to `develop` that changed the image |
 
-There are no per-version tags. The workflow requests semver tags, but
-`docker/metadata-action` can't parse four-part release tags such as
-`v4.1.4.0`, so it produces none; GHCR currently holds only `latest`, `beta`
-and `dev` for both images. To pin a version, pin the image digest.
+Version tags exist from v4.1.5.0 on; earlier releases only got `latest`.
 
 ```bash
 docker pull ghcr.io/tigamingtv/jwp-session-server:latest

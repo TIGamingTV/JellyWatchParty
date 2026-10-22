@@ -109,7 +109,7 @@ DISCORD_BOT_TOKEN=
 TELEGRAM_INTEGRATION_TOKEN=
 TELEGRAM_BOT_TOKEN=
 
-# Image tag: latest (releases, default), beta (main) or dev (develop)
+# Image tag: latest (releases, default), a version such as 4.1.5.0, beta (main) or dev (develop)
 # JWP_TAG=latest
 ```
 

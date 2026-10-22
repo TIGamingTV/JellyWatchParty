@@ -1,7 +1,7 @@
 # `docker compose pull` uses the published images; `docker compose build`
 # builds them from this checkout instead. JWP_TAG picks the channel for both:
-# latest (release, default), dev (develop) or beta (main). There are no
-# per-version tags; pin an image digest to stay on one build.
+# latest (release, default), a release version (4.1.5.0, from v4.1.5.0 on),
+# dev (develop) or beta (main).
 services:
   session-server:
     image: ghcr.io/tigamingtv/jwp-session-server:${JWP_TAG:-latest}

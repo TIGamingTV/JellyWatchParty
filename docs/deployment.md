@@ -156,18 +156,17 @@ plugin and the images together.
 4. Reload Jellyfin in the browser (Ctrl+F5) and check that the panel shows
    **Online**.
 
-**Pinning a version:** the images are tagged `latest`, `beta` and `dev`
-only; there are no per-version tags. To stay on a specific build, pin its
-digest. Look it up with:
+**Pinning a version:** from v4.1.5.0 on, each release is also tagged with
+its version (`4.1.5.0`) and its minor version (`4.1`). Set `JWP_TAG=4.1.5.0`
+in `.env` to stay on that release, and keep the plugin on the same version;
+change the tag to update. Older releases only have `latest`; to stay on one
+of those, pin the image digest, which you can look up with:
 
 {% raw %}
 ```bash
 docker inspect --format '{{index .RepoDigests 0}}' ghcr.io/tigamingtv/jwp-session-server:latest
 ```
 {% endraw %}
-
-and use the result as the image, e.g.
-`image: ghcr.io/tigamingtv/jwp-session-server@sha256:<digest>`.
 
 **Windows binary:** stop `session-server.exe`, replace it with the one from
 the new release, and start it again.

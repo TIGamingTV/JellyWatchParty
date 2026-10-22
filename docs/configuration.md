@@ -148,7 +148,7 @@ not read by the applications.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `JWP_TAG` | `latest` | Image tag for both images: `latest` (last release), `beta` (last build of `main`) or `dev` (last build of `develop`). |
+| `JWP_TAG` | `latest` | Image tag for both images: `latest` (last release), a release version such as `4.1.5.0` (from v4.1.5.0 on), `beta` (last build of `main`) or `dev` (last build of `develop`). |
 | `SESSION_SERVER_PORT` | `3000` | Host port published for the WebSocket server (`infra/docker/*/docker-compose.yml`). |
 | `ADMIN_PANEL_PORT` | `3001` | Host port published for the admin panel. |
 | `JELLYFIN_PORT`, `MEDIA_DIR`, `UID`, `GID` | | Development compose only; see [Development Setup]({{ '/development/setup/' | relative_url }}). |

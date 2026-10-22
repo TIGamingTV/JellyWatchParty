@@ -96,13 +96,11 @@ Dockerfiles.
 |-------|------|
 | Push to `main` | `beta` |
 | Push to `develop` | `dev` |
-| Release | `latest` |
+| Release `vA.B.C.D` | `latest`, `A.B.C.D`, `A.B` |
 
-The workflow also asks `docker/metadata-action` for `type=semver` tags
-(full version and major.minor) on releases, but release tags are four
-parts (`v4.1.4.0`), which is not valid semver, so none are produced. GHCR
-currently has only `latest`, `beta` and `dev`; there are no per-version image
-tags to pin.
+Release tags have four parts (`v4.1.5.0`), which `type=semver` can't parse,
+so the version tags come from `type=match` patterns on the tag name. Releases
+up to v4.1.4.0 were published before this and only have `latest`.
 
 ```bash
 docker pull ghcr.io/tigamingtv/jwp-session-server:latest   # last release
