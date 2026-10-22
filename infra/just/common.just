@@ -42,8 +42,8 @@ RESET  := '\033[0m'
 
 # -- File Transformation plugin ------------------------------------------------
 
-ft_version := "2.5.5.0"
-ft_abi     := "10.11.6"
+ft_version := "3.0.2.0"
+ft_abi     := "12.0.0"
 ft_url     := "https://github.com/IAmParadox27/jellyfin-plugin-file-transformation/releases/download/" + ft_version + "/Release-" + ft_abi + ".zip"
 ft_dir     := "infra/docker/dev/config/plugins/FileTransformation"
 ft_marker  := ft_dir + "/.version"
