@@ -194,7 +194,7 @@ public class JellyWatchPartyController : ControllerBase
 
     /// <summary>
     /// Generates a JWT token for the authenticated user to connect to the session server.
-    /// Rate limited to 10 tokens per minute per user.
+    /// Rate limited to 30 tokens per minute per user.
     /// </summary>
     /// <returns>Token response containing the JWT or indication that auth is disabled.</returns>
     /// <response code="200">Returns the token or auth disabled response.</response>
