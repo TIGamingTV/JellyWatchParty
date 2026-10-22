@@ -95,6 +95,11 @@ jobs:
           outputs: type=image,name=${{ env.REGISTRY }}/${{ inputs.image }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=${{ inputs.cache-prefix }}${{ matrix.platform }}
           cache-to: type=gha,mode=max,scope=${{ inputs.cache-prefix }}${{ matrix.platform }}
+          # Always pull the newest base images and rebuild the runtime stage
+          # (it runs `apk upgrade`), so a cached layer can't pin old, vulnerable
+          # Alpine packages. The Rust builder stage stays cached.
+          pull: true
+          no-cache-filters: runtime
           build-args: |
             BUILD_MODE=release
 

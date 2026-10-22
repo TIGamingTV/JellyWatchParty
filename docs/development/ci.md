@@ -52,7 +52,7 @@ Runs on every push/PR and weekly (Monday 00:00 UTC).
 | Scan | Tool | Purpose |
 |------|------|---------|
 | **Cargo Audit** | `cargo-audit` | Rust dependency vulnerabilities (RustSec) |
-| **Trivy** | `aquasecurity/trivy` | Container image CVEs |
+| **Trivy** | `aquasecurity/trivy` | Container image CVEs (fixable HIGH/CRITICAL only) |
 | **CodeQL** | `github/codeql-action` | JavaScript static analysis |
 
 Results are uploaded to the GitHub Security tab.
@@ -144,13 +144,21 @@ A new GHCR package starts out private; see
 The Docker build uses Alpine with musl libc for smaller images:
 
 ```dockerfile
-FROM rust:1.83-alpine AS builder
-RUN apk add --no-cache musl-dev
+FROM rust:1.88-alpine AS builder
+RUN apk add --no-cache musl-dev mold
 # ... build with musl target
 
-FROM alpine:3.21
+FROM alpine:3.24 AS runtime
+RUN apk upgrade --no-cache && apk add --no-cache ca-certificates
 # ~26MB final image
 ```
+
+The runtime stage runs `apk upgrade`, and the publish build passes
+`pull: true` and `no-cache-filters: runtime` to `docker/build-push-action`,
+so every published image gets the current Alpine security fixes even when the
+Rust builder layers come from the GHA cache. Fixing a Trivy alert for an
+Alpine package is usually just a rebuild; when the Alpine branch nears end of
+life, bump the `FROM alpine:` tag in both Dockerfiles.
 
 **Note:** Local development uses glibc (standard Rust). The `.cargo/config.toml` configures the `mold` linker for faster local builds, but this is excluded from Docker builds via `.dockerignore`.
 
