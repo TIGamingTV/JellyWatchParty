@@ -31,12 +31,16 @@ RUN touch src/main.rs && \
         cp target/debug/jwp-discord-bot /usr/local/bin/; \
     fi
 
-FROM alpine:3.21
+# Named so CI can rebuild it without the layer cache (no-cache-filters in
+# docker-image.yml) and always ship current packages.
+FROM alpine:3.24 AS runtime
 
+# apk upgrade: pick up security fixes released after the base image was cut.
 # ca-certificates: TLS to Discord and Telegram. No ports: the bot only makes
 # outgoing connections (Discord gateway/REST, the Telegram Bot API, the
 # session server's integration API).
-RUN apk add --no-cache ca-certificates && \
+RUN apk upgrade --no-cache && \
+    apk add --no-cache ca-certificates && \
     adduser -D -u 1000 appuser
 
 COPY --from=builder /usr/local/bin/jwp-discord-bot /usr/local/bin/jwp-discord-bot

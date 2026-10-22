@@ -198,11 +198,15 @@ the latest version.
 
 ## Container Security
 
-The session server uses **Alpine Linux** (~26MB, ~6 low-severity CVEs) rather
-than a Debian base (~100MB, 30+ CVEs) for a minimal attack surface. Images
-are scanned on every push with **Trivy** (CVEs, uploaded to the GitHub
-Security tab) — remaining known CVEs (e.g. BusyBox `netstat`/`tar`) affect
-tools the application doesn't use and require local access to exploit.
+The session server and chat bot images use **Alpine Linux** (~26MB) rather
+than a Debian base (~100MB) for a minimal attack surface. The runtime stage
+runs `apk upgrade` at build time, so each published image carries the latest
+Alpine security fixes. Both binaries use rustls for TLS; the system OpenSSL
+(`libssl3`/`libcrypto3`) is only present because the base image ships it.
+Images are scanned on every push and weekly with **Trivy**; HIGH and CRITICAL
+CVEs that have a fix available are uploaded to the GitHub Security tab.
+Remaining known CVEs (e.g. BusyBox `netstat`/`tar`) affect tools the
+application doesn't use and require local access to exploit.
 
 Runtime hardening already in place: non-root user (`appuser`, UID 1000),
 health checks with automatic restart. For maximum hardening in sensitive

@@ -38,11 +38,14 @@ RUN touch src/main.rs && \
         cp target/debug/session-server /usr/local/bin/; \
     fi
 
-# Runtime stage
-FROM alpine:3.21
+# Runtime stage. Named so CI can rebuild it without the layer cache
+# (no-cache-filters in docker-image.yml) and always ship current packages.
+FROM alpine:3.24 AS runtime
 
+# apk upgrade: pick up security fixes released after the base image was cut.
 # Install curl for healthcheck and ca-certificates for HTTPS
-RUN apk add --no-cache ca-certificates curl && \
+RUN apk upgrade --no-cache && \
+    apk add --no-cache ca-certificates curl && \
     # Create non-root user for security
     adduser -D -u 1000 appuser
 
