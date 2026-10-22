@@ -910,9 +910,12 @@ mod tests {
             let mut lr = rooms.write().await;
             let lc = clients.read().await;
             let room = lr.get_mut("room-1").unwrap();
-            let pos = server_command(room, &lc, RoomCommand::Seek(-5.0), "Bob", now_ms());
+            // One clock reading for both commands: the room is playing, so a
+            // later `now` would advance the expected position past 0.
+            let now = now_ms();
+            let pos = server_command(room, &lc, RoomCommand::Seek(-5.0), "Bob", now);
             assert_eq!(pos, 0.0, "clamped");
-            let pos = server_command(room, &lc, RoomCommand::Pause, "Bob", now_ms());
+            let pos = server_command(room, &lc, RoomCommand::Pause, "Bob", now);
             assert_eq!(pos, 0.0);
             assert_eq!(room.state.play_state, "paused");
             assert_eq!(room.last_command_by, "");
