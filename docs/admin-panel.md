@@ -49,22 +49,19 @@ is set. Without one the session server logs
 `Admin panel: NOT started - ADMIN_PASSWORD (or ADMIN_PASSWORD_FILE) is not set`
 and runs normally without it.
 
-```yaml
-services:
-  session-server:
-    image: ghcr.io/tigamingtv/jwp-session-server:latest
-    ports:
-      - "3000:3000"
-      - "3001:3001"   # admin panel; "127.0.0.1:3001:3001" keeps it off the LAN
-    environment:
-      - ALLOWED_ORIGINS=https://jellyfin.example.com
-      - JWT_SECRET=${JWT_SECRET}
-      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
-```
+With the [installation compose file]({{ '/installation/' | relative_url }}#docker-compose-recommended):
 
-Then open `http://<server>:3001/` and sign in. All admins share the one
-account set in the environment. At startup the log shows which login is
+1. Set `ADMIN_PASSWORD` (and optionally `ADMIN_USERNAME`) in `.env`. Use a
+   long random value: `openssl rand -base64 18`.
+2. Apply it with `docker compose up -d`.
+3. Open `http://localhost:3001/` on the server and sign in.
+
+That compose file publishes the panel on `127.0.0.1` only. To open it from
+another machine, use an SSH tunnel (`ssh -L 3001:localhost:3001 <server>`),
+publish it on the LAN with `"3001:3001"`, or put it
+[behind a reverse proxy](#behind-a-reverse-proxy) with HTTPS.
+
+All admins share the one account set in the environment. At startup the log shows which login is
 in use and where it came from, e.g.
 `Admin panel: login 'admin' (username from ADMIN_USERNAME, password from ADMIN_PASSWORD)`.
 
@@ -108,25 +105,14 @@ because compose reads `$` as the start of a variable.
   `ADMIN_COOKIE_SECURE=true` while the panel is opened over `http://`. Set
   it to `false` or use https.
 
-## Environment variables
+## Settings
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ADMIN_ENABLED` | `true` | Set to `false` to switch the panel off. |
-| `ADMIN_USERNAME` | `admin` | Login name. |
-| `ADMIN_USERNAME_FILE` | (empty) | Read the login name from this file instead (Docker secrets). Used only when `ADMIN_USERNAME` is empty; re-read while running. |
-| `ADMIN_PASSWORD` | (empty) | Login password. **Required**; the panel doesn't start without it. Use a long random value (`openssl rand -base64 18`); shorter than 12 characters logs a warning. |
-| `ADMIN_PASSWORD_FILE` | (empty) | Read the password from this file instead (Docker secrets). Used only when `ADMIN_PASSWORD` is empty (setting both logs a warning). Re-read while running, so a new password applies without a restart and signs everyone out. |
-| `ADMIN_HOST` | `0.0.0.0` | IP address the panel listens on (`0.0.0.0` all IPv4, `::` all IPv6, `127.0.0.1` local only). |
-| `ADMIN_PORT` | `3001` | Port the panel listens on; must differ from `PORT`. In the compose files, `ADMIN_PANEL_PORT` sets the published host port. |
-| `ADMIN_SESSION_TTL_SECS` | `43200` | How long a login stays valid (12 hours). |
-| `ADMIN_COOKIE_SECURE` | `false` | Set to `true` when the panel is served over HTTPS, so the login cookie is never sent over plain HTTP. |
-| `ADMIN_TRUST_X_FORWARDED_FOR` | `false` | Behind a reverse proxy, set to `true` so failed-login throttling uses each visitor's address (the last `X-Forwarded-For` entry) instead of the proxy's. Only enable it if the panel can't be reached without the proxy. |
-| `ADMIN_EMPTY_GROUP_TTL_SECS` | `600` | A group created in the panel that nobody joins is removed after this long. |
-| `JELLYFIN_URL` | (empty) | Jellyfin's address **as seen from the session server**, e.g. `http://jellyfin:8096` on a shared Docker network. Needed for [Jellyfin devices](#jellyfin-devices). |
-| `JELLYFIN_API_KEY` | (empty) | A Jellyfin API key (Dashboard > API Keys). Needed for Jellyfin devices. |
-| `JELLYFIN_API_KEY_FILE` | (empty) | Read the API key from this file instead (Docker secrets). |
-| `BRIDGE_POLL_INTERVAL_MS` | `1000` | How often device positions are read from Jellyfin (minimum 250). Polling only runs while a device is in a room or the panel is open. |
+The panel is configured with `ADMIN_*` environment variables on the session
+server (login, port, session lifetime, cookie and proxy options, group
+timeout), and Jellyfin devices with `JELLYFIN_URL` and `JELLYFIN_API_KEY`.
+See [Configuration: Admin panel]({{ '/configuration/' | relative_url }}#admin-panel)
+and [Jellyfin devices]({{ '/configuration/' | relative_url }}#jellyfin-devices)
+for every variable and its default.
 
 ## Groups
 
@@ -144,7 +130,7 @@ the Watch Party panel.
 
 ## Adding and moving people
 
-**Add a client...** in a room lists everyone who is signed in and
+**Add someone or a device...** in a room lists everyone who is signed in and
 connected but not in that room: people in the lobby and people in other
 rooms. Adding someone who is in another room moves them: they leave the
 old room (which carries on, or picks a new host), join the new one
@@ -170,15 +156,17 @@ themselves and join as normal clients), and you can put them into rooms.
 
 1. In Jellyfin, open **Dashboard > API Keys**, click **+** and name the key
    (e.g. `JellyWatchParty`).
-2. Give it to the session server, with Jellyfin's address as the session
-   server sees it:
+2. Set both in `.env` next to the
+   [installation compose file]({{ '/installation/' | relative_url }}#docker-compose-recommended),
+   with Jellyfin's address **as the session server container sees it**:
 
-   ```yaml
-   environment:
-     - ADMIN_PASSWORD=${ADMIN_PASSWORD}
-     - JELLYFIN_URL=http://jellyfin:8096
-     - JELLYFIN_API_KEY=${JELLYFIN_API_KEY}
+   ```bash
+   JELLYFIN_URL=http://jellyfin:8096   # service name on a shared Docker network, or the host's IP
+   JELLYFIN_API_KEY=<the key>
    ```
+
+   `localhost` doesn't work here: inside the container it is the container
+   itself.
 
 3. Recreate the session server (`docker compose up -d`; a plain restart
    keeps the old environment). Its log says

@@ -18,7 +18,7 @@ namespace JellyWatchParty.Plugin.Services;
 public sealed class HostBridgeManager : IHostedService
 {
     // Clients that render Jellyfin Web's index.html and already run the
-    // injected JWP script (see docs/ARCHITECTURE.md's native-client
+    // injected JWP script (see docs/technical/host-bridge.md's native-client
     // constraint) — these can already host a room themselves via the
     // normal "Create Room" button, so they're excluded from the bridge
     // picker to avoid clutter/confusion. Everything else (Fladder,

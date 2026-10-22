@@ -8,205 +8,109 @@ nav_order: 4
 
 ## Branching Model
 
-`develop` is the integration branch: PRs from feature/fix branches land there
-first. `main` only ever receives merges from `develop` (or a `release/*` /
-`hotfix/*` branch cut from it) via pull request — no direct pushes. This is
-enforced by branch protection on `main` (pull request required; the
-`github-actions` bot is exempted so the automated manifest-update commits
-described below can still land).
+Releases are tagged from `main`. Fixes and self-contained features are
+merged into `main` through pull requests. Larger, multi-PR work is
+integrated on `develop` first, where every push publishes `dev` test builds,
+and then reaches `main` through a `develop` → `main` pull request; `main` is
+merged back into `develop` afterwards. The `github-actions` bot commits the
+manifest updates described below directly to `main`.
 
 ```
-feature/fix branches ──PR──> develop ──PR──> main ──tag──> GitHub Release
-                                │
-                                └─ every push (that touches server, bot
-                                   or plugin/client code) publishes a
-                                   rolling "dev" build of what changed
+fix/feature branch ──PR──────────────────> main ──tag──> GitHub Release
+large work ──PR──> develop ──PR──────────> main
+                      └─ pushes publish rolling develop builds
 ```
 
 ## Versioning
 
-JellyWatchParty uses [Semantic Versioning](https://semver.org/):
+Releases use the four-part Jellyfin plugin version format
+`MAJOR.MINOR.PATCH.BUILD`, tagged with a `v` prefix (for example `v4.1.4.0`).
+The fourth part is normally `0`.
 
-```
-MAJOR.MINOR.PATCH
-```
+- **MAJOR**: breaking changes (e.g. dropping a Jellyfin generation)
+- **MINOR**: new features
+- **PATCH**: fixes
 
-- **MAJOR**: Breaking changes
-- **MINOR**: New features (backwards compatible)
-- **PATCH**: Bug fixes (backwards compatible)
+The release tag is the plugin version: the publish workflow stamps it into
+the assembly and the manifest. Develop builds use `0.0.<run number>` (see
+[Develop Builds](#develop-builds)) and are never tagged.
 
-Builds published from `develop` (Docker `dev` tag, plugin develop channel)
-use their own non-conflicting scheme — see
-[Develop Builds](#develop-builds) below — and are never meant to be
-tagged as a release themselves.
+### Version locations
+
+| File | Field | Notes |
+|------|-------|-------|
+| `src/plugins/jellyfin/JellyWatchParty/JellyWatchPartyPlugin.csproj` | `Version`, `AssemblyVersion`, `FileVersion` | Bump to the next release version. CI overrides them with the tag on release, but local builds use these values |
+| `src/server/Cargo.toml` | `version` | Crate version, independent of the release tag |
+| `src/integrations/discord-bot/Cargo.toml` | `version` | Crate version, independent of the release tag |
+
+`Plugin.PluginVersion` is read from the assembly; there is nothing to edit in
+`Plugin.cs`.
 
 ## Release Checklist
 
-### Pre-Release
-
-- [ ] All tests pass
-- [ ] Documentation updated
-- [ ] CHANGELOG updated
-- [ ] Version numbers updated
-- [ ] Manual testing completed
-
-### Version Locations
-
-Update version in:
-
-1. **Rust (`src/server/Cargo.toml`, `src/integrations/discord-bot/Cargo.toml`)**:
-   ```toml
-   [package]
-   version = "0.2.0"
-   ```
-
-2. **C# Plugin (`.csproj`)**:
-   ```xml
-   <Version>0.2.0</Version>
-   ```
-
-3. **Plugin metadata (`Plugin.cs`)** if applicable
-
-### CHANGELOG Format
-
-```markdown
-# Changelog
-
-## [0.2.0] - 2024-01-15
-
-### Added
-- New feature description
-
-### Changed
-- Change description
-
-### Fixed
-- Bug fix description
-
-### Security
-- Security fix description
-
-## [0.1.0] - 2024-01-01
-
-Initial release.
-```
-
-## Build Process
-
-### Build All Components
-
-```bash
-just build
-```
-
-### Build Individually
-
-```bash
-# Rust session server
-cd src/server
-cargo build --release
-
-# C# plugin - builds net10.0 (Jellyfin 12.x)
-cd src/plugins/jellyfin/JellyWatchParty
-dotnet build -c Release
-```
-
-### Build Artifacts
-
-| Component | Output Location |
-|-----------|-----------------|
-| Session Server | `src/server/target/release/session-server` |
-| Session Server (Windows) | `jwp-session-server-windows-vX.Y.Z.zip` (CI-built, attached to GitHub Release) |
-| Discord Bot | `src/integrations/discord-bot/target/release/jwp-discord-bot` |
-| Plugin DLL (Jellyfin 12.x) | `src/plugins/jellyfin/JellyWatchParty/bin/Release/net10.0/JellyWatchParty.dll` |
+- [ ] Everything to ship is on `main` (pending `develop` work merged through
+      a `develop` → `main` PR) and CI is green there
+- [ ] Docs updated
+- [ ] csproj version bumped
+- [ ] Release notes written (the release body becomes the `changelog` of the
+      new entry in the plugin repository manifest)
+- [ ] Manual testing done
 
 ## Release Steps
 
-Release branches fork from `develop`, land on `main` via pull request, get
-tagged there, and merge back into `develop` so both branches stay in sync.
+### 1. Bump the version
 
-### 1. Create Release Branch
-
-```bash
-git checkout develop
-git pull origin develop
-git checkout -b release/v0.2.0
-```
-
-### 2. Update Versions
-
-Update all version numbers as listed above.
-
-### 3. Update CHANGELOG
-
-### 4. Commit Changes
+Bump the csproj version in a PR into `main` (usually as the last commit of
+the release's PR):
 
 ```bash
-git add -A
-git commit -m "Release v0.2.0"
-git push origin release/v0.2.0
+git commit -am "chore(plugin): bump version to 4.2.0.0"
 ```
 
-### 5. Open a Pull Request into `main`
-
-Open the PR from `release/v0.2.0` into `main`, get it reviewed, and merge it
-(branch protection requires this — there is no direct push to `main`).
-
-### 6. Create Tag (on `main`, after the merge)
+### 2. Tag and publish the release (on `main`)
 
 ```bash
 git checkout main
 git pull origin main
-git tag -a v0.2.0 -m "Version 0.2.0"
-git push origin v0.2.0
+gh release create v4.2.0.0 --target main --title "v4.2.0.0" --notes-file notes.md
 ```
 
-### 7. Create GitHub Release
+`gh release create` creates the tag on `main` if it doesn't exist. In the web UI:
+Releases > Draft a new release > choose or create the tag > write the notes >
+**Publish release**. The tag must be `v` + 2-4 numeric parts, or the manifest
+update fails.
 
-Using the GitHub CLI (recommended):
+The Publish workflow then:
+
+- Builds `ghcr.io/tigamingtv/jwp-session-server` and
+  `ghcr.io/tigamingtv/jwp-discord-bot` for `linux/amd64` and `linux/arm64`
+  and tags them `latest`
+- Builds `JellyWatchParty-<tag>.zip` (Jellyfin 12.x, `net10.0`) and
+  `jwp-session-server-windows-<tag>.zip`, and attaches both to the release
+- Prepends the new version (`targetAbi 12.0.0.0`) to
+  `docs/jellyfin-plugin-repo/manifest.json` on `main` and redeploys the site
+
+### 3. Merge back into `develop`
+
+Open a PR from `main` into `develop` so `develop` carries the release commit
+and the manifest update.
+
+## Build Locally
 
 ```bash
-gh release create v0.2.0 --title "v0.2.0"
+just build server     # src/server/target/release/session-server
+just build discord    # src/integrations/discord-bot/target/release/jwp-discord-bot
+just build plugin     # src/plugins/jellyfin/JellyWatchParty/dist/ (JellyWatchPartyPlugin.dll, meta.json, ...)
+just release          # JellyWatchParty-release.zip (plugin + Linux server binary)
 ```
 
-Or via GitHub UI:
-
-1. Go to GitHub > Releases > New Release
-2. Select tag `v0.2.0`
-3. Title: `v0.2.0`
-4. Description: Copy from CHANGELOG
-5. Click **Publish release**
-
-The workflow will automatically:
-- Build and push the session server and Discord bot Docker images to GHCR
-  (`latest`, `X.Y.Z`, `X.Y`)
-- Build and attach a Jellyfin plugin zip (targeting Jellyfin 12.x)
-- Build and attach a standalone Windows session server binary
-- Update `manifest.json` with the new `targetAbi 12.0.0.0` entry
-
-### 8. Merge Back into `develop`
-
-Keep `develop` up to date with the release commit (version bumps, changelog)
-via a PR from `main` into `develop`:
-
-```bash
-git checkout develop
-git pull origin develop
-git merge main
-git push origin develop
-```
-
-### 9. Clean Up
-
-```bash
-git branch -d release/v0.2.0
-```
+`just build plugin` writes a dev `meta.json` (version `1.0.0.0`) for the
+local Jellyfin container; it is not what the release ships.
 
 ## Docker Images
 
-Docker images are automatically built (linux/amd64 and linux/arm64) and
-pushed to GitHub Container Registry (GHCR) by `.github/workflows/publish.yml`,
-which runs `.github/workflows/docker-image.yml` once per image:
+`.github/workflows/publish.yml` runs `.github/workflows/docker-image.yml` once
+per image:
 
 | Image | Built from | Rebuilt on push when these change |
 |-------|------------|-----------------------------------|
@@ -215,39 +119,22 @@ which runs `.github/workflows/docker-image.yml` once per image:
 
 A release always rebuilds both.
 
-### Available Tags
+### Tags
 
-Both images get the same tags, so the bot can be pinned to the server's
-version.
+| Tag | Content | Updated |
+|-----|---------|---------|
+| `latest` | Last release | On release |
+| `beta` | Last build from `main` | Push to `main` that changed the image |
+| `dev` | Last build from `develop` | Push to `develop` that changed the image |
 
-| Tag | Description | Updated |
-|-----|-------------|---------|
-| `latest` | Latest stable release | On release |
-| `X.Y.Z` | Specific version (release `v0.1.0` -> `0.1.0`) | On release |
-| `X.Y` | Minor version (e.g., `0.1`) | On release |
-| `beta` | Latest build from `main` | On push to `main` (image's code changed) |
-| `dev` | Latest build from `develop` | On push to `develop` (image's code changed) |
-
-The `v` of the release tag is dropped from image tags.
-
-### Pull Images
+There are no per-version tags. The workflow requests semver tags, but
+`docker/metadata-action` can't parse four-part release tags such as
+`v4.1.4.0`, so it produces none; GHCR currently holds only `latest`, `beta`
+and `dev` for both images. To pin a version, pin the image digest.
 
 ```bash
-# Latest stable
 docker pull ghcr.io/tigamingtv/jwp-session-server:latest
 docker pull ghcr.io/tigamingtv/jwp-discord-bot:latest
-
-# Specific version
-docker pull ghcr.io/tigamingtv/jwp-session-server:0.1.0
-docker pull ghcr.io/tigamingtv/jwp-discord-bot:0.1.0
-
-# Latest from main
-docker pull ghcr.io/tigamingtv/jwp-session-server:beta
-docker pull ghcr.io/tigamingtv/jwp-discord-bot:beta
-
-# Latest from develop
-docker pull ghcr.io/tigamingtv/jwp-session-server:dev
-docker pull ghcr.io/tigamingtv/jwp-discord-bot:dev
 ```
 
 `infra/docker/prod/docker-compose.yml` uses these images; `JWP_TAG` picks the
@@ -261,12 +148,11 @@ JWP_TAG=dev docker compose -f infra/docker/prod/docker-compose.yml --profile dis
 ### Package Visibility
 
 GHCR creates a package as **private** the first time it is pushed. After the
-first publish of a new image (for `jwp-discord-bot`, the first push to
-`develop` with this workflow), open the repository's **Packages** >
-the package > **Package settings** > **Change visibility** and make it
+first publish of a new image, open the repository's **Packages** > the
+package > **Package settings** > **Change visibility** and make it
 **Public**, or nobody can pull it without logging in.
 
-### Build Locally (optional)
+### Build images locally
 
 ```bash
 docker build -f infra/docker/server.Dockerfile --build-arg BUILD_MODE=release \
@@ -278,156 +164,83 @@ docker build -f infra/docker/discord-bot.Dockerfile \
 ## Develop Builds
 
 Every push to `develop` that touches the relevant code publishes a rolling
-build, so testers always have the latest in-progress version of every
-component without waiting for a tagged release.
+build:
 
-| Component | Where it lands | Version scheme |
-|-----------|-----------------|----------------|
-| Session Server | Docker image `ghcr.io/tigamingtv/jwp-session-server:dev` | Tag stays `dev`, content changes each push |
-| Discord Bot | Docker image `ghcr.io/tigamingtv/jwp-discord-bot:dev` | Tag stays `dev`, content changes each push |
-| Jellyfin Plugin | Rolling pre-release [`develop-latest`](https://github.com/TIGamingTV/JellyWatchParty/releases/tag/develop-latest), tracked via `manifest-dev.json` | `0.0.<GitHub run number>` (always increasing, always below `1.0`) |
+| Component | Where it lands | Version |
+|-----------|----------------|---------|
+| Session server | `ghcr.io/tigamingtv/jwp-session-server:dev` | Tag stays `dev` |
+| Chat bot | `ghcr.io/tigamingtv/jwp-discord-bot:dev` | Tag stays `dev` |
+| Jellyfin plugin | `JellyWatchParty-dev.zip` on the [`develop-latest`](https://github.com/TIGamingTV/JellyWatchParty/releases/tag/develop-latest) prerelease, listed in `manifest-dev.json` | `0.0.<run number>` |
+
+`manifest-dev.json` only ever lists the latest develop build.
 
 ### Develop Plugin Channel
 
-The plugin's develop builds are exposed as a second, separate Jellyfin
-plugin repository so they can be installed/updated like a beta channel,
-without touching the stable `manifest.json` feed:
+The develop builds have their own Jellyfin plugin repository, "JellyWatchParty
+(Develop)":
 
-1. Go to Dashboard > Plugins > Repositories
-2. Add: `https://tigamingtv.github.io/JellyWatchParty/jellyfin-plugin-repo/manifest-dev.json`
-3. Go to Catalog > Find "JellyWatchParty (Develop)" > Install
+1. Dashboard > Plugins > Repositories
+2. Add `https://tigamingtv.github.io/JellyWatchParty/jellyfin-plugin-repo/manifest-dev.json`
+3. Catalog > "JellyWatchParty (Develop)" > Install
 4. Restart Jellyfin
 
-Because dev versions are always `0.0.x` (below any real `1.x` release), it's
-safe to have both the stable and dev repositories added at once — Jellyfin
-will prefer whichever is numerically higher, so a stable release always wins
-over the dev channel once one exists past `0.0.x`. Uninstall the dev-channel
-entry if you no longer want to test pre-release builds.
+Both repositories publish the same plugin GUID. Develop versions (`0.0.x`) are
+always lower than any release (`4.x`), so with a release installed Jellyfin
+never offers a develop build as an update. To follow the develop channel,
+uninstall the release first (and remove the stable repository if you don't
+want it to update you back); to return to releases, do the reverse.
 
-## Automated Releases
+## Plugin Distribution
 
-Releases are fully automated via GitHub Actions (`.github/workflows/publish.yml`).
-
-### What Happens on Release
-
-When you create a GitHub Release:
-
-1. **Docker Image**: Built for amd64 and arm64, pushed to GHCR with version + `latest` tags
-2. **Jellyfin Plugin**: Built for Jellyfin 12.x, zipped, and attached to the release
-3. **Windows Session Server**: Built natively on `windows-latest`, zipped with a
-   `session-server.exe` and a short usage README, and attached to the release —
-   no Docker or Rust install required to run it
-4. **Plugin Repository**: `manifest.json` updated with new version and deployed to GitHub Pages
-
-### What Happens on Push to `main`
-
-When server code changes (`src/server/**`) are pushed to `main`:
-
-1. **Docker Image**: Built and pushed with `beta` tag
-2. Allows testers to always have the latest development version
-
-### What Happens on Push to `develop`
-
-1. **Server changed**: Docker image built and pushed with the `dev` tag
-2. **Plugin/client changed**: plugin rebuilt for Jellyfin 12.x, attached to
-   the rolling `develop-latest` pre-release, and `manifest-dev.json` updated
-   — see [Develop Builds](#develop-builds)
-
-A `changes` job in `publish.yml` (via `dorny/paths-filter`) detects which of
-the two actually changed, so an unrelated change doesn't trigger a rebuild
-of the other component.
-
-### Plugin Distribution
-
-Users can install the plugin in three ways:
-
-#### Via Jellyfin UI (Recommended, stable)
-
-1. Go to Dashboard > Plugins > Repositories
-2. Add: `https://tigamingtv.github.io/JellyWatchParty/jellyfin-plugin-repo/manifest.json`
-3. Go to Catalog > Find "JellyWatchParty" > Install
-4. Restart Jellyfin
-
-#### Via Jellyfin UI (develop/beta channel)
-
-See [Develop Plugin Channel](#develop-plugin-channel) above.
-
-#### Via Direct Download
-
-1. Go to [Releases](https://github.com/TIGamingTV/JellyWatchParty/releases)
-2. Download `JellyWatchParty-vX.Y.Z.zip` (targets Jellyfin 12.x; for
-   10.11.x, download an older release instead)
-3. Extract to Jellyfin plugins folder
-4. Restart Jellyfin
+Users install from the plugin repository (`manifest.json`) or the release
+zip; see [Installation]({{ '/installation/' | relative_url }}#2-install-the-jellyfin-plugin).
 
 ## Hotfix Process
 
-For critical bug fixes:
-
-1. Branch from the release tag:
+1. Branch from `main` (or the release tag):
    ```bash
-   git checkout -b hotfix/v0.2.1 v0.2.0
+   git checkout -b hotfix/v4.2.1.0 v4.2.0.0
    ```
-
-2. Apply fix and commit
-
-3. Update patch version
-
-4. Follow normal release process with new tag `v0.2.1` (PR into `main`, tag, release, then merge back into `develop`)
+2. Fix, bump the csproj version, commit.
+3. PR into `main`, release `v4.2.1.0`, then merge `main` back into `develop`.
 
 ## Deprecation Policy
 
-- Announce deprecations in release notes
-- Maintain for at least one minor version
-- Provide migration guide when removing features
+- Announce deprecations in the release notes.
+- Keep a deprecated feature for at least one minor version.
+- Document the migration when removing it.
 
-## Rollback Process
+## Rollback
 
-If a release has critical issues:
+1. Tell users to stay on (or reinstall) the previous version; for Docker,
+   pin the previous image by digest.
+2. Mark the GitHub release as a prerelease or delete it. Its entry stays in
+   `manifest.json` until removed by hand.
+3. Ship a hotfix release.
+4. Post the status on the related issue.
 
-1. **Immediate**: Advise users to use previous version
-2. **GitHub**: Mark release as pre-release or delete
-3. **Fix**: Create hotfix release
-4. **Communicate**: Update issue/discussion with status
-
-## Release Communication
-
-### Channels
-
-- GitHub Releases (primary)
-- GitHub Discussions (announcements)
-- Jellyfin forums (if applicable)
-
-### Template
+## Release Notes Template
 
 ```markdown
 ## What's New
 
-Brief summary of changes.
-
-## Highlights
-
-- Feature 1
-- Feature 2
+Short summary.
 
 ## Breaking Changes
 
-List any breaking changes and migration steps.
-
-## Installation
-
-See [Installation Guide](docs/installation.md).
+What changed and how to migrate.
 
 ## Upgrading
 
-See [Upgrade Procedure](docs/deployment.md#upgrade-procedure).
+See https://tigamingtv.github.io/JellyWatchParty/deployment/#updating
 
-## Changelog
+## Changes
 
+- ...
 ```
 
 ## Next Steps
 
-- [Contributing]({{ '/development/contributing/' | relative_url }}) - How to contribute
-- [Testing]({{ '/development/testing/' | relative_url }}) - Testing before release
-- [Deployment]({{ '/deployment/' | relative_url }}) - Production deployment
+- [CI/CD]({{ '/development/ci/' | relative_url }})
+- [Testing]({{ '/development/testing/' | relative_url }})
+- [Deployment]({{ '/deployment/' | relative_url }})

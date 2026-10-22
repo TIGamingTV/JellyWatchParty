@@ -3,191 +3,168 @@ title: Configuration
 nav_order: 6
 ---
 
-# Configuration
+# Configuration Reference
 
-## Plugin Configuration
+This page is the complete reference for every setting. For a guided setup,
+see [Installation]({{ '/installation/' | relative_url }}).
 
-Access the plugin configuration page at **Dashboard** > **Plugins** > **JellyWatchParty**.
+JellyWatchParty is configured in three places:
+
+| Where | What |
+|-------|------|
+| Jellyfin: **Dashboard > Plugins > JellyWatchParty** | Plugin settings (authentication, session server URL, UI options, panel bridging) |
+| Session server environment variables | Ports, origins, authentication, admin panel, Jellyfin devices, chat integrations |
+| Chat bot environment variables | Bot tokens and how to reach the session server |
+
+Chat bot behaviour (server or group, channels, roles, limits) is set in the
+[admin panel]({{ '/admin-panel/' | relative_url }}#chat-bots), not in the
+environment.
+
+## Plugin Settings
+
+Open **Dashboard > Plugins**, select **JellyWatchParty**, change the settings
+and click **Save**. No Jellyfin restart is needed. Settings that affect the
+browser (everything except panel bridging) apply after users reload the page.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| JWT Secret | (empty) | Secret key for signing tokens. Leave empty to disable authentication. **Must be at least 32 characters** — shorter non-empty values are treated as if authentication were disabled (see below), not just "less secure." |
-| JWT Audience | `JellyWatchParty` | Audience claim in generated tokens |
-| JWT Issuer | `Jellyfin` | Issuer claim in generated tokens |
-| Token TTL | `3600` | Token lifetime in seconds (1 hour default) |
-| Invite TTL | `3600` | Invite link lifetime in seconds (reserved for future use) |
-| Session Server URL | (empty) | Custom WebSocket server URL. If empty, uses `ws(s)://[host]:3000/ws`. Invalid or suspicious values (wrong scheme, malformed URL, bare internal hostname) show a non-blocking warning in the config page and browser console/toast — the value is still saved and used as entered. |
-| Hide native SyncPlay button | `false` | Hides Jellyfin's built-in SyncPlay button in the web client, since JellyWatchParty replaces that feature. |
-| Allow democratic mode | `false` | In the **Interface** section. Room hosts on Jellyfin Web and Jellyfin Desktop get an *Everyone can control playback* switch in the Watch Party panel; with it on, any participant on those clients can play, pause and seek for the room (see [Features: Democratic Mode]({{ '/features/' | relative_url }}#democratic-mode)). This only shows or hides the switch: the session server never sees the setting, and admins can turn democratic mode on for any room from the [admin panel]({{ '/admin-panel/' | relative_url }}#democratic-mode) regardless. Takes effect on the next page load. |
-| Let users bridge their devices from the Watch Party panel | `false` | Master switch for the two options below, **for small servers with trusted users only**. Admins put devices into rooms from the session server's [admin panel]({{ '/admin-panel/' | relative_url }}#jellyfin-devices) instead. Even when on, users can only bridge their own sessions (administrators: any). Turning it off stops bridges started from the panel. New in 2.1: installs upgraded from earlier versions start with it off. |
-| Allow third-party clients to host | `false` | Only with the master switch on. Lets a native/third-party client that can't run the injected script (Fladder, Swiftfin, Infuse, official mobile apps, …) be bridged in as a room **host**. While off, the "Host From Another Device" picker is hidden and the server rejects host-bridge requests. See [Host Bridge]({{ '/technical/host-bridge/' | relative_url }}). |
-| Allow supported clients as receivers | `false` | Only with the master switch on. Lets a supported native client (such as the official Jellyfin Android TV app) be attached to a room as a **receiver** that follows the host via remote-control commands. While off, the "Add a Device to This Room" picker is hidden and the server rejects receiver requests. See [Host Bridge]({{ '/technical/host-bridge/' | relative_url }}). |
+| **JWT Secret** | empty | Secret used to sign session tokens. Must be **the same value as `JWT_SECRET`** on the session server. Use at least 32 characters (`openssl rand -base64 32`). Empty, or shorter than 32 characters, disables authentication: the plugin then issues no tokens. |
+| **JWT Audience** | `JellyWatchParty` | `aud` claim. Must match `JWT_AUDIENCE`. |
+| **JWT Issuer** | `Jellyfin` | `iss` claim. Must match `JWT_ISSUER`. |
+| **Token TTL (seconds)** | `3600` | Token lifetime, 60–86400. The web client renews its token before it expires. |
+| **Session Server URL** | empty | WebSocket URL of the session server, e.g. `wss://jellyfin.example.com/ws`. Empty: the browser connects to `ws://<Jellyfin host>:3000/ws` (or `wss://` when Jellyfin is opened over HTTPS). Must be reachable **from users' browsers**, so don't use a Docker service name. Suspicious values show a warning but are saved anyway. Required for panel bridging. |
+| **Hide Jellyfin's built-in SyncPlay button** | off | Hides the native SyncPlay button in the web client. |
+| **Allow democratic mode** | off | Gives room hosts on Jellyfin Web and Jellyfin Desktop an **Everyone can control playback** switch. Admins can turn democratic mode on for any room in the admin panel regardless. See [Democratic mode]({{ '/features/' | relative_url }}#democratic-mode). |
+| **Let users bridge their devices from the Watch Party panel** | off | Master switch for the two options below. For small servers with trusted users. Turning it off stops devices bridged from the panel. |
+| **Allow third-party clients to host** | off | With the master switch on: users can make one of their own playing devices (Fladder, Swiftfin, mobile apps, ...) host a new room from the panel. |
+| **Allow supported clients as receivers** | off | With the master switch on: users can attach one of their own playing devices (e.g. the Android TV app) to their current room as a receiver. Not for password-protected rooms. |
 
-### JWT Secret Guidelines
+Admins can put any device into any room from the
+[admin panel]({{ '/admin-panel/' | relative_url }}#jellyfin-devices) without
+enabling panel bridging.
 
-For production use: minimum 32 characters, cryptographically random, never reused across environments.
+## Session Server Environment Variables
 
-```bash
-openssl rand -base64 32
-```
+All variables are read **at startup**. After changing one, recreate the
+container (`docker compose up -d`); `docker restart` keeps the old
+environment. The only exception is the files named by
+`ADMIN_USERNAME_FILE` / `ADMIN_PASSWORD_FILE`, which are re-read while the
+server runs.
 
-**A secret shorter than 32 characters disables authentication entirely** —
-`/JellyWatchParty/Token` responds as if `JwtSecret` were empty (no token,
-`auth_enabled: false`), it does not attempt to sign with a weak key. This
-still includes `session_server_url` in the response, so the widget
-connects normally without authentication. (Before this was fixed, a
-non-empty secret under 128 bits — e.g. accidentally pasting a 10-character
-value — made every call to `/JellyWatchParty/Token` fail with a 500 error,
-which meant the client never learned the configured Session Server URL and
-the widget got stuck showing "Offline" no matter what URL was set. If you
-hit that symptom on an older version, check your Jellyfin server logs for
-`IDX10653`/`ArgumentOutOfRangeException` on `GET /JellyWatchParty/Token`.)
+An empty value is treated like an unset variable. Boolean variables accept
+`true`/`false`, `1`/`0`, `yes`/`no` and `on`/`off`.
 
-## Session Server Configuration
-
-### Environment Variables
+### Core
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PORT` | `3000` | Port to listen on |
-| `HOST` | `0.0.0.0` | Address to bind to |
-| `ALLOWED_ORIGINS` | `http://localhost:8096,https://localhost:8096` | CORS allowed origins (comma-separated) |
-| `JWT_SECRET` | (empty) | Secret for validating tokens |
-| `JWT_AUDIENCE` | `JellyWatchParty` | Expected `aud` claim; must match the plugin's JWT Audience |
-| `JWT_ISSUER` | `Jellyfin` | Expected `iss` claim; must match the plugin's JWT Issuer |
-| `RUST_LOG` | `info` | Log level: `error`, `warn`, `info`, `debug`, `trace` |
+| `HOST` | `0.0.0.0` | IP address the WebSocket server binds to. |
+| `PORT` | `3000` | WebSocket port. Clients connect to `/ws`; `/health` answers `{"status":"ok","auth_enabled":…}`. |
+| `ALLOWED_ORIGINS` | `http://localhost:8096,https://localhost:8096` | Comma-separated list of the exact origins (`scheme://host[:port]`, no trailing slash) your users open Jellyfin from. Browser connections from other origins are refused with 403. Connections without an `Origin` header (such as the plugin's own bridge connections) are always allowed. `*` allows every origin and logs a security warning on each connection. |
+| `JWT_SECRET` | empty | Same value as the plugin's **JWT Secret**. Empty disables authentication: anyone who can reach the server can join rooms under any name. Shorter than 32 characters logs a warning; since the plugin ignores such secrets, use 32 or more. |
+| `JWT_AUDIENCE` | `JellyWatchParty` | Expected `aud` claim; must match the plugin. |
+| `JWT_ISSUER` | `Jellyfin` | Expected `iss` claim; must match the plugin. |
+| `RUST_LOG` | `info` | Log level: `error`, `warn`, `info`, `debug` or `trace`. |
 
-The admin panel has its own `ADMIN_*` variables (port, login, cookie
-options), and `JELLYFIN_URL` / `JELLYFIN_API_KEY` for putting Jellyfin
-devices into rooms. See [Admin Panel]({{ '/admin-panel/' | relative_url }}#environment-variables).
-The chat bots add `DATA_DIR`, `DISCORD_INTEGRATION_TOKEN` /
-`TELEGRAM_INTEGRATION_TOKEN` (one per platform, each different) and
-`INTEGRATION_HOST` / `INTEGRATION_PORT`; see [Discord Bot]({{ '/discord-bot/' | relative_url }}#2-configure-the-containers).
-Bot behaviour (including *Democratic mode commands*, off by default) is set
-in the admin panel, not in the environment; see
-[Admin Panel: Chat bots]({{ '/admin-panel/' | relative_url }}#chat-bots).
+### Admin panel
 
-```yaml
-services:
-  session-server:
-    image: ghcr.io/tigamingtv/jwp-session-server:latest
-    ports:
-      - "3000:3000"
-    environment:
-      - ALLOWED_ORIGINS=https://jellyfin.example.com
-      - JWT_SECRET=${JWT_SECRET}
-      - RUST_LOG=info
-    restart: unless-stopped
-```
+The [admin panel]({{ '/admin-panel/' | relative_url }}) is on by default but
+only starts when a password is set. Jellyfin devices and the chat bots need
+it.
 
-### CORS Configuration
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ADMIN_PASSWORD` | none | Login password. **Required for the panel to start.** Use a long random value (`openssl rand -base64 18`); under 12 characters logs a warning. Surrounding spaces and one pair of quotes are removed. |
+| `ADMIN_PASSWORD_FILE` | none | Read the password from this file instead (Docker secrets). `ADMIN_PASSWORD` wins if both are set. Re-read on every login and every 10 seconds; a change signs everyone out. |
+| `ADMIN_USERNAME` | `admin` | Login name (case-sensitive). |
+| `ADMIN_USERNAME_FILE` | none | Read the login name from this file instead. Same rules as `ADMIN_PASSWORD_FILE`. |
+| `ADMIN_ENABLED` | `true` | `false` switches the panel off. Any value other than a boolean keeps the panel off and logs why. |
+| `ADMIN_HOST` | `0.0.0.0` | IP address the panel binds to (an IP literal such as `0.0.0.0`, `::` or `127.0.0.1`; not a host name). |
+| `ADMIN_PORT` | `3001` | Panel port; must differ from `PORT`. |
+| `ADMIN_SESSION_TTL_SECS` | `43200` | How long a login stays valid (12 hours; maximum 30 days). |
+| `ADMIN_COOKIE_SECURE` | `false` | `true` when the panel is served over HTTPS: the login cookie is then only sent over HTTPS. Leave `false` for plain `http://` access, or logins won't stick. |
+| `ADMIN_TRUST_X_FORWARDED_FOR` | `false` | `true` behind a reverse proxy, so failed-login throttling uses the visitor's address (last `X-Forwarded-For` entry). Only enable it if the panel can't be reached without the proxy. |
+| `ADMIN_EMPTY_GROUP_TTL_SECS` | `600` | A group created in the panel that nobody joins is removed after this many seconds. |
 
-Specify allowed origins instead of using a wildcard (`*`) — using `*` logs a
-security warning and is not recommended for production. See
-[Security: CORS]({{ '/security/' | relative_url }}#cors-cross-origin-resource-sharing) for details.
+### Jellyfin devices
 
-```bash
-# Single origin
-ALLOWED_ORIGINS=https://jellyfin.example.com
+Lets the session server put Jellyfin apps that can't show the Watch Party
+panel (TV apps, Fladder, ...) into rooms. Needs the admin panel. See
+[Admin Panel: Jellyfin devices]({{ '/admin-panel/' | relative_url }}#jellyfin-devices).
 
-# Multiple origins
-ALLOWED_ORIGINS=https://jellyfin.example.com,http://localhost:8096
-```
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `JELLYFIN_URL` | none | Jellyfin's address **as seen from the session server**, starting with `http://` or `https://`, e.g. `http://jellyfin:8096` on a shared Docker network. |
+| `JELLYFIN_API_KEY` | none | API key from Jellyfin **Dashboard > API Keys**. It has full admin rights on Jellyfin: keep it secret. |
+| `JELLYFIN_API_KEY_FILE` | none | Read the API key from this file instead. Read at startup only. |
+| `BRIDGE_POLL_INTERVAL_MS` | `1000` | How often device positions are read from Jellyfin, in milliseconds (minimum 250). Polling only runs while a device is in a room or the device list is open in the panel. |
 
-## Client Configuration
+Both `JELLYFIN_URL` and an API key are needed; setting only one logs a
+warning and leaves the feature off. The standard `HTTPS_PROXY` / `NO_PROXY`
+variables apply to these requests.
 
-The client gets its configuration from the plugin automatically. If the
-session server runs on a different host or port, set a custom WebSocket URL:
+### Chat integrations (Discord, Telegram)
 
-1. Go to **Dashboard** > **Plugins** > **JellyWatchParty**
-2. Set **Session Server URL**, e.g. `wss://session.example.com/ws`
-3. Save and refresh
+Needs the admin panel and Jellyfin devices. See the
+[Discord Bot]({{ '/discord-bot/' | relative_url }}) and
+[Telegram Bot]({{ '/telegram-bot/' | relative_url }}) guides.
 
-| Scheme | When to Use |
-|--------|-------------|
-| `ws://` | HTTP/unencrypted (development only) |
-| `wss://` | HTTPS/encrypted (production) |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DATA_DIR` | none | Directory where bot settings, link codes and linked accounts are stored (`integrations.json`, `secret.key`). Without it, chat integrations are off. The compose files set `/data` (the `jwp-data` volume). |
+| `DISCORD_INTEGRATION_TOKEN` | none | Shared secret between the session server and the bot for Discord; at least 32 characters (`openssl rand -hex 32`). Same value on both containers. |
+| `TELEGRAM_INTEGRATION_TOKEN` | none | Same for Telegram; must differ from the Discord token. |
+| `DISCORD_INTEGRATION_TOKEN_FILE`, `TELEGRAM_INTEGRATION_TOKEN_FILE` | none | Read the token from a file instead. |
+| `INTEGRATION_HOST` | `127.0.0.1` | IP address the integration API binds to. Set `0.0.0.0` in Docker so the bot container can reach it; **never publish the port**. |
+| `INTEGRATION_PORT` | `3002` | Integration API port; must differ from `PORT` and `ADMIN_PORT`. |
 
-The config page warns (but does not block saving) if the URL looks wrong —
-e.g. `ws://` used while the value doesn't parse as a scheme it recognizes,
-or a bare hostname with no dot that isn't `localhost` (a common sign of an
-internal Docker/Compose service name that isn't reachable from a browser).
-The same checks run again client-side on every connection attempt and are
-logged to the browser console and the plugin's server log.
+The integration API only starts when at least one integration token is set.
 
-## Sync Tuning
+## Chat Bot Environment Variables
 
-Client and server sync-timing constants (drift correction thresholds,
-clock-sync smoothing, scheduling delays) are not configurable at runtime,
-but can be modified in source. See [Sync Algorithms: Threshold and Timing
-Summary]({{ '/technical/sync/' | relative_url }}#threshold-and-timing-summary) for the full,
-authoritative list of constants rather than repeating it here.
+The bot image (`ghcr.io/tigamingtv/jwp-discord-bot`) runs Discord, Telegram
+or both. A platform runs when its bot token is set; with neither set the bot
+exits.
 
-## Configuration Examples
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DISCORD_BOT_TOKEN` | none | From the Discord Developer Portal (**Bot > Reset Token**). Turns Discord on. |
+| `DISCORD_INTEGRATION_TOKEN` | none | Required with `DISCORD_BOT_TOKEN`; same value as on the session server. |
+| `TELEGRAM_BOT_TOKEN` | none | From @BotFather (`/newbot`), format `123456:ABC...`. Turns Telegram on. |
+| `TELEGRAM_INTEGRATION_TOKEN` | none | Required with `TELEGRAM_BOT_TOKEN`; same value as on the session server. |
+| `JWP_INTEGRATION_URL` | `http://session-server:3002` | The session server's integration API. Use the session server's compose service name and `INTEGRATION_PORT`. |
+| `TELEGRAM_API_URL` | `https://api.telegram.org` | Only for a self-hosted Telegram Bot API server. |
+| `RUST_LOG` | `info` | Log level. |
 
-### Minimal Setup (Development)
+Every token variable also accepts a `_FILE` variant (for example
+`DISCORD_BOT_TOKEN_FILE`). `JWP_INTEGRATION_TOKEN` is an old name for the
+bot's `DISCORD_INTEGRATION_TOKEN`; it still works for Discord, with a
+warning.
 
-```yaml
-services:
-  session-server:
-    image: ghcr.io/tigamingtv/jwp-session-server:latest
-    ports:
-      - "3000:3000"
-```
+## Compose Helper Variables
 
-Plugin settings: JWT Secret empty, Session Server URL empty.
+The compose files in this repository also read these from `.env`. They are
+not read by the applications.
 
-### Production Setup
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `JWP_TAG` | `latest` | Image tag for both images: `latest` (last release), `beta` (last build of `main`) or `dev` (last build of `develop`). |
+| `SESSION_SERVER_PORT` | `3000` | Host port published for the WebSocket server (`infra/docker/*/docker-compose.yml`). |
+| `ADMIN_PANEL_PORT` | `3001` | Host port published for the admin panel. |
+| `JELLYFIN_PORT`, `MEDIA_DIR`, `UID`, `GID` | | Development compose only; see [Development Setup]({{ '/development/setup/' | relative_url }}). |
 
-```yaml
-services:
-  session-server:
-    image: ghcr.io/tigamingtv/jwp-session-server:latest
-    ports:
-      - "127.0.0.1:3000:3000"  # Only localhost
-    environment:
-      - ALLOWED_ORIGINS=https://jellyfin.example.com
-      - JWT_SECRET=${JWT_SECRET}
-      - RUST_LOG=warn
-    restart: unless-stopped
-```
-
-Plugin settings: JWT Secret set to a 32+ char secret, Session Server URL set
-to `wss://jellyfin.example.com/ws` (via reverse proxy).
-
-### Multi-Instance Setup
-
-The session server is stateful (in-memory rooms), so only **one instance**
-should run per deployment — running multiple instances behind a load
-balancer will split rooms across them unpredictably. For high availability
-across multiple Jellyfin instances pointed at the same server, just set
-`ALLOWED_ORIGINS` to include all of them:
-
-```yaml
-services:
-  session-server:
-    image: ghcr.io/tigamingtv/jwp-session-server:latest
-    environment:
-      - ALLOWED_ORIGINS=https://jellyfin1.example.com,https://jellyfin2.example.com
-```
-
-## Validating Configuration
+## Checking the Configuration
 
 ```bash
-# Plugin config (requires admin API key)
-curl -H "X-Emby-Token: YOUR_API_KEY" \
-  "http://localhost:8096/System/Configuration/Plugin/0f2fd0fd-09ff-4f49-9f1c-4a8f421a4b7d"
-
-# Server health
+# Session server: is it up, and is authentication on?
 curl http://localhost:3000/health
+# {"status":"ok","auth_enabled":true}
 
-# JWT token generation
-curl -H "X-Emby-Token: YOUR_API_KEY" \
-  "http://localhost:8096/JellyWatchParty/Token"
+# Session server: what it started with (admin panel, devices, chat bots)
+docker compose logs session-server | head -n 40
 ```
 
-## Next Steps
-
-- [Security]({{ '/security/' | relative_url }}) - Security hardening
-- [Deployment]({{ '/deployment/' | relative_url }}) - Production deployment
-- [Troubleshooting & FAQ]({{ '/troubleshooting/' | relative_url }}) - Common issues
+In the Jellyfin log, the plugin reports at startup either
+`[JellyWatchParty] JWT authentication is enabled.` or a warning that
+authentication is disabled. `auth_enabled` on the session server and the
+plugin must agree.

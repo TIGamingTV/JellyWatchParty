@@ -8,453 +8,403 @@ nav_order: 2
 
 ## Overview
 
-The JellyWatchParty session server is an asynchronous Rust application using Axum for WebSocket handling and Tokio as the async runtime. It manages rooms, clients, and playback synchronization in memory.
+The session server (`src/server`) is an asynchronous Rust application using
+Axum for HTTP/WebSocket handling and Tokio as the runtime. It keeps rooms
+and clients in memory and relays playback between room members.
 
 ## Module Structure
 
 ```
-src/
-├── main.rs           # Entry point, listener + graceful shutdown
+src/server/src/
+├── main.rs           # Entry point: listeners, background tasks, graceful shutdown
 ├── types.rs          # Data structures
-├── routes.rs         # Axum router, origin guard, CORS
-├── tasks.rs          # Background tasks (zombie cleanup, shutdown)
-├── messaging.rs      # Message sending functions
-├── auth.rs           # JWT authentication (optional)
-├── utils.rs          # Utilities (timestamp, random tokens)
+├── routes.rs         # Axum router (/ws, /health), origin guard, CORS
+├── tasks.rs          # Zombie cleanup, empty-group reaper, shutdown signal
+├── messaging.rs      # Payload builders and send/broadcast helpers
+├── auth.rs           # JWT validation (optional)
+├── utils.rs          # now_ms, random_token
 ├── password.rs       # Room password hashing, constant-time compare
-├── admin/            # Admin panel (second listener, own port)
+├── events.rs         # "Rooms changed" counter (wakes the integration long poll)
+├── admin/            # Admin panel (own listener, ADMIN_PORT, default 3001)
 │   ├── mod.rs            # Router, session/CSRF middleware, security headers
 │   ├── config.rs         # ADMIN_* environment variables
 │   ├── auth.rs           # Login, sessions, failed-login throttle
-│   ├── api.rs            # JSON API (overview, rooms, members, host)
-│   ├── integrations.rs   # Bot settings, link codes, activity log
+│   ├── api.rs            # JSON API (overview, rooms, members, host, Jellyfin sessions)
+│   ├── integrations.rs   # Chat integration settings, link codes, activity log
 │   ├── ui.rs             # Serves the embedded UI
 │   └── ui/               # index.html, app.js, app.css (no build step)
-├── events.rs         # "Rooms changed" counter (wakes the integration long poll)
-├── integration/      # Chat integrations (Discord bot sidecar), see integration-api.md
+├── integration/      # Chat integrations (Discord/Telegram bot sidecars), see integration-api.md
 │   ├── mod.rs            # Integration state, user cache, guards, audit, reaper
-│   ├── config.rs         # DATA_DIR, INTEGRATION_*, *_INTEGRATION_TOKEN
+│   ├── config.rs         # DATA_DIR, INTEGRATION_HOST/PORT, DISCORD_/TELEGRAM_INTEGRATION_TOKEN
 │   ├── store.rs          # integrations.json: settings, code HMACs, links
 │   ├── actions.rs        # Who may do what; chat room operations
 │   ├── view.rs           # Room list for sidecars
-│   └── api.rs            # Token-protected HTTP API (own listener)
+│   └── api.rs            # Token-protected HTTP API (own listener, default 3002)
 ├── jellyfin/         # Admin panel device bridge (Jellyfin REST API)
-│   ├── mod.rs            # JELLYFIN_* configuration
+│   ├── mod.rs            # JELLYFIN_* / BRIDGE_POLL_INTERVAL_MS configuration
 │   ├── api.rs            # /Sessions, Playing/{cmd}, PlayNow (reqwest)
 │   ├── logic.rs          # Pure host/receiver decisions + position estimate
 │   ├── bridge.rs         # Poller, one task per bridged device, add/remove
 │   └── time.rs           # ISO-8601 timestamp parsing
 ├── ws/
 │   ├── mod.rs
-│   ├── connection.rs     # WebSocket connection lifecycle
-│   ├── dispatch.rs       # Message dispatching and error sending
+│   ├── connection.rs     # WebSocket connection lifecycle, reattach
+│   ├── dispatch.rs       # Rate/size limits, message dispatch, send_error
 │   ├── constants.rs      # Protocol constants and limits
-│   ├── validation.rs     # Message validation
-│   ├── pending_play.rs   # Pending play logic
+│   ├── validation.rs     # Position/media id/name/bridge_device_id validation
+│   ├── pending_play.rs   # Ready gate, scheduled plays, start countdown
 │   └── handlers/
 │       ├── mod.rs
-│       ├── auth.rs       # Authentication handler
-│       ├── chat.rs       # Chat message handler
-│       ├── create.rs     # Room creation
-│       ├── join.rs       # Room joining
-│       ├── media.rs      # set_media (host changes the room's item)
-│       ├── misc.rs       # Ping, ready, leave_room, client_log, unknown
-│       └── playback.rs   # player_event, state_update
+│       ├── auth.rs       # auth (JWT or identity), capabilities
+│       ├── chat.rs       # chat_message
+│       ├── create.rs     # create_room
+│       ├── join.rs       # join_room, password throttle
+│       ├── media.rs      # set_media
+│       ├── misc.rs       # ping, ready, leave_room, set_democratic, client_log, unknown
+│       ├── playback.rs   # player_event, state_update, may_control, server_command
+│       └── status.rs     # client_status
 └── room/
     ├── mod.rs
-    ├── leave.rs          # Client leave / disconnect
-    ├── close.rs          # Room closure
+    ├── leave.rs          # Leave / disconnect, host promotion
+    ├── close.rs          # Room closure (async wrapper)
     ├── ops.rs            # Shared room operations (add/move, kick, set host, close, groups)
     └── reconnect.rs      # Grace-period disconnect + reattachment
 ```
 
 ## Module: `main.rs`
 
-### Description
-Application entry point. Builds the Axum router and serves it with graceful
-shutdown.
-
-### Main Function
+Reads the configuration, creates the shared state, starts the zombie
+cleanup, the admin panel (with the Jellyfin device bridge and chat
+integrations, which only run alongside it) and the main listener on
+`HOST:PORT` (default `0.0.0.0:3000`). SIGTERM/SIGINT trigger a graceful
+shutdown of every listener.
 
 ```rust
-#[tokio::main]
-async fn main() {
-    // Thread-safe shared state
-    let clients: Clients = Arc::new(RwLock::new(HashMap::new()));
-    let rooms: Rooms = Arc::new(RwLock::new(HashMap::new()));
-
-    // GET /ws (origin-guarded upgrade) + GET /health
-    let app = routes::build_router(clients, rooms, jwt_config, allowed_origins);
-
-    // Listen on 0.0.0.0:3000 (HOST/PORT override the defaults)
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app)
-        .with_graceful_shutdown(async { shutdown_rx.await.ok(); })
-        .await
-        .unwrap();
-}
+let clients: Clients = Arc::new(RwLock::new(HashMap::new()));
+let rooms: Rooms = Arc::new(RwLock::new(HashMap::new()));
+tasks::spawn_zombie_cleanup(clients.clone(), rooms.clone());
+start_admin_panel(&clients, &rooms, jwt_config.enabled, shutdown_rx.clone());
+let app = routes::build_router(clients, rooms, jwt_config, allowed_origins);
+axum::serve(listener, app)
+    .with_graceful_shutdown(tasks::wait_for_shutdown(shutdown_rx))
+    .await
 ```
 
-> The server speaks HTTP/1.1 only. That is deliberate: every client performs
-> an HTTP/1.1 `Upgrade` for WebSockets, so the `axum`/`hyper` `http2` feature
-> is left off and `h2` never enters the dependency tree.
+> The server speaks HTTP/1.1 only. Every client performs an HTTP/1.1
+> `Upgrade` for WebSockets, so the `axum` and `reqwest` `http2` features are
+> left off and `h2` never enters the dependency tree.
 
-### Global State
+| State | Type | Description |
+|-------|------|-------------|
+| `clients` | `Clients` | All client entries, keyed by client id (live, in grace period, and server-side device bridges) |
+| `rooms` | `Rooms` | All rooms, keyed by room id |
 
-| Variable | Type | Description |
-|----------|------|-------------|
-| `clients` | `Clients` | HashMap of connected clients |
-| `rooms` | `Rooms` | HashMap of active rooms |
+## Module: `routes.rs`
+
+| Route | Description |
+|-------|-------------|
+| `GET /ws` | WebSocket upgrade. Query parameters `client_id` and `resume` are passed to `ws::client_connection`. Guarded by `origin_guard`. |
+| `GET /health` | `{"status":"ok","auth_enabled":<bool>}`. Not origin-guarded (health checks send no `Origin`); CORS allows `GET` from the allowed origins. |
+
+`ALLOWED_ORIGINS` is a comma-separated list, default
+`http://localhost:8096,https://localhost:8096`. An entry `*` allows every
+origin (logged as a security warning). A request whose `Origin` isn't
+allowed gets `403 Origin not allowed`; a request without an `Origin` header
+(or with a non-ASCII one) is let through, because non-browser clients such
+as the plugin's bridges send none.
 
 ## Module: `types.rs`
 
-### Description
-Defines the data structures used by the server.
-
-### Type Aliases
-
 ```rust
-pub type Clients = Arc<RwLock<HashMap<String, Client>>>;
+pub type Clients = Arc<RwLock<HashMap<String, Client>>>;   // tokio RwLock
 pub type Rooms = Arc<RwLock<HashMap<String, Room>>>;
+pub type ClientSender = mpsc::Sender<OutboundMessage>;       // bounded
 ```
+
+`OutboundMessage` is an already-serialized JSON text frame.
 
 ### Struct `Client`
 
-Represents a connected WebSocket client.
-
 | Field | Type | Description |
 |-------|------|-------------|
-| `sender` | `mpsc::Sender<...>` | Bounded channel for sending messages to client |
-| `room_id` | `Option<String>` | Current room ID (if in a room) |
-| `user_id` | `Option<String>` | Jellyfin user ID (set after auth) |
-| `user_name` | `Option<String>` | Display name (set after auth) |
-| `authenticated` | `bool` | Whether the client has authenticated |
-| `message_count` | `u32` | Messages sent in current rate-limit window |
-| `last_reset` | `u64` | Timestamp of last rate-limit window reset |
-| `last_seen` | `u64` | Timestamp of last activity (for zombie detection) |
-| `democratic_capable` | `bool` | The client sent `capabilities: ["democratic"]` in `auth` (the injected web client does). Only such clients, and device bridges with device control, may control a democratic room without being host. |
+| `sender` | `ClientSender` | Bounded outbound queue (100 messages) |
+| `room_id` | `Option<String>` | Current room |
+| `user_id` | `String` | JWT `sub` (or the identity's `user_id`; `anonymous` with JWT disabled) |
+| `user_name` | `String` | Display name |
+| `authenticated` | `bool` | `true` from the start with JWT disabled, else after a valid `auth` |
+| `message_count` / `last_reset` | `u32` / `u64` | Rate-limit window |
+| `last_seen` | `u64` | Last inbound frame (zombie detection) |
+| `resume_secret` | `String` | 64 hex chars, needed to reattach (see [Persistent Client ID](#persistent-client-id)) |
+| `connected_at` | `u64` | When the entry was registered |
+| `conn_id` | `u64` | Id of the currently attached connection |
+| `connected` | `bool` | `false` once that connection ended (grace period) |
+| `kind` | `ClientKind` | `Web` (a websocket) or `Bridge` (a Jellyfin session driven by this server, see [`jellyfin/`](#module-jellyfin)) |
+| `bridge_device` | `Option<String>` | Jellyfin DeviceId this client stands in for (`bridge_device_id` from the plugin's bridges, or set by the server's own bridges) |
+| `democratic_capable` | `bool` | Sent `capabilities: ["democratic"]` in `auth` |
 
 ### Struct `Room`
 
-Represents a watch party room.
-
-| Field | Type | Serialized | Description |
-|-------|------|------------|-------------|
-| `room_id` | `String` | Yes | Unique identifier (UUID) |
-| `name` | `String` | Yes | Display name |
-| `host_id` | `String` | Yes | Host client ID |
-| `media_id` | `Option<String>` | Yes | Jellyfin media ID |
-| `clients` | `Vec<String>` | Yes | Participant client IDs |
-| `ready_clients` | `HashSet<String>` | Yes | Clients ready to receive play |
-| `pending_play` | `Option<PendingPlay>` | Yes | Pending play action |
-| `state` | `PlaybackState` | Yes | Current playback state |
-| `last_state_ts` | `u64` | No | Last accepted state_update timestamp |
-| `last_command_ts` | `u64` | No | Last player_event timestamp (cooldown) |
-| `democratic` | `bool` | No | Democratic mode: non-hosts may play, pause and seek (see `may_control` below) |
-| `device_control` | `bool` | No | With `democratic`, bridged Jellyfin devices may control too (admin only) |
-| `last_command_by` | `String` | No | Client id that sent the last play/pause/seek; empty for server commands (chat bots) |
-| `last_change_ts` | `u64` | No | When the play state or position last changed other than by playing on (any player_event, a play-state change, or a jump of more than 2 s from the expected position; also `set_media` and a scheduled play). Bridges use it for device-control detection. |
-
-### Struct `PlaybackState`
-
-Room playback state.
-
 | Field | Type | Description |
 |-------|------|-------------|
-| `position` | `f64` | Position in seconds |
-| `play_state` | `String` | `"playing"` or `"paused"` |
+| `room_id` | `String` | UUID |
+| `name` | `String` | Display name (`Room de <host>` for client-created rooms) |
+| `host_id` | `String` | Host client id; empty while hostless |
+| `media_id` | `Option<String>` | Jellyfin item id (32 hex) |
+| `clients` | `Vec<String>` | Members in join order |
+| `ready_clients` | `HashSet<String>` | Members ready to receive a play |
+| `pending_play` | `Option<PendingPlay>` | A play waiting for everyone to be ready |
+| `state` | `PlaybackState` | Last known position and play state |
+| `last_state_ts` | `u64` | When `state` was last set |
+| `last_command_ts` | `u64` | Last `player_event` (state-update cooldown) |
+| `chat_history` | `VecDeque<ChatHistoryEntry>` | Last 50 chat messages |
+| `password_hash` | `Option<(String, String)>` | Salt and SHA-256 hash of the room password |
+| `client_status` | `HashMap<String, String>` | Last `client_status` per member |
+| `failed_joins` | `HashMap<String, (u32, u64)>` | Wrong passwords per user id: count, window start |
+| `started` | `bool` | The room's first play has gone out |
+| `admin_created` | `bool` | Empty group created from the admin panel |
+| `created_at` | `u64` | Creation time |
+| `chat` | `Option<ChatRoom>` | Set for rooms created from a chat integration (owner, participants, panel) |
+| `democratic` | `bool` | Democratic mode (see `may_control` below) |
+| `device_control` | `bool` | With `democratic`, server-side device bridges may control too (admin only) |
+| `last_command_by` | `String` | Client id that sent the last play/pause/seek; empty for server commands (chat bots) |
+| `last_change_ts` | `u64` | When the play state or position last changed other than by playing on (any `player_event`, a play-state change, a jump of more than 2 s from the expected position, `set_media`, a scheduled play). Device bridges use it for device-control detection. |
 
-### Struct `PendingPlay`
+`PlaybackState` is `{ position: f64, play_state: String }` (`"playing"` /
+`"paused"`); `PendingPlay` is `{ position: f64, created_at: u64 }`.
 
-Pending play action waiting for all clients to be ready.
+### Messages
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `position` | `f64` | Position to start at |
-| `created_at` | `u64` | Creation timestamp |
-
-### Struct `WsMessage`
-
-WebSocket message format.
-
-| Field | Type | JSON Key | Description |
-|-------|------|----------|-------------|
-| `msg_type` | `String` | `"type"` | Message type |
-| `room` | `Option<String>` | `"room"` | Room ID |
-| `client` | `Option<String>` | `"client"` | Sender client ID |
-| `payload` | `Option<Value>` | `"payload"` | Message data |
-| `ts` | `u64` | `"ts"` | Client timestamp |
-| `server_ts` | `Option<u64>` | `"server_ts"` | Server timestamp |
+`IncomingMessage` (client → server) has `type` parsed into
+`ClientMessageType` (unknown values map to `Unknown`), optional `room`,
+`client`, `payload`, `server_ts`, and a required `ts`. `WsMessage`
+(server → client) has the same fields with `type` as a string.
 
 ## Module: `ws/`
-
-### Description
-Handles WebSocket connections and main business logic. Split into sub-modules: `connection.rs` (lifecycle), `dispatch.rs` (message routing), `constants.rs` (protocol constants), `validation.rs` (message validation), `pending_play.rs` (play scheduling), and `handlers/` (per-message-type logic).
 
 ### Constants (`ws/constants.rs`)
 
 | Constant | Value | Description |
 |----------|-------|-------------|
-| `PLAY_SCHEDULE_MS` | 1000 | Delay before play execution (ms) |
-| `CONTROL_SCHEDULE_MS` | 300 | Delay before pause/seek execution (ms) |
-| `MAX_READY_WAIT_MS` | 2000 | Max wait time for ready clients (ms) |
-| `MIN_STATE_UPDATE_INTERVAL_MS` | 500 | Min interval between state updates (ms) |
-| `POSITION_JITTER_THRESHOLD` | 0.5 | Position noise threshold (seconds) |
-| `COMMAND_COOLDOWN_MS` | 2000 | Cooldown after player_event (ms) |
-| `MAX_MESSAGE_SIZE` | 65536 | Maximum message size (64 KB) |
+| `CLIENT_CHANNEL_BUFFER` | 100 | Outbound queue size per client |
+| `PLAY_SCHEDULE_MS` | 1000 | Delay before a play executes (ms) |
+| `CONTROL_SCHEDULE_MS` | 300 | Delay before pause/seek/buffering (ms) |
+| `MAX_READY_WAIT_MS` | 2000 | Max wait for everyone to be ready (ms) |
+| `START_READY_WAIT_MS` | 10000 | Max wait for everyone before the room's first play (ms) |
+| `START_COUNTDOWN_MS` | 3000 | Start countdown length (ms) |
+| `MIN_STATE_UPDATE_INTERVAL_MS` | 500 | Min interval between accepted state updates (ms) |
+| `POSITION_JITTER_THRESHOLD` | 0.5 | Position noise threshold (s) |
+| `COMMAND_COOLDOWN_MS` | 2000 | State-update cooldown after a `player_event` (ms) |
+| `RATE_LIMIT_MESSAGES` / `RATE_LIMIT_WINDOW_MS` | 30 / 1000 | Inbound frames per window per client |
+| `MAX_FAILED_JOINS` / `FAILED_JOIN_WINDOW_MS` | 5 / 60000 | Room password throttle per user per room |
+| `MAX_POSITION_SECONDS` | 86400 | Max valid position (s) |
+| `MAX_MESSAGE_SIZE` | 65536 | Max inbound frame size (64 KiB) |
+| `MAX_NAME_LENGTH` | 100 | Max display name length (characters) |
+| `MAX_CHAT_MESSAGE_LENGTH` | 500 | Max chat message length (bytes) |
+| `MAX_CHAT_HISTORY` | 50 | Chat messages kept per room |
 
-### Function `client_connection`
+The member limit, `MAX_CLIENTS_PER_ROOM` = 20, lives in `room/ops.rs`.
 
-Manages a client connection lifecycle.
+### `client_connection` (`ws/connection.rs`)
+
+1. Splits the socket; a task drains the client's bounded queue into it, one
+   unfragmented text frame per message.
+2. Takes `client_id` if it is UUID-shaped (36 hex digits/hyphens), else a
+   new UUIDv4, and decides with `decide_attach`: **reattach** (entry exists,
+   `resume` matches in constant time, not a device bridge), **register** (no
+   entry), or **refuse** (entry exists, wrong/missing secret: register under
+   a new id instead).
+3. On reattach: swaps in the new sender, new `conn_id`, fresh resume secret.
+   On register: a new `Client` (authenticated as `Anonymous` if JWT is
+   disabled).
+4. Sends `client_hello`, `room_list`, and on reattach to a room
+   `resend_room_state` (`room_state` + `participants`).
+5. Runs every inbound frame through `dispatch::client_msg`.
+6. When the socket ends: if this connection is still the entry's
+   `conn_id`, marks it `connected = false` and calls `schedule_disconnect`.
+
+### Dispatch (`ws/dispatch.rs`)
+
+`client_msg` first applies the rate limit (also refreshes `last_seen`; every
+frame type counts), then the size limit, ignores non-text frames, parses
+JSON, and routes by type:
+
+| Type | Handler |
+|------|---------|
+| `auth` | `handle_auth`: JWT validation, or identity (`user_name`/`user_id`) with JWT disabled; records `capabilities` |
+| `list_rooms` | `send_room_list` |
+| `create_room` | `handle_create_room` (auth required) |
+| `join_room` | `handle_join_room` (auth required, password throttle, then `ops::add_member`) |
+| `ready` | `handle_ready`: members only; releases a pending play once everyone is ready |
+| `leave_room` | `handle_leave_room` → `room::handle_leave` |
+| `player_event`, `state_update` | `handle_playback` |
+| `set_media` | `handle_set_media` |
+| `client_status` | `handle_client_status` |
+| `set_democratic` | `handle_set_democratic` |
+| `chat_message` | `handle_chat_message` |
+| `ping` | `handle_ping`: `pong` echoing `room`, `client`, `payload` |
+| `client_log` | Logged as `[CLIENT:<id prefix>:<category>] <message>` |
+| other | `error` "Unknown message type" |
+
+`dispatch_internal` runs messages from the server's own device bridges
+through the same handlers (only `ready`, `player_event`, `state_update`,
+`set_media`, `client_status`), without rate or size limits.
+`send_error` sends `error {message}` to one client.
+
+### Playback (`ws/handlers/playback.rs`)
+
+#### `may_control`
+Who may send a `player_event` / `state_update`. The host: anything. Anyone
+else only when the room is `democratic` and `started`, the message is a
+`player_event` `play`, `pause` or `seek`, the sender is in the room, and it
+is either a `democratic_capable` client without `bridge_device` (not a
+plugin bridge), or a `ClientKind::Bridge` while `device_control` is on.
+Everything else is dropped silently.
+
+#### `handle_playback`
+After `may_control`:
+
+1. `pause` clears any `pending_play`.
+2. `play` in a room that hasn't started: if everyone is ready,
+   `start_scheduled_play` at once; otherwise create the pending play,
+   send `start_pending` and wait up to `START_READY_WAIT_MS`.
+3. `play` with someone not ready: create (or update) `pending_play`, wait up
+   to `MAX_READY_WAIT_MS`.
+4. While a play is pending, any other message only updates its position.
+5. A `state_update` with `play_state: "playing"` marks the room started,
+   then passes `should_process_state_update` (cooldown, rate limit, jitter;
+   see [Protocol: `state_update`]({{ '/technical/protocol/' | relative_url }}#state_update)).
+   During the 2 s cooldown after a command from someone else
+   (`last_command_by` isn't the sender) every update is dropped, play-state
+   changes included.
+6. `apply_state_changes` updates `room.state`, `last_state_ts`,
+   `last_change_ts`; for a `player_event` also `last_command_ts`,
+   `last_command_by` and `target_server_ts` (+1000 ms for play, +300 ms
+   otherwise). `by`/`by_name` are added and the message goes to every other
+   member.
+
+#### `server_command`
+A play, pause or seek from outside the room (the integration API's
+`playback`, for chat bot users). Applied like a `player_event` with an
+empty sender (so the host's next updates hit the cooldown), and sent to
+every member, host included, with `by: ""` and the chat user's `by_name`.
+Seeks are clamped to 0..`MAX_POSITION_SECONDS`. The caller checks that the
+room is democratic and started.
+
+### Scheduled plays (`ws/pending_play.rs`)
 
 ```rust
-pub async fn client_connection(ws: WebSocket, clients: Clients, rooms: Rooms) {
-    // 1. Split WebSocket into sender/receiver
-    let (client_ws_sender, mut client_ws_rcv) = ws.split();
-
-    // 2. Create mpsc channel for async sending
-    let (client_sender, client_rcv) = mpsc::channel(CHANNEL_BUFFER_SIZE);
-
-    // 3. Task to forward messages to WebSocket
-    tokio::spawn(async move {
-        client_rcv.forward(client_ws_sender).await;
-    });
-
-    // 4. Generate UUID for client
-    let client_id = Uuid::new_v4().to_string();
-
-    // 5. Register client
-    clients.lock().unwrap().insert(client_id, Client { sender, room_id: None });
-
-    // 6. Send client_hello with ID
-    send_to_client(&client_id, &WsMessage {
-        msg_type: "client_hello",
-        payload: { "client_id": client_id }
-    });
-
-    // 7. Send room list
-    send_room_list(&client_id, &clients, &rooms);
-
-    // 8. Message receive loop
-    while let Some(msg) = client_ws_rcv.next().await {
-        client_msg(&client_id, msg, &clients, &rooms).await;
-    }
-
-    // 9. Cleanup on disconnect
-    handle_disconnect(&client_id, &clients, &rooms);
-}
-```
-
-### Function `all_ready`
-
-Checks if all clients in a room are ready.
-
-```rust
-fn all_ready(room: &Room) -> bool {
+pub(super) fn all_ready(room: &Room) -> bool {
     room.ready_clients.len() >= room.clients.len()
 }
 ```
 
-### Function `broadcast_scheduled_play`
+`start_scheduled_play(room, clients, position, now)` sends `player_event`
+`play` to **every** member (host included) with `target_server_ts = now +
+START_COUNTDOWN_MS` and `countdown: true` for a not-yet-started room with
+more than one member, else `now + PLAY_SCHEDULE_MS` and `countdown: false`.
+It marks the room started, clears `pending_play` and sets the room to
+playing at `position`. `schedule_pending_play` spawns a timer that calls it
+after the wait unless that pending play (matched by `created_at`) is gone.
 
-Broadcasts a scheduled play event to all participants.
+### Other handlers
 
-```rust
-fn broadcast_scheduled_play(room: &mut Room, clients: &Clients, position: f64, target_server_ts: u64) {
-    // 1. Update room state
-    room.state.position = position;
-    room.state.play_state = "playing";
+- **`create_room`** (`create.rs`): closes a room the sender already hosts
+  (`"Host started a new room"`; chat rooms are left instead), leaves any
+  room it is a guest in, builds the room (`Room de <name>`, `media_id` and
+  `start_pos` validated, `started` defaults to `true`, sender is host and
+  ready), sends `room_state` + `participants`, broadcasts `room_list`.
+- **`join_room`** (`join.rs`): `room_not_found` (plus a fresh `room_list`),
+  `device_already_bridged`, `Room is full`, then for non-members of a
+  password room the throttle (`lockout_remaining_ms` /
+  `record_failed_join`, keyed by `user_id`) and `verify_password`. Then
+  `ops::add_member` and a `room_list` broadcast.
+- **`set_media`** (`media.rs`): host only, silently ignored otherwise or if
+  the id is unchanged. Sets `media_id`, resets `state`, `pending_play`,
+  `last_command_ts` and `ready_clients` (to just the host), sends
+  `media_changed` to the other members and broadcasts `room_list`.
+- **`set_democratic`** (`misc.rs`): host only (others get `error` "Only the
+  host can change this setting"); calls `ops::set_democratic`, then
+  broadcasts `room_list` on a change.
+- **`client_status`** (`status.rs`): stores one of `synced`, `syncing`,
+  `buffering`, `loading`, `idle`, `playing`, `paused` for a member and
+  broadcasts `participants` on a change.
+- **`chat_message`** (`chat.rs`): validates (non-empty, at most 500 bytes),
+  drops non-members silently, appends to `chat_history` (max 50), sends to
+  every member including the sender.
 
-    // 2. Create message with target_server_ts
-    let msg = WsMessage {
-        msg_type: "player_event",
-        payload: { "action": "play", "position": position, "target_server_ts": target_server_ts },
-        server_ts: target_server_ts
-    };
-
-    // 3. Broadcast to all room clients
-    broadcast_to_room(room, &clients, &msg, None);
-}
-```
-
-### Message Processing
-
-The `client_msg` function handles incoming messages based on type:
-
-#### `list_rooms`
-Sends room list to the client.
-
-#### `create_room`
-Creates a new room with the sender as host.
-
-#### `join_room`
-Adds client to an existing room.
-
-#### `ready`
-Marks client as ready; triggers pending play if all ready.
-
-#### `leave_room`
-Removes client from room; closes room if host leaves.
-
-#### `player_event`
-Checks `may_control` (below), applies the action, records
-`last_command_ts`/`last_command_by`, adds `by`/`by_name` to the payload and
-broadcasts to the rest of the room.
-
-#### `state_update`
-Checks `may_control` (host only), applies filtering (cooldown, rate limit,
-jitter), broadcasts if accepted. During the 2 s cooldown after a command
-from someone else (`last_command_by` isn't the sender), every update is
-dropped, play-state changes included, so a host update sent before its
-player carried out the command can't undo it.
-
-#### `may_control` (`handlers/playback.rs`)
-Who may send a `player_event` / `state_update`. The host: anything. Anyone
-else only when the room is `democratic` and `started`, the message is a
-`player_event` `play`, `pause` or `seek`, the sender is in the room, and it
-is either a `democratic_capable` client that isn't a plugin bridge
-(`bridge_device` unset), or a device bridge (`ClientKind::Bridge`) while
-`device_control` is on. Everything else is dropped silently.
-
-#### `server_command` (`handlers/playback.rs`)
-A play, pause or seek from outside the room (the integration API's
-`playback`, for chat bot users). Applies it like a `player_event` with an
-empty sender (so the host's next updates hit the cooldown above), and sends
-it to every member, host included, with `by: ""` and the chat user's
-`by_name`. Seeks are clamped to 0 to `MAX_POSITION_SECONDS`. The caller
-checks that the room is democratic and started.
-
-#### `set_democratic` (`handlers/misc.rs`)
-Host only (others get `error` "Only the host can change this setting").
-Calls `ops::set_democratic`, then broadcasts `room_list` on a change.
-
-#### `set_media` (`handlers/media.rs`)
-Host-only. Changes `room.media_id`, resets `room.state`/`pending_play`/
-`ready_clients` (to just the host), and broadcasts `media_changed` to
-the rest of the room plus a refreshed `room_list`. A no-op if the id
-already matches or the sender isn't the host. See [protocol.md]({{
-'/technical/protocol/#set_media' | relative_url }}) for the full
-payload/effects and issue #71 for why this exists — before it,
-`media_id` was write-once at `create_room`.
-
-#### `ping`
-Responds with `pong` for latency measurement.
+See [Protocol]({{ '/technical/protocol/' | relative_url }}) for payloads and error strings.
 
 ## Module: `room/`
 
-### Description
-Manages room lifecycle and client disconnection. Split into `leave.rs` (client leave/disconnect), `close.rs` (room closure), `reconnect.rs` (grace-period disconnect + reattachment) and `ops.rs`.
-
 `ops.rs` holds the operations that both the websocket handlers and the
-admin API use, all on already-locked maps (rooms first, then clients):
+admin/integration APIs use, all on already-locked maps (rooms first, then
+clients):
 
 | Function | Used by | What it does |
 |----------|---------|--------------|
-| `add_member` | `join_room`, admin "add" | Moves a client into a room. If it is in another room it leaves that one first (normal leave notifications there). Makes it host if the room has none. Sends `room_state` (with `admin_moved` when an admin did it), `participants_update` and `participants`. No password check. |
-| `kick_member` | admin "remove" | A normal leave for the room, plus `room_closed` with a reason to the removed client. |
-| `set_host` | admin "make host" | Hands over the host role, drops a pending play, sends `host_changed` and `participants`. |
-| `close_room` | host starting a new room, admin "close" | Removes the room and tells its members why. |
-| `create_group` / `update_room` | admin | Creates an empty, hostless group (password optional); renames it or sets/clears its password. |
+| `add_member` | `join_room`, admin "add", device bridges (`jellyfin/bridge.rs`) | Moves a client into a room. If it is in another room it leaves that one first (normal leave there). Makes it host if the room has none. Removes it from `ready_clients`. Sends `room_state` (with `admin_moved` when an admin did it), `participants_update` to the others and `participants` to all. No password check. |
+| `kick_member` | admin / chat owner "remove" | A normal leave for the room, plus `room_closed {reason, removed: true}` to the removed client. |
+| `set_host` | admin / chat owner "make host" | Hands over the host role, drops a pending play, sends `host_changed` and `participants`. |
+| `close_room` | host starting a new room, admin / chat owner "close" | Removes the room and sends `room_closed {reason}` to its members. |
+| `create_group` / `update_room` | admin | Creates an empty, hostless group (password optional, `started: true`); renames it or sets/clears its password (clears the password throttle). |
+| `create_chat_room` | chat integration | Like a group, but owned by a chat user and kept open while empty. |
 | `set_democratic` | `set_democratic`, admin `PATCH /api/rooms/{id}`, integration `democratic` | Sets `democratic` and/or `device_control` (`None` keeps a value). On a change, sends `democratic_changed {enabled, device_control, by}` to every member and bumps the change signal. Returns whether anything changed. |
 
-A room may be **hostless** (`host_id` empty) only while it is an empty
-admin-created group. Host-only messages are ignored then (no client id
-is empty), and the first member to arrive becomes host. Groups nobody
-joins are removed after `ADMIN_EMPTY_GROUP_TTL_SECS`
-(`tasks::spawn_empty_group_reaper`).
+A room may be **hostless** (`host_id` empty) only while it is empty: an
+admin-created group nobody joined yet, or a chat-created room whose members
+all left. Host-only messages are ignored then (no client id is empty), and
+the first member to arrive becomes host. Admin groups nobody joins are
+removed after `ADMIN_EMPTY_GROUP_TTL_SECS` (default 600, checked every
+30 s by `tasks::spawn_empty_group_reaper`); empty chat rooms are closed by
+the integration's empty-room timeout.
 
-### Function `schedule_disconnect` (`room/reconnect.rs`)
+### `handle_leave` (`room/leave.rs`)
 
-Called when a client's WebSocket connection ends (close, error, or
-zombie reap) — **instead of** tearing the client down immediately, this
-captures the client's current (about-to-be-dead) sender and spawns a
-90-second timer (`RECONNECT_GRACE_SECS`):
+Takes a client out of its room (on the already-locked maps):
+
+1. Removes it from `clients`, `ready_clients` and `client_status`; if it was
+   host, drops `pending_play`.
+2. Room now empty: a chat room stays open, hostless (`empty_since` set);
+   any other room is removed.
+3. It was host: `promote_new_host` picks the earliest-joined remaining
+   `ClientKind::Web` member (a server-side device bridge only if nobody else
+   is left) and sends `host_changed` and `participants`. The room stays open.
+4. Otherwise: `client_left {participant_count}` and `participants`.
+
+`handle_disconnect` runs `handle_leave`, removes the client entry and
+broadcasts `room_list`.
+
+### `schedule_disconnect` (`room/reconnect.rs`)
+
+Called when a connection ends (or the zombie reaper flags it). If the entry
+still has that `conn_id`, it waits `RECONNECT_GRACE_SECS` (90 s), then calls
+`handle_disconnect` only if `should_evict` holds:
 
 ```rust
-const RECONNECT_GRACE_SECS: u64 = 90;
-
-pub async fn schedule_disconnect(client_id: String, clients: Clients, rooms: Rooms) {
-    let stale_sender = /* clone the client's current sender */;
-
-    tokio::spawn(async move {
-        tokio::time::sleep(Duration::from_secs(RECONNECT_GRACE_SECS)).await;
-
-        // If the client reconnected, connection.rs already swapped in a
-        // new sender for this client_id — comparing channel identity
-        // tells us whether that happened.
-        let never_reconnected = /* clients[client_id].sender.same_channel(&stale_sender) */;
-
-        if never_reconnected {
-            handle_disconnect(&client_id, &clients, &rooms).await;
-        }
-        // else: reconnected within the grace period, keep room state as-is
-    });
+pub(crate) fn should_evict(client: &Client, conn_id: u64, now: u64) -> bool {
+    client.conn_id == conn_id
+        && (!client.connected || now.saturating_sub(client.last_seen) > STALE_AFTER_MS)
 }
 ```
 
-If the client reconnects within the window using the same persistent
-`client_id` (see [Persistent Client ID](#persistent-client-id) below),
-`src/server/src/ws/connection.rs` reattaches it to its existing entry
-and calls `resend_room_state` (also in `reconnect.rs`) to bring it back
-up to date — no `room_closed` is ever sent, and other participants never
-see a disruption. Only if the grace period elapses with no reconnect
-does `handle_disconnect` actually run.
+(`STALE_AFTER_MS` = 60 000.) A client that reconnected in time has a new
+`conn_id`, so the old timer leaves it alone; it was already brought up to
+date by `resend_room_state`, and the other members saw no change.
 
-### Function `handle_disconnect`
+## Module: `tasks.rs`
 
-Called once a client is confirmed gone (grace period expired with no
-reconnect).
-
-```rust
-pub fn handle_disconnect(client_id: &str, clients: &Clients, rooms: &Rooms) {
-    // 1. Remove client from their room
-    handle_leave(client_id, &mut clients, &mut rooms);
-
-    // 2. Remove client from the list
-    clients.remove(client_id);
-
-    // 3. Update room list for all
-    broadcast_room_list(clients, rooms);
-}
-```
-
-### Function `handle_leave`
-
-Removes a client from a room.
-
-```rust
-pub fn handle_leave(client_id: &str, clients: &mut HashMap, rooms: &mut HashMap) {
-    if let Some(room_id) = client.room_id.take() {
-        if let Some(room) = rooms.get_mut(&room_id) {
-            // Remove client
-            room.clients.retain(|id| id != client_id);
-            room.ready_clients.remove(client_id);
-
-            // If host, cancel pending_play
-            if room.host_id == client_id {
-                room.pending_play = None;
-            }
-
-            // Close room if empty or host leaves
-            if room.clients.is_empty() || room.host_id == client_id {
-                for cid in &room.clients {
-                    send_to_client(cid, { "type": "room_closed" });
-                }
-                rooms.remove(&room_id);
-            } else {
-                broadcast_to_room(room, { "type": "client_left", "client": client_id });
-            }
-        }
-    }
-}
-```
+| Task | Behavior |
+|------|----------|
+| `spawn_zombie_cleanup` | Every 30 s, finds connected `Web` clients silent for more than 60 s and calls `schedule_disconnect` for them (removed after the 90 s grace period unless they speak again or reconnect). Device bridges are skipped. |
+| `spawn_empty_group_reaper` | Every 30 s, removes admin groups still empty `ADMIN_EMPTY_GROUP_TTL_SECS` after creation; broadcasts `room_list` |
+| `setup_shutdown_signal` / `wait_for_shutdown` | SIGTERM/SIGINT (Ctrl+C elsewhere) → every listener shuts down gracefully |
 
 ## Module: `jellyfin/`
 
-### Description
-Lets the admin panel put Jellyfin sessions that can't run the web client
-(TV apps, Fladder, ...) into rooms. Only started with the admin panel and
-`JELLYFIN_URL` + `JELLYFIN_API_KEY`.
+Lets the admin panel (and chat integrations) put Jellyfin sessions that
+can't run the web client (TV apps, Fladder, ...) into rooms. Only started
+with the admin panel and `JELLYFIN_URL` + `JELLYFIN_API_KEY` (or
+`JELLYFIN_API_KEY_FILE`).
 
 - A bridged device is an ordinary client entry with
   `kind: ClientKind::Bridge`, added through `ops::add_member`. Its
@@ -467,17 +417,19 @@ Lets the admin panel put Jellyfin sessions that can't run the web client
   device `PlayNow` / `Pause` / `Unpause` / `Seek`. Both go through
   `ws::dispatch_internal`, i.e. the same handlers (host checks, ready gate,
   scheduling) as websocket traffic, including `ready` and `client_status`.
-- One poller reads `GET /Sessions` every `BRIDGE_POLL_INTERVAL_MS`, only
-  while a bridge exists or the panel looked within 30 s, and publishes a
-  snapshot on a `watch` channel that wakes every bridge task.
+- One poller reads `GET /Sessions` every `BRIDGE_POLL_INTERVAL_MS` (default
+  1000, min 250), only while a bridge exists or the panel looked within
+  30 s, and publishes a snapshot on a `watch` channel that wakes every
+  bridge task.
 - Positions: Jellyfin only updates `PlayState.PositionTicks` when the
   device reports progress, so `logic::device_view` extrapolates from
   `LastPlaybackCheckIn` (capped at three report intervals, 30-120 s).
   Jellyfin timestamps are shifted by an estimated clock offset
-  (`ClockEstimator`: the smallest recent `fetched_at - check-in` over
-  changed check-ins). After sending a seek or pause, the receiver assumes
-  it took effect until a newer check-in arrives, for at most 10 s
-  (`FollowerMemory`), so stale reports don't cause repeat seeks.
+  (`ClockEstimator`: the smallest `fetched_at - check-in` over changed
+  check-ins in the last 10 min). After sending a seek or pause, the
+  receiver assumes it took effect until a newer check-in arrives, for at
+  most 10 s (`FollowerMemory`, `COMMAND_TRUST_MS`), so stale reports don't
+  cause repeat seeks.
 - Scheduled plays: the task notes each `player_event` play's
   `target_server_ts` and position. Until the room reports a newer state
   it measures the room position from that target, keeps receivers'
@@ -487,7 +439,8 @@ Lets the admin panel put Jellyfin sessions that can't run the web client
   reading room messages while Jellyfin answers.
 - Receivers: a device that was on the room's item and left it was
   stopped on purpose and is left alone until the room changes item;
-  `PlayNow` is tried at most 3 times per item.
+  `PlayNow` is tried at most 3 times per item. A receiver session must
+  support remote control.
 - A bridge that becomes host marks the room started (no start countdown).
 - Democratic rooms (`tick` reads `democratic && started`,
   `device_control`, `last_command_ts`/`last_command_by` and
@@ -496,10 +449,9 @@ Lets the admin panel put Jellyfin sessions that can't run the web client
     last command is newer than the last one seen and came from someone
     else, the host device is sent `Pause`/`Unpause` and, past the 2 s drift
     threshold, `Seek`, if it accepts remote control. Until its next
-    check-in (at most 10 s, `COMMAND_TRUST_MS`) the host reports nothing,
-    so its old state can't undo the command. Commands from before the
-    device became host are ignored; a scheduled play is acted on once it
-    starts.
+    check-in (at most 10 s) the host reports nothing, so its old state
+    can't undo the command. Commands from before the device became host
+    are ignored; a scheduled play is acted on once it starts.
   - **Device control** (`logic::detect_user_action`, receivers only, with
     `device_control` on): each progress report is judged once. It counts
     only if it is more than `USER_ACTION_GRACE_MS` (3 s) after the bridge's
@@ -516,10 +468,6 @@ Lets the admin panel put Jellyfin sessions that can't run the web client
   no requests and would drop out); the admin list filters by
   `LastActivityDate` (16 min) instead, always keeping bridged devices.
   Each session is parsed on its own, so one odd entry can't hide the rest.
-- Authenticates with `Authorization: MediaBrowser ... DeviceId=
-  "jellywatchparty-session-server", Token="<api key>"`. Jellyfin treats
-  API-key callers as privileged for remote control
-  (`SessionManager.AssertCanControl`). Its own session is hidden.
 - A device missing from `/Sessions` for 90 s leaves its room; a room
   closing stops its bridges. `add` reserves the device under one lock, so
   concurrent adds can't bridge it twice; `remove` detaches in its own
@@ -543,33 +491,45 @@ and hidden.
 
 ## Module: `messaging.rs`
 
-### Description
-Message sending utility functions.
+- `build_room_state_payload(room, participant_count)` - the `room_state`
+  payload (create, join, reattach)
+- `build_participants` / `build_participants_msg` / `broadcast_participants(room, clients)` - the `participants` list (also bumps `events`)
+- `send_room_list(client_id, clients, rooms)` - room list to one client
+- `broadcast_room_list(clients, rooms)` - room list to every client (also bumps `events`)
+- `send_to_client(client_id, clients, msg)` - one message to one client
+- `broadcast_to_room(room, clients, msg, exclude)` - serialize once, send to every member except `exclude`
 
-### Functions
-
-- `send_room_list(client_id, clients, rooms)` - Send room list to specific client
-- `broadcast_room_list(clients, rooms)` - Send room list to all clients
-- `send_to_client(client_id, clients, msg)` - Send message to specific client
-- `broadcast_to_room(room, clients, msg, exclude)` - Broadcast to room members
-- `send_error(client_id, clients, message)` - Send error message (also available in `ws/dispatch.rs`)
+All sends use `try_send`: if a client's queue (100 messages) is full or
+closed, the message is dropped for that client and a warning is logged.
 
 ## Module: `auth.rs`
 
-### Description
-Optional JWT authentication.
-
-### Validation
+`JwtConfig::from_env()` reads `JWT_SECRET` (empty or unset: auth disabled,
+with a startup warning; a secret shorter than 32 characters or with low
+estimated entropy also logs a warning), `JWT_AUDIENCE` (default
+`JellyWatchParty`) and `JWT_ISSUER` (default `Jellyfin`).
 
 ```rust
-pub fn validate_token(token: &str, secret: &str) -> Result<Claims, Error> {
+pub fn validate_token(&self, token: &str) -> Result<Claims, String> {
     let mut validation = Validation::new(Algorithm::HS256);
-    validation.validate_exp = true;  // Enforce expiration
-    validation.leeway = 60;  // 60 seconds tolerance
-
-    decode::<Claims>(token, &DecodingKey::from_secret(secret.as_ref()), &validation)
+    validation.set_audience(&[&self.audience]);
+    validation.set_issuer(&[&self.issuer]);
+    validation.validate_exp = true;
+    validation.leeway = 60; // seconds
+    decode::<Claims>(token, &DecodingKey::from_secret(self.secret.as_bytes()), &validation)
+    // ...
 }
 ```
+
+`Claims`: `sub` (Jellyfin user id), `name`, `aud`, `iss`, `exp`, `iat`.
+
+## Module: `password.rs`
+
+Room passwords are stored as `(salt, SHA-256(salt || password))` with a
+random UUID salt and checked with a constant-time compare (`ct_eq`, also
+used for resume secrets). A single fast hash is deliberate: rooms are
+in-memory only, and a slow KDF would run under the global locks on every
+join attempt; online guessing is bounded by the password throttle.
 
 ## Concurrency Model
 
@@ -577,91 +537,79 @@ pub fn validate_token(token: &str, secret: &str) -> Result<Claims, Error> {
 ┌──────────────────────────────────────────────────────────────────┐
 │                        Tokio Runtime                             │
 ├──────────────────────────────────────────────────────────────────┤
-│  ┌────────────────┐  ┌────────────────┐  ┌────────────────┐     │
-│  │  Task: Client1 │  │  Task: Client2 │  │  Task: Client3 │     │
-│  │  WebSocket     │  │  WebSocket     │  │  WebSocket     │     │
-│  └───────┬────────┘  └───────┬────────┘  └───────┬────────┘     │
+│  ┌────────────────┐  ┌────────────────┐  ┌────────────────┐      │
+│  │  Task: Client1 │  │  Task: Client2 │  │  Task: Bridge  │      │
+│  │  WebSocket     │  │  WebSocket     │  │  (Jellyfin)    │      │
+│  └───────┬────────┘  └───────┬────────┘  └───────┬────────┘      │
 │          │                   │                   │               │
 │          └───────────────────┼───────────────────┘               │
 │                              │                                   │
 │                              ▼                                   │
-│                   Arc<RwLock<Clients>>                           │
 │                   Arc<RwLock<Rooms>>                             │
+│                   Arc<RwLock<Clients>>                           │
 │                                                                  │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-### Design Considerations
-
-1. **RwLock**: Read-heavy workload; multiple readers, exclusive writer
-2. **No deadlock**: Handlers that need both maps always take `rooms`
-   before `clients` (including leave/disconnect and every admin action)
-3. **Message cloning**: one `OutboundMessage` is serialized once and cloned per
-   recipient for efficient broadcasting
-4. **Bounded channels**: Backpressure via bounded `mpsc::Sender` per client
+1. **RwLock** (tokio): many readers, one writer
+2. **Lock order**: handlers that need both maps always take `rooms` before
+   `clients` (including leave/disconnect and every admin action), so they
+   can't deadlock
+3. **Serialize once**: a broadcast is serialized to one `OutboundMessage`
+   and cloned per recipient
+4. **Bounded channels**: each client has a bounded queue; a slow client
+   loses messages instead of growing memory
 
 ## Reconnect and Room Lifecycle {#reconnect-and-room-lifecycle}
 
 ### Persistent Client ID
 
-Reconnection is matched by identity, not by luck: the client generates a
-UUID once per browser tab and stores it in `sessionStorage`
-(`getPersistentClientId()`/`withClientId()` in
-`src/clients/jellyfin-web/ws/connection.js`), then sends it as
+The web client generates a UUID once per browser tab, stores it in
+`sessionStorage` (`getPersistentClientId()` / `withClientId()` in
+`src/clients/jellyfin-web/ws/connection.js`) and sends it as
 `?client_id=<uuid>` on every WebSocket connection attempt (see
-[Protocol]({{ '/technical/protocol/' | relative_url }})). If the server sees a connection with a `client_id`
-that still has a live (or grace-period) entry, it swaps in the new
-transport and keeps the existing room/host state (`ws/connection.rs`)
-instead of registering a new client. A client-supplied ID is only trusted
-if it looks like a real UUIDv4 — anything else falls back to a freshly
-minted server-side ID.
+[Protocol]({{ '/technical/protocol/' | relative_url }}#client_id-and-resume-query-parameters)).
+If the server has an entry for that id (live, or in its grace period), the
+new connection takes it over and keeps its room and host role
+(`ws/connection.rs`) instead of registering a new client. A client-supplied
+id is only used if it is UUID-shaped (36 hex digits and hyphens); anything
+else gets a freshly minted id.
 
 Client ids are visible to everyone in a room, so reattaching also needs
 the entry's **resume secret**: a random 64-hex-char value created with the
 entry and sent only to its owner in `client_hello`. The client stores it
 next to its id and sends it as `&resume=`. Without the right secret
-(`decide_attach` in `ws/connection.rs`, constant-time compare), a
-connection asking for an id that is in use gets a fresh id instead of
-taking over the entry's room membership and host role. The secret is
-replaced on every reattach.
+(`decide_attach`, constant-time compare), a connection asking for an id
+that is in use gets a fresh id instead of taking over the entry's room
+membership and host role. The secret is replaced on every reattach.
 
 Each websocket connection also gets a `conn_id`. When a connection ends,
 it marks the entry disconnected and schedules the grace-period check only
 if it is still the entry's current connection; after the grace period the
 entry is removed only if that same connection is still attached and
-either ended or stayed silent for 60 s (`reconnect::should_evict`). This
-keeps a half-dead old socket, noticed long after the client reconnected,
-from evicting the live session.
+either ended or stayed silent for 60 s (`reconnect::should_evict`). A
+half-dead old socket, noticed long after the client reconnected, therefore
+can't evict the live session.
 
 ### Reconnection Behavior
 
 | Scenario | Behavior |
 |----------|----------|
-| Any client reconnects within 90s | Reattaches to the same client entry; if they were in a room, `room_state` is resent and their host/guest role is restored |
-| Host reconnects within 90s | Room stays open the whole time; participants see no disruption |
-| Host does not reconnect within 90s, others remain | Earliest-joined remaining participant is promoted to host; `host_changed` broadcast; room stays open |
-| Host does not reconnect within 90s, no one else remains | Room is torn down, `room_closed` broadcast (no other participants left to receive it) |
+| Client reconnects within 90 s with its id and resume secret | Reattaches to the same entry; if it was in a room, `room_state` and `participants` are resent and its host/guest role is kept |
+| Host reconnects within 90 s | Room stays as it was; other members see no change |
+| Host doesn't reconnect within 90 s, others remain | Earliest-joined remaining member becomes host; `host_changed` to the room; room stays open |
+| Last member doesn't reconnect within 90 s | Room is removed (chat-created rooms stay open, hostless) |
 | Server restart | All rooms lost (in-memory only); clients reconnect to an empty server |
 
-Auto-reconnect on the client retries with exponential backoff
-(`RECONNECT_BASE_MS` up to `RECONNECT_MAX_MS`), not a fixed interval, and
-shows "Reconnecting..." in the UI while `autoReconnect=true`.
+The web client reconnects with exponential backoff (`RECONNECT_BASE_MS`
+1 s, doubling up to `RECONNECT_MAX_MS` 30 s) while `autoReconnect` is on.
 
 ### Room Capacity and Scaling
 
-Design limits: 20 clients per room, all state in-memory (rooms are
-ephemeral by design), single server instance (sufficient for typical use —
-see [Configuration: Multi-Instance Setup]({{ '/configuration/' | relative_url }}#multi-instance-setup)
-for why not to run more than one). At capacity, a join attempt gets a
-`"Room is full"` error instead of being added.
-
-| Rooms | Clients/Room | Total Clients | Expected Behavior |
-|-------|--------------|---------------|-------------------|
-| 10 | 5 | 50 | Excellent |
-| 50 | 10 | 500 | Good |
-| 100 | 15 | 1500 | Acceptable (monitor memory) |
-| 200+ | 20 | 4000+ | May need resource limits |
-
-Bottlenecks in rough order of likelihood: memory (~2KB/client, ~5KB/room),
-network (proportional to message rate × clients), CPU (minimal — message
-relay, no heavy computation).
+Limits: 20 members per room (`Room is full` beyond that), all state
+in-memory (rooms are ephemeral by design), one server instance (see
+[Features: Known Limitations]({{ '/features/' | relative_url }}#known-limitations)
+for why not to run more than one). The server only relays small JSON
+messages; load grows with the number of members times their message rate
+(each web client sends a `state_update` per second while hosting, plus
+pings and status changes).

@@ -3,167 +3,171 @@
 </p>
 
 <p align="center">
-  <strong>Watch movies together, no matter the distance.</strong>
+  <strong>Synchronized watch parties for Jellyfin.</strong>
 </p>
 
 <p align="center">
   <a href="https://github.com/TIGamingTV/JellyWatchParty/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TIGamingTV/JellyWatchParty/ci.yml?branch=main&style=flat-square&label=CI" alt="CI"></a>
   <img src="https://img.shields.io/badge/Jellyfin-12.x-00a4dc?style=flat-square&logo=jellyfin" alt="Jellyfin 12.x">
-  <img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="MIT License">
 </p>
 
----
+JellyWatchParty lets people on the same Jellyfin server watch together: one
+person hosts a room, others join it, and everyone's player follows the
+host's play, pause and seeks. It is made of a **Jellyfin plugin**, which adds
+a Watch Party panel to Jellyfin's web interface, and a small **session
+server** (Rust) that manages rooms and keeps players in sync.
 
-JellyWatchParty enables synchronized media playback for [Jellyfin](https://jellyfin.org/). It consists of a **Jellyfin Plugin** (C#) that integrates the UI and a **Session Server** (Rust) that manages rooms and synchronization via WebSocket.
+## Features
 
-Forked from https://github.com/mhbxyz/OpenWatchParty
+- **Watch Party panel** in the Jellyfin header and player: create, join and leave rooms, optional room passwords
+- **Synchronized playback** with a 3-2-1 start countdown, drift correction, and guests following the host to new items
+- **Chat** in each room, participant list with sync status, **Watch Parties** row on the home screen
+- **Democratic mode** (optional): everyone in the room can play, pause and seek
+- **Admin panel** (optional): see every room, create password-protected groups, move people, change hosts
+- **Jellyfin devices**: put TV apps and other clients without the panel (Android TV, Fladder, ...) into rooms as host or receiver
+- **Discord and Telegram bots** (optional): linked users create rooms and add their own devices from a chat
+- Authentication with the user's Jellyfin identity (JWT)
 
-> **Releases target Jellyfin 12.x only.** Jellyfin 10.11.x support has been
-> dropped; if you're still on 10.11.x, install an older
-> [release](https://github.com/TIGamingTV/JellyWatchParty/releases) (any
-> version with a `targetAbi` of `10.11.11.0`) instead.
+Details: [Features](https://tigamingtv.github.io/JellyWatchParty/features/).
 
-## Quick Start with the File transformation Plugin
+## Requirements
 
-### Users
+- Jellyfin **12.x** (for 10.11.x, use an older [release](https://github.com/TIGamingTV/JellyWatchParty/releases) with `targetAbi` `10.11.11.0`)
+- Docker with Compose (images for `linux/amd64` and `linux/arm64`), or Windows for the prebuilt server binary
+- Port 3000 reachable from users' browsers, directly or through a reverse proxy
 
-**1. Start the session server** with Docker Compose. The chat bot
-(Discord and/or Telegram) is optional; it only starts with the `discord` or
-`telegram` profile.
+## Quick Start
+
+### 1. Start the session server
+
+Create `compose.yaml`:
 
 ```yaml
-# docker-compose.yml
 services:
-  jwp-session:
+  session-server:
     image: ghcr.io/tigamingtv/jwp-session-server:${JWP_TAG:-latest}
-    container_name: jwp-session
+    container_name: jwp-session-server
     restart: unless-stopped
     ports:
-      - "3000:3000"
-      # Admin panel; only starts when ADMIN_PASSWORD is set.
-      - "127.0.0.1:3001:3001"
-      # Never publish 3002 (integration API for the chat bots).
+      - "3000:3000"            # WebSocket server: must be reachable from browsers
+      - "127.0.0.1:3001:3001"  # Admin panel: this machine only
+      # Never publish 3002 (internal API for the chat bot).
     environment:
-      - ALLOWED_ORIGINS=http://your-jellyfin:8096
-      - JWT_SECRET=${JWT_SECRET:-}            # same value as in the plugin settings
-      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
-      # Jellyfin devices (TV apps, Fladder, ...) in the admin panel and the bot
-      - JELLYFIN_URL=${JELLYFIN_URL:-}        # as seen from this container
-      - JELLYFIN_API_KEY=${JELLYFIN_API_KEY:-}
-      # Chat bots: settings and link codes are kept in /data
-      - DATA_DIR=/data
-      - INTEGRATION_HOST=0.0.0.0
-      - DISCORD_INTEGRATION_TOKEN=${DISCORD_INTEGRATION_TOKEN:-}
-      - TELEGRAM_INTEGRATION_TOKEN=${TELEGRAM_INTEGRATION_TOKEN:-}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?set ALLOWED_ORIGINS in .env}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      # Admin panel: only starts when ADMIN_PASSWORD is set
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      # Jellyfin devices (TV apps, Fladder, ...); needed by the chat bots
+      JELLYFIN_URL: ${JELLYFIN_URL:-}
+      JELLYFIN_API_KEY: ${JELLYFIN_API_KEY:-}
+      # Chat bots: settings and link codes are stored in /data
+      DATA_DIR: /data
+      INTEGRATION_HOST: 0.0.0.0
+      DISCORD_INTEGRATION_TOKEN: ${DISCORD_INTEGRATION_TOKEN:-}
+      TELEGRAM_INTEGRATION_TOKEN: ${TELEGRAM_INTEGRATION_TOKEN:-}
+      RUST_LOG: ${RUST_LOG:-info}
     volumes:
       - jwp-data:/data
 
-  # Optional chat bots (Discord and/or Telegram, one container):
-  # docker compose --profile discord up -d   (or --profile telegram)
-  jwp-discord-bot:
+  # Optional Discord and/or Telegram bot (one container for both).
+  # Starts only with: docker compose --profile discord up -d
+  discord-bot:
     image: ghcr.io/tigamingtv/jwp-discord-bot:${JWP_TAG:-latest}
     container_name: jwp-discord-bot
     restart: unless-stopped
     profiles: [discord, telegram]
-    depends_on: [jwp-session]
+    depends_on: [session-server]
     environment:
-      - JWP_INTEGRATION_URL=http://jwp-session:3002
-      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
-      - DISCORD_INTEGRATION_TOKEN=${DISCORD_INTEGRATION_TOKEN:-}
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
-      - TELEGRAM_INTEGRATION_TOKEN=${TELEGRAM_INTEGRATION_TOKEN:-}
+      JWP_INTEGRATION_URL: http://session-server:3002
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
+      DISCORD_INTEGRATION_TOKEN: ${DISCORD_INTEGRATION_TOKEN:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_INTEGRATION_TOKEN: ${TELEGRAM_INTEGRATION_TOKEN:-}
+      RUST_LOG: ${RUST_LOG:-info}
 
 volumes:
   jwp-data:
 ```
 
+Create `.env` next to it:
+
 ```bash
-# .env next to docker-compose.yml
-JWT_SECRET=<openssl rand -base64 32>
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=<openssl rand -base64 18>
-JELLYFIN_URL=http://your-jellyfin:8096
-JELLYFIN_API_KEY=<Dashboard > API Keys>
-# Only for the Discord bot:
-DISCORD_INTEGRATION_TOKEN=<openssl rand -hex 32>
-DISCORD_BOT_TOKEN=<Discord Developer Portal > Bot > Reset Token>
-# Only for the Telegram bot (a different random value):
-TELEGRAM_INTEGRATION_TOKEN=<openssl rand -hex 32>
-TELEGRAM_BOT_TOKEN=<@BotFather > /newbot>
+# Required: the address users open Jellyfin at (scheme://host:port, no trailing slash)
+ALLOWED_ORIGINS=http://192.168.1.10:8096
+# Required: shared secret, also entered in the plugin settings (openssl rand -base64 32)
+JWT_SECRET=<32+ random characters>
+# Optional: admin panel at http://localhost:3001 (openssl rand -base64 18)
+ADMIN_PASSWORD=
+# Optional: Jellyfin devices. URL as seen from the container; key from Dashboard > API Keys
+JELLYFIN_URL=
+JELLYFIN_API_KEY=
 ```
 
 ```bash
-docker compose up -d                     # session server only
-docker compose --profile discord up -d   # session server + chat bot(s)
+docker compose up -d
+curl http://localhost:3000/health   # {"status":"ok","auth_enabled":true}
 ```
 
-The admin panel is at `http://localhost:3001/` on the server itself. The
-compose file publishes it on `127.0.0.1` only; to reach it from another
-machine, use an SSH tunnel, or publish it on `3001:3001` and put it behind
-HTTPS (see the [Admin Panel guide](https://tigamingtv.github.io/JellyWatchParty/admin-panel/)).
-To set up a bot, see the
-[Discord Bot](https://tigamingtv.github.io/JellyWatchParty/discord-bot/) or
-[Telegram Bot](https://tigamingtv.github.io/JellyWatchParty/telegram-bot/) guide.
+### 2. Install the plugin
 
-**2. Add the plugin repository** in Jellyfin: **Dashboard > Plugins > Repositories > Add**
+In Jellyfin, open **Dashboard > Plugins**, go to the plugin repositories and
+add this repository URL:
 
 ```
 https://tigamingtv.github.io/JellyWatchParty/jellyfin-plugin-repo/manifest.json
 ```
 
-Then go to the **Catalog** tab, install **JellyWatchParty**, and restart Jellyfin.
+Then install **JellyWatchParty** from the **Catalog** and restart Jellyfin.
 
-For Windows Server, manual installs, and enabling the client script: see the
-**[Installation Guide](https://tigamingtv.github.io/JellyWatchParty/installation/)**.
+### 3. Configure the plugin
 
-### Testing develop builds
+In **Dashboard > Plugins > JellyWatchParty**:
 
-Every merge into `develop` publishes test builds. They aren't meant for
-production.
+1. **JWT Secret**: the same value as `JWT_SECRET`.
+2. **Session Server URL**: leave empty if browsers can reach port 3000 on
+   the Jellyfin host; otherwise the URL they should use, e.g.
+   `ws://192.168.1.20:3000/ws` or `wss://jellyfin.example.com/ws` behind a
+   reverse proxy.
+3. **Save**, then reload Jellyfin in the browser (Ctrl+F5).
 
-| Component | Stable (release) | Develop |
-|-----------|------------------|---------|
-| Session server | `ghcr.io/tigamingtv/jwp-session-server:latest` | `ghcr.io/tigamingtv/jwp-session-server:dev` |
-| Chat bot (Discord, Telegram) | `ghcr.io/tigamingtv/jwp-discord-bot:latest` | `ghcr.io/tigamingtv/jwp-discord-bot:dev` |
-| Plugin repository | `.../jellyfin-plugin-repo/manifest.json` | `.../jellyfin-plugin-repo/manifest-dev.json` |
+For the most reliable script injection, also install the
+[File Transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation)
+plugin.
 
-With the compose file above, set `JWP_TAG=dev` in `.env` (or `JWP_TAG=1.2.3`
-to pin a release), then:
+### 4. Watch together
 
-```bash
-docker compose --profile discord pull
-docker compose --profile discord up -d
-```
+1. Start a video and click the **group icon** in the player controls (or
+   next to your avatar in the header). The panel should say **Online**.
+2. Click **Create Room**, optionally set a password, and confirm. You are the host.
+3. Others open the panel (or the **Watch Parties** row on the home screen)
+   and click **Join**. Their player loads your item and follows you.
 
-For the plugin, add
-`https://tigamingtv.github.io/JellyWatchParty/jellyfin-plugin-repo/manifest-dev.json`
-as a repository and install **JellyWatchParty (Develop)**. Keep the server,
-bot and plugin on the same channel.
-
-### Developers
-
-```bash
-git clone https://github.com/TIGamingTV/JellyWatchParty.git
-cd JellyWatchParty
-just up
-```
-
-See the [Development Setup Guide](https://tigamingtv.github.io/JellyWatchParty/development/setup/) for the full workflow.
+The full walkthrough, Windows and manual installs, HTTPS setup and every
+setting are in the documentation below.
 
 ## Documentation
 
-**[tigamingtv.github.io/JellyWatchParty](https://tigamingtv.github.io/JellyWatchParty/)** — start with
-[Installation](https://tigamingtv.github.io/JellyWatchParty/installation/),
-[Features](https://tigamingtv.github.io/JellyWatchParty/features/), and
-[Core Structure](https://tigamingtv.github.io/JellyWatchParty/core-structure/).
+**[tigamingtv.github.io/JellyWatchParty](https://tigamingtv.github.io/JellyWatchParty/)**
+
+| Guide | Contents |
+|-------|----------|
+| [Installation](https://tigamingtv.github.io/JellyWatchParty/installation/) | Full setup, Windows binary, manual plugin install, verification |
+| [Configuration](https://tigamingtv.github.io/JellyWatchParty/configuration/) | Every plugin setting and environment variable |
+| [User Guide](https://tigamingtv.github.io/JellyWatchParty/user-guide/) | Creating and joining rooms, chat, democratic mode, TV apps |
+| [Admin Panel](https://tigamingtv.github.io/JellyWatchParty/admin-panel/) | Rooms, groups, Jellyfin devices |
+| [Discord Bot](https://tigamingtv.github.io/JellyWatchParty/discord-bot/) / [Telegram Bot](https://tigamingtv.github.io/JellyWatchParty/telegram-bot/) | Chat bot setup and commands |
+| [Deployment](https://tigamingtv.github.io/JellyWatchParty/deployment/) | Reverse proxy and HTTPS, updates, backups |
+| [Troubleshooting & FAQ](https://tigamingtv.github.io/JellyWatchParty/troubleshooting/) | Common problems |
+| [Development](https://tigamingtv.github.io/JellyWatchParty/development/) | Building, testing and releasing |
 
 ## Contributing
 
-- [Report bugs](https://github.com/TIGamingTV/JellyWatchParty/issues)
-- [Submit pull requests](https://github.com/TIGamingTV/JellyWatchParty/pulls)
-- [Contributing Guide](https://tigamingtv.github.io/JellyWatchParty/development/contributing/)
+Bug reports and pull requests are welcome on
+[GitHub](https://github.com/TIGamingTV/JellyWatchParty/issues). See the
+[Contributing Guide](https://tigamingtv.github.io/JellyWatchParty/development/contributing/);
+`just up` starts a local development environment.
 
 ## License
 
-MIT
+MIT. Forked from [mhbxyz/OpenWatchParty](https://github.com/mhbxyz/OpenWatchParty).

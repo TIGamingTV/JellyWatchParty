@@ -5,316 +5,277 @@ nav_order: 2
 
 # Installation
 
-JellyWatchParty has two parts to install: the **session server** (a small
-standalone process that manages rooms) and the **Jellyfin plugin** (which
-serves the UI and talks to the session server). Both are required.
+JellyWatchParty has two required parts:
 
-## Prerequisites
+1. the **session server**, a small standalone program that keeps track of
+   rooms and keeps players in sync (Docker image or Windows binary);
+2. the **Jellyfin plugin**, which adds the Watch Party panel to Jellyfin's
+   web interface and signs users in to the session server.
 
-- **Jellyfin Server** 12.x (10.11.x is no longer supported — install an older
-  JellyWatchParty release if you're still on it)
-- **Port 3000** available for the session server (or any port you choose)
-- Admin access to Jellyfin
+The admin panel, Jellyfin devices (TV apps) and the Discord/Telegram bots
+are optional and run inside the session server or next to it.
 
-## Quick Start (Docker Compose)
+## Requirements
 
-The fastest way to get running. The [admin panel]({{ '/admin-panel/' | relative_url }})
-and the [Discord bot]({{ '/discord-bot/' | relative_url }}) are optional:
-the panel only starts when `ADMIN_PASSWORD` is set, and the bot only with the
-`discord` profile.
+- **Jellyfin 12.x** and an administrator account. Current releases don't
+  support 10.11.x; on 10.11, install an older release from the
+  [releases page](https://github.com/TIGamingTV/JellyWatchParty/releases)
+  whose plugin repository entry has `targetAbi` `10.11.11.0`.
+- **Docker with Docker Compose** (recommended), or a Windows machine for the
+  prebuilt Windows binary. Images are published for `linux/amd64` and
+  `linux/arm64`.
+- **Port 3000** reachable from your users' browsers (directly, or through a
+  reverse proxy; see [Deployment]({{ '/deployment/' | relative_url }})).
+
+## 1. Run the Session Server
+
+### Docker Compose (recommended)
+
+Create a folder (for example `jellywatchparty/`) with these two files.
+
+`compose.yaml`:
 
 ```yaml
-# docker-compose.yml
 services:
-  jwp-session:
+  session-server:
     image: ghcr.io/tigamingtv/jwp-session-server:${JWP_TAG:-latest}
-    container_name: jwp-session
+    container_name: jwp-session-server
     restart: unless-stopped
     ports:
-      - "3000:3000"
-      # Admin panel; only starts when ADMIN_PASSWORD is set.
-      - "127.0.0.1:3001:3001"
-      # Never publish 3002 (integration API for the chat bots).
+      - "3000:3000"            # WebSocket server: must be reachable from browsers
+      - "127.0.0.1:3001:3001"  # Admin panel: this machine only
+      # Never publish 3002 (internal API for the chat bot).
     environment:
-      - ALLOWED_ORIGINS=http://your-jellyfin:8096
-      - JWT_SECRET=${JWT_SECRET:-}            # same value as in the plugin settings
-      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
-      # Jellyfin devices (TV apps, Fladder, ...) in the admin panel and the bot
-      - JELLYFIN_URL=${JELLYFIN_URL:-}        # as seen from this container
-      - JELLYFIN_API_KEY=${JELLYFIN_API_KEY:-}
-      # Chat bots: settings and link codes are kept in /data
-      - DATA_DIR=/data
-      - INTEGRATION_HOST=0.0.0.0
-      - DISCORD_INTEGRATION_TOKEN=${DISCORD_INTEGRATION_TOKEN:-}
-      - TELEGRAM_INTEGRATION_TOKEN=${TELEGRAM_INTEGRATION_TOKEN:-}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?set ALLOWED_ORIGINS in .env}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      # Admin panel: only starts when ADMIN_PASSWORD is set
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      # Jellyfin devices (TV apps, Fladder, ...); needed by the chat bots
+      JELLYFIN_URL: ${JELLYFIN_URL:-}
+      JELLYFIN_API_KEY: ${JELLYFIN_API_KEY:-}
+      # Chat bots: settings and link codes are stored in /data
+      DATA_DIR: /data
+      INTEGRATION_HOST: 0.0.0.0
+      DISCORD_INTEGRATION_TOKEN: ${DISCORD_INTEGRATION_TOKEN:-}
+      TELEGRAM_INTEGRATION_TOKEN: ${TELEGRAM_INTEGRATION_TOKEN:-}
+      RUST_LOG: ${RUST_LOG:-info}
     volumes:
       - jwp-data:/data
 
-  # Optional chat bots (Discord and/or Telegram, one container):
-  # docker compose --profile discord up -d   (or --profile telegram)
-  jwp-discord-bot:
+  # Optional Discord and/or Telegram bot (one container for both).
+  # Starts only with: docker compose --profile discord up -d
+  discord-bot:
     image: ghcr.io/tigamingtv/jwp-discord-bot:${JWP_TAG:-latest}
     container_name: jwp-discord-bot
     restart: unless-stopped
     profiles: [discord, telegram]
-    depends_on: [jwp-session]
+    depends_on: [session-server]
     environment:
-      - JWP_INTEGRATION_URL=http://jwp-session:3002
-      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
-      - DISCORD_INTEGRATION_TOKEN=${DISCORD_INTEGRATION_TOKEN:-}
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
-      - TELEGRAM_INTEGRATION_TOKEN=${TELEGRAM_INTEGRATION_TOKEN:-}
+      JWP_INTEGRATION_URL: http://session-server:3002
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
+      DISCORD_INTEGRATION_TOKEN: ${DISCORD_INTEGRATION_TOKEN:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_INTEGRATION_TOKEN: ${TELEGRAM_INTEGRATION_TOKEN:-}
+      RUST_LOG: ${RUST_LOG:-info}
 
 volumes:
   jwp-data:
 ```
 
+`.env` (keep it private; replace every `<...>`):
+
 ```bash
-# .env next to docker-compose.yml
-JWT_SECRET=<openssl rand -base64 32>
+# Required
+# The address your users open Jellyfin at, exactly as in the browser's
+# address bar (scheme, host, port; no trailing slash). Comma-separate several.
+ALLOWED_ORIGINS=http://192.168.1.10:8096
+# Shared secret; enter the same value in the plugin settings (step 3).
+# Generate with: openssl rand -base64 32
+JWT_SECRET=<32+ random characters>
+
+# Optional: admin panel (http://localhost:3001 on this machine)
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=<openssl rand -base64 18>
-JELLYFIN_URL=http://your-jellyfin:8096
-JELLYFIN_API_KEY=<Dashboard > API Keys>
-# Only for the Discord bot:
-DISCORD_INTEGRATION_TOKEN=<openssl rand -hex 32>
-DISCORD_BOT_TOKEN=<Discord Developer Portal > Bot > Reset Token>
-# Only for the Telegram bot (a different random value):
-TELEGRAM_INTEGRATION_TOKEN=<openssl rand -hex 32>
-TELEGRAM_BOT_TOKEN=<@BotFather > /newbot>
-# Image channel for both containers: latest (default), dev, beta or 1.2.3
+
+# Optional: Jellyfin devices. URL as seen from the container (not localhost);
+# API key from Jellyfin Dashboard > API Keys.
+JELLYFIN_URL=http://192.168.1.10:8096
+JELLYFIN_API_KEY=<Jellyfin API key>
+
+# Optional: chat bots. Each integration token: openssl rand -hex 32 (different values)
+DISCORD_INTEGRATION_TOKEN=
+DISCORD_BOT_TOKEN=
+TELEGRAM_INTEGRATION_TOKEN=
+TELEGRAM_BOT_TOKEN=
+
+# Image tag: latest (releases, default), beta (main) or dev (develop)
 # JWP_TAG=latest
 ```
 
+Write values without quotes. If a value contains `$`, write it as `$$`.
+
+Start it from that folder:
+
 ```bash
-docker compose up -d                     # session server only
-docker compose --profile discord up -d   # session server + chat bot(s)
+docker compose up -d                       # session server
+docker compose logs -f session-server      # watch the startup log (Ctrl+C to stop)
+curl http://localhost:3000/health          # {"status":"ok","auth_enabled":true}
 ```
 
-Then install the plugin via the [repository method](#plugin-install) below,
-and enable the [client script](#enable-the-client-script).
+The startup log lists what is enabled (`JWT: ENABLED`, the allowed origins,
+the admin panel, Jellyfin devices, chat integrations) and why something is
+off. Every setting is described in the
+[Configuration Reference]({{ '/configuration/' | relative_url }}).
 
-## Session Server Install Options
+Rooms are kept in memory; the `jwp-data` volume only holds chat bot
+settings and link codes.
 
-Pick whichever fits your environment. All options end up running the same
-server; only how you get it running differs.
-
-### Docker: Pre-built Image (Recommended)
+### Docker without Compose
 
 ```bash
-# Latest stable release
-docker run -d \
-  --name jwp-session \
+docker run -d --name jwp-session-server --restart unless-stopped \
   -p 3000:3000 \
-  -e ALLOWED_ORIGINS="http://localhost:8096" \
+  -e ALLOWED_ORIGINS="http://192.168.1.10:8096" \
+  -e JWT_SECRET="<32+ random characters>" \
   ghcr.io/tigamingtv/jwp-session-server:latest
-
-# Or a specific version (release v0.1.0)
-docker run -d --name jwp-session -p 3000:3000 \
-  ghcr.io/tigamingtv/jwp-session-server:0.1.0
-
-# Or the beta channel (latest build from main)
-docker run -d --name jwp-session -p 3000:3000 \
-  ghcr.io/tigamingtv/jwp-session-server:beta
-
-# Or the develop channel (latest build from develop, for testing)
-docker run -d --name jwp-session -p 3000:3000 \
-  ghcr.io/tigamingtv/jwp-session-server:dev
 ```
 
-The Discord bot is published the same way as
-`ghcr.io/tigamingtv/jwp-discord-bot`, with the same tags. Run it on the same
-tag as the server.
+### Windows (prebuilt binary)
 
-### Docker: Build from Source
-
-```bash
-docker build -f infra/docker/server.Dockerfile --build-arg BUILD_MODE=release \
-  -t jwp-session-server ./src/server
-
-docker run -d \
-  --name jwp-session \
-  -p 3000:3000 \
-  -e ALLOWED_ORIGINS="http://localhost:8096" \
-  jwp-session-server
-```
-
-### Native Linux (Build from Source)
-
-Requires Rust 1.83+:
-
-```bash
-cd src/server
-cargo build --release
-./target/release/session-server
-```
-
-### Windows Server (Prebuilt Binary, No Install Required)
-
-No Docker, no Rust, nothing to install — download a ready-to-run binary:
-
-1. Go to [Releases](https://github.com/TIGamingTV/JellyWatchParty/releases)
-   and download `jwp-session-server-windows-vX.Y.Z.zip` from the latest release
-2. Extract it anywhere on the Windows Server host
-3. (Optional) Set configuration via environment variables before launching,
-   e.g. in PowerShell:
+1. Download `jwp-session-server-windows-<version>.zip` from the latest
+   [release](https://github.com/TIGamingTV/JellyWatchParty/releases/latest)
+   and extract it.
+2. Set the configuration as environment variables, e.g. in PowerShell in the
+   same window you start it from:
    ```powershell
-   $env:PORT = "3000"
-   $env:ALLOWED_ORIGINS = "http://your-jellyfin:8096"
-   $env:JWT_SECRET = "<32+ char secret, must match the Jellyfin plugin config>"
+   $env:ALLOWED_ORIGINS = "http://192.168.1.10:8096"
+   $env:JWT_SECRET = "<32+ random characters>"
+   $env:ADMIN_PASSWORD = "<long random password>"   # optional
+   .\session-server.exe
    ```
-4. Run `session-server.exe`
-5. Allow it through Windows Firewall when prompted so Jellyfin and clients
-   can reach it on the configured port (default `3000`)
+3. Allow it through Windows Firewall when asked (port 3000).
 
-To keep it running in the background as a Windows service, wrap it with
-[NSSM](https://nssm.cc/) or Task Scheduler pointed at `session-server.exe`.
+To keep it running in the background, run it as a service with a wrapper
+such as [NSSM](https://nssm.cc/). The chat bot has no Windows build; run it
+with Docker if you need it.
 
-## Enable the Client Script
+### Build from source
 
-The session server alone doesn't do anything — Jellyfin's web UI needs a
-small script injected so the Watch Party button and panel appear.
+See [Development Setup]({{ '/development/setup/' | relative_url }}). In short:
+`cargo build --release` in `src/server`, then run
+`target/release/session-server` with the environment variables above.
 
-### Option A: Automatic Injection (Recommended)
+## 2. Install the Jellyfin Plugin
 
-Install [jellyfin-plugin-file-transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation)
-and restart Jellyfin. JellyWatchParty automatically registers a transformation
-that injects the client script into `index.html` — no configuration needed.
+### From the plugin repository (recommended)
 
-### Option B: Manual (Custom HTML)
+1. In Jellyfin, open **Dashboard > Plugins** and go to the plugin
+   repositories (the **Repositories** tab or **Manage repositories**,
+   depending on your Jellyfin version).
+2. Add a repository with any name (e.g. `JellyWatchParty`) and this URL:
 
-1. Log in to Jellyfin as an administrator
-2. Go to **Dashboard** > **General**
-3. Scroll to **Custom HTML** (Branding section)
-4. Add this line to the "Custom HTML body" field:
-   ```html
-   <script src="../JellyWatchParty/ClientScript"></script>
-   ```
-5. Click **Save**
-6. Hard refresh your browser (Ctrl+F5)
-
-## Plugin Install
-
-### Option A: Via Jellyfin Plugin Repository (Recommended) {#plugin-install}
-
-1. Go to **Dashboard** > **Plugins** > **Repositories**
-2. Click **Add** and enter:
    ```
    https://tigamingtv.github.io/JellyWatchParty/jellyfin-plugin-repo/manifest.json
    ```
-3. Go to the **Catalog** tab
-4. Find **JellyWatchParty** and click **Install**
-5. Restart Jellyfin
-6. Enable the [client script](#enable-the-client-script) if you haven't already
 
-This method provides automatic update notifications when new versions are
-released. Testers who want the develop/beta channel instead can use
-`manifest-dev.json` in the same way — see [Release: Develop Plugin
-Channel]({{ '/development/release/' | relative_url }}#develop-plugin-channel).
+3. Open the **Catalog**, find **JellyWatchParty** and click **Install**.
+4. Restart Jellyfin (**Dashboard > Restart**, or restart its container or
+   service).
+5. Check **Dashboard > Plugins**: JellyWatchParty is listed as active.
 
-### Option B: Manual Download
+Jellyfin then offers new versions as updates.
 
-1. Download the latest release zip (`JellyWatchParty-vX.Y.Z.zip`) from the
-   [releases page](https://github.com/TIGamingTV/JellyWatchParty/releases)
-2. Extract it to your Jellyfin plugins directory:
-   ```bash
-   # Linux (Docker)
-   unzip JellyWatchParty-v0.1.0.zip -d /tmp/jwp
-   docker cp /tmp/jwp/. jellyfin:/config/plugins/JellyWatchParty/
+### Manual install
 
-   # Linux (native)
-   sudo unzip JellyWatchParty-v0.1.0.zip -d /var/lib/jellyfin/plugins/JellyWatchParty/
+1. Download `JellyWatchParty-v<version>.zip` from the
+   [releases page](https://github.com/TIGamingTV/JellyWatchParty/releases).
+2. Extract its files into a new `JellyWatchParty` folder inside Jellyfin's
+   `plugins` directory, for example:
+   - Docker: `/config/plugins/JellyWatchParty/` inside the Jellyfin container
+   - Linux package: `/var/lib/jellyfin/plugins/JellyWatchParty/`
+   - Windows: `%ProgramData%\Jellyfin\Server\plugins\JellyWatchParty\`
+3. Restart Jellyfin.
 
-   # Windows
-   # Extract to: C:\ProgramData\Jellyfin\Server\plugins\JellyWatchParty\
-   ```
-3. Restart Jellyfin (`docker restart jellyfin` or `sudo systemctl restart jellyfin`)
-4. Enable the [client script](#enable-the-client-script)
+Manual installs don't receive update notifications.
 
-### Configure the Plugin (Optional)
+## 3. Configure the Plugin
 
-1. Go to **Dashboard** > **Plugins** > **JellyWatchParty**
-2. Set a JWT Secret (min 32 characters) for authentication
-3. Click **Save**
+1. Open **Dashboard > Plugins > JellyWatchParty**.
+2. **JWT Secret**: paste the same value as `JWT_SECRET`.
+3. **Session Server URL**: leave it empty if Jellyfin and the session server
+   run on the same host and users can reach port 3000 on it; the browser
+   then connects to `ws://<Jellyfin host>:3000/ws`. Otherwise enter the URL
+   browsers should use, e.g. `ws://192.168.1.20:3000/ws`, or
+   `wss://jellyfin.example.com/ws` behind an HTTPS reverse proxy.
+4. Click **Save**.
 
-See [Configuration]({{ '/configuration/' | relative_url }}) for the full settings reference.
+The other settings (democratic mode, hiding SyncPlay, panel bridging) are
+optional; see [Plugin Settings]({{ '/configuration/' | relative_url }}#plugin-settings).
 
-## Verification
+## 4. Check That the Watch Party UI Loads
 
-**Check the session server:**
+The plugin adds its script to Jellyfin's web page automatically:
 
-```bash
-curl http://localhost:3000/health
-# Expected: 200 OK with "OK"
-```
+- **Recommended:** install the
+  [File Transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation)
+  plugin (follow its README to add its repository), then restart Jellyfin.
+  JellyWatchParty registers with it at startup, which works alongside other
+  plugins that modify the web page.
+- **Without it**, JellyWatchParty patches `index.html` itself: it writes to
+  the file when Jellyfin's `JELLYFIN_WEB_DIR` environment variable is set and
+  the file is writable, and otherwise serves a patched copy of the page.
 
-**Check the plugin:**
+Reload Jellyfin in your browser (Ctrl+F5). You should see a **group icon**
+in the header next to your user avatar and in the video player's controls.
+If it's missing, see
+[Troubleshooting]({{ '/troubleshooting/' | relative_url }}#watch-party-button-not-visible).
 
-1. Go to **Dashboard** > **Plugins** — "JellyWatchParty" should appear in the list
-2. Check the logs for a startup message:
-   ```
-   [JellyWatchParty] JWT authentication is enabled.
-   ```
-   or
-   ```
-   [JellyWatchParty] JwtSecret is not configured. Authentication is DISABLED.
-   ```
+## 5. Verify
 
-**Test the UI:**
+1. Click the group icon. The panel shows **JellyWatchParty** with a green
+   **Online** indicator.
+2. Start a video, click **Create Room**, leave the password empty and
+   confirm. You are now the host.
+3. On a second browser or account, open the panel and **Join** the room.
+   The guest loads the same item and follows your play, pause and seeks.
 
-1. Open any video in Jellyfin
-2. Look for the Watch Party button (group icon) in the top header
-3. Click it to open the panel
+**Offline** means the browser can't reach the session server: check the
+Session Server URL, `ALLOWED_ORIGINS` and your firewall
+([Troubleshooting]({{ '/troubleshooting/' | relative_url }}#cannot-connect-to-session-server)).
 
-## Environment Variables
+## Ports
 
-This is the core list. The admin panel and Jellyfin device variables are in
-the [Admin Panel]({{ '/admin-panel/' | relative_url }}#environment-variables) reference, the Discord bot
-variables are in the [Discord Bot]({{ '/discord-bot/' | relative_url }}#2-configure-the-containers) guide, and
-[`.env.example`](https://github.com/TIGamingTV/JellyWatchParty/blob/main/.env.example) lists all of them.
+| Port | Used by | Expose |
+|------|---------|--------|
+| 3000 | WebSocket server | To users' browsers (directly or through a reverse proxy) |
+| 3001 | Admin panel (when `ADMIN_PASSWORD` is set) | Only to admins: localhost, LAN, or HTTPS proxy |
+| 3002 | Chat bot API (when an integration token is set) | Never; stays inside the Docker network |
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PORT` | `3000` | Server port |
-| `HOST` | `0.0.0.0` | Bind address |
-| `ALLOWED_ORIGINS` | `*` | CORS allowed origins (comma-separated) |
-| `JWT_SECRET` | (none) | JWT secret for authentication |
-| `RUST_LOG` | `info` | Logging level |
+## Optional Components
 
-```bash
-docker run -d \
-  -p 3000:3000 \
-  -e ALLOWED_ORIGINS="https://jellyfin.example.com" \
-  -e JWT_SECRET="your-32-character-secret-key-here" \
-  -e RUST_LOG="debug" \
-  ghcr.io/tigamingtv/jwp-session-server:latest
-```
+- [Admin Panel]({{ '/admin-panel/' | relative_url }}): manage rooms, create
+  password-protected groups, put TV apps into rooms.
+- [Discord Bot]({{ '/discord-bot/' | relative_url }}) and
+  [Telegram Bot]({{ '/telegram-bot/' | relative_url }}): let linked users
+  run watch parties for their own devices from a chat.
 
-## Firewall Configuration
+## Test Builds
 
-| Port | Service | Direction |
-|------|---------|-----------|
-| 8096 | Jellyfin HTTP | Inbound |
-| 8920 | Jellyfin HTTPS | Inbound (if using SSL) |
-| 3000 | Session Server | Inbound |
-| 3001 | Admin panel | Only if you use it; keep it private (see [Admin Panel]({{ '/admin-panel/' | relative_url }})) |
-| 3002 | Discord integration API | Never publish. Stays inside the Docker network |
+Builds from the `develop` branch are published for testing, not for
+production. Keep the server, bot and plugin on the same channel:
 
-```bash
-# UFW (Ubuntu)
-sudo ufw allow 8096/tcp
-sudo ufw allow 3000/tcp
+| Component | Stable | Develop |
+|-----------|--------|---------|
+| Docker images | `JWP_TAG=latest` | `JWP_TAG=dev` |
+| Plugin repository | `.../jellyfin-plugin-repo/manifest.json` | `https://tigamingtv.github.io/JellyWatchParty/jellyfin-plugin-repo/manifest-dev.json` (**JellyWatchParty (Develop)**) |
 
-# firewalld (Fedora/CentOS)
-sudo firewall-cmd --permanent --add-port=8096/tcp
-sudo firewall-cmd --permanent --add-port=3000/tcp
-sudo firewall-cmd --reload
-```
+Develop plugin versions (`0.0.x`) are lower than releases, so uninstall the
+stable plugin before installing the develop one. See
+[Release: Develop Plugin Channel]({{ '/development/release/' | relative_url }}#develop-plugin-channel).
 
 ## Next Steps
 
-- [Configuration]({{ '/configuration/' | relative_url }}) - Configure JWT, CORS, and sync tuning
-- [Security]({{ '/security/' | relative_url }}) - Set up authentication and hardening
-- [Deployment]({{ '/deployment/' | relative_url }}) - Production deployment behind a reverse proxy
-- [Troubleshooting & FAQ]({{ '/troubleshooting/' | relative_url }}) - If something isn't working
+- [User Guide]({{ '/user-guide/' | relative_url }}): create and join watch parties
+- [Deployment]({{ '/deployment/' | relative_url }}): HTTPS, reverse proxies, updates and backups
+- [Troubleshooting & FAQ]({{ '/troubleshooting/' | relative_url }})

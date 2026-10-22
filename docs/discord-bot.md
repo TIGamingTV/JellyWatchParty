@@ -92,71 +92,39 @@ You need the [admin panel]({{ '/admin-panel/' | relative_url }}) and
 
 ### 2. Configure the containers
 
-In `.env`:
+The [installation compose file]({{ '/installation/' | relative_url }}#docker-compose-recommended)
+already contains the bot (service `discord-bot`, image
+`ghcr.io/tigamingtv/jwp-discord-bot`) and passes the variables on. Set them
+in `.env`:
 
 ```bash
-# Shared secret between the session server and the bot (32+ characters)
-DISCORD_INTEGRATION_TOKEN=$(openssl rand -hex 32)
-DISCORD_BOT_TOKEN=...
+# Shared secret between the session server and the bot (32+ characters).
+# Generate it once with `openssl rand -hex 32` and paste the result.
+DISCORD_INTEGRATION_TOKEN=<64 hex characters>
+DISCORD_BOT_TOKEN=<token from the Developer Portal>
 ```
 
-The bot is published as `ghcr.io/tigamingtv/jwp-discord-bot`, with the same
-tags as the session server (`latest`, `X.Y.Z`, `X.Y`, `beta`, `dev`). Keep
-both on the same tag. If you use your own compose file, add the bot next to
-the session server (the [Installation]({{ '/installation/' | relative_url }}#quick-start-docker-compose)
-quick start already has it):
-
-```yaml
-services:
-  jwp-session:
-    image: ghcr.io/tigamingtv/jwp-session-server:latest
-    environment:
-      # ... your existing settings, plus:
-      - DATA_DIR=/data
-      - INTEGRATION_HOST=0.0.0.0          # inside the Docker network only
-      - DISCORD_INTEGRATION_TOKEN=${DISCORD_INTEGRATION_TOKEN}
-    volumes:
-      - jwp-data:/data
-    # Do not add 3002 to ports.
-
-  jwp-discord-bot:
-    image: ghcr.io/tigamingtv/jwp-discord-bot:latest
-    restart: unless-stopped
-    profiles: [discord, telegram]
-    depends_on: [jwp-session]
-    environment:
-      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
-      - DISCORD_INTEGRATION_TOKEN=${DISCORD_INTEGRATION_TOKEN}
-      # Service name of the session server above, port INTEGRATION_PORT
-      - JWP_INTEGRATION_URL=http://jwp-session:3002
-
-volumes:
-  jwp-data:
-```
-
-The same container also runs the [Telegram bot]({{ '/telegram-bot/' | relative_url }})
-when its tokens are set. Then start the bot, which is in the `discord`
-profile (also in the repository's compose files):
+Then start the session server and the bot:
 
 ```bash
 docker compose --profile discord up -d
+docker compose logs -f discord-bot
 ```
 
-For the develop builds, use the `dev` tag on both images.
+Use the same image tag (`JWP_TAG`) for the session server and the bot.
 
-The session server keeps settings and link codes in `DATA_DIR`, which is the
-`jwp-data` volume (`/data`) in the compose files. Back that volume up like any
-other config. It holds `integrations.json` and `secret.key`, both readable by
-the server user only.
+If you use your own compose file, the session server needs `DATA_DIR`
+(with a volume), `INTEGRATION_HOST=0.0.0.0` and `DISCORD_INTEGRATION_TOKEN`;
+the bot needs `DISCORD_BOT_TOKEN`, the same `DISCORD_INTEGRATION_TOKEN`, and
+`JWP_INTEGRATION_URL` pointing at the session server's service name and port
+3002 (default `http://session-server:3002`). **Never publish port 3002.**
+All variables: [Configuration: Chat integrations]({{ '/configuration/' | relative_url }}#chat-integrations-discord-telegram)
+and [Chat bot variables]({{ '/configuration/' | relative_url }}#chat-bot-environment-variables).
 
-| Variable | Where | Meaning |
-|---|---|---|
-| `DATA_DIR` | session server | Directory for `integrations.json` and `secret.key`. Without it, chat integrations are off. |
-| `DISCORD_INTEGRATION_TOKEN` (`_FILE`) | session server and bot | The same value on both: the token the bot presents for Discord. Without it, the integration API doesn't start (unless the Telegram one is set). |
-| `INTEGRATION_HOST` / `INTEGRATION_PORT` | session server | Where the integration API listens (default `127.0.0.1:3002`; compose sets `0.0.0.0` inside the Docker network). **Never publish this port.** |
-| `DISCORD_BOT_TOKEN` (`_FILE`) | bot | The bot's Discord token. The Discord part of the bot only runs when it is set. |
-| `JWP_INTEGRATION_TOKEN` (`_FILE`) | bot | Deprecated name of the bot's `DISCORD_INTEGRATION_TOKEN`; still read (with a warning) when that is unset. |
-| `JWP_INTEGRATION_URL` | bot | Integration API address (default `http://session-server:3002`, which only works if the session server's service is named `session-server`; the compose files set it). The bot ignores `INTEGRATION_PORT`, so if you change that port, change this URL too. |
+The session server keeps bot settings and link codes in `DATA_DIR` (the
+`jwp-data` volume): `integrations.json` and `secret.key`, readable by the
+server user only. Back up the whole volume
+([Deployment: Backing up]({{ '/deployment/' | relative_url }}#backing-up)).
 
 ### 3. Turn it on in the admin panel
 

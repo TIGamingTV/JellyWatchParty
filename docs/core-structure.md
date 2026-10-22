@@ -5,217 +5,131 @@ nav_order: 4
 
 # Core Structure
 
-This page explains how JellyWatchParty is built at a system level. For
-implementation-level detail, see the [Technical Reference]({{ '/technical/' | relative_url }})
-section (Protocol, Server, Client, Plugin, Sync Algorithms, Host Bridge).
-
-## System Overview
-
-JellyWatchParty consists of three main components that work together to
-provide synchronized media playback.
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                           Jellyfin Server                                │
-│  ┌─────────────────────────────────────────────────────────────────┐    │
-│  │                    JellyWatchParty Plugin (C#)                    │    │
-│  │  ┌─────────────────┐  ┌─────────────────┐  ┌────────────────┐   │    │
-│  │  │  ClientScript   │  │  Configuration  │  │   JWT Token    │   │    │
-│  │  │    Endpoint     │  │      Page       │  │    Endpoint    │   │    │
-│  │  └─────────────────┘  └─────────────────┘  └────────────────┘   │    │
-│  └─────────────────────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    │ HTTP (loads JS)
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         Browser (Jellyfin Web)                           │
-│  ┌─────────────────────────────────────────────────────────────────┐    │
-│  │                    Web Client (JavaScript)                       │    │
-│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐   │    │
-│  │  │  State  │ │   UI    │ │Playback │ │   WS    │ │  Utils  │   │    │
-│  │  │ Module  │ │ Module  │ │ Module  │ │ Module  │ │ Module  │   │    │
-│  │  └─────────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘   │    │
-│  └─────────────────────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    │ WebSocket
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                      Session Server (Rust)                               │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌────────────────────┐       │
-│  │  Room Manager   │  │  Client Handler │  │  Message Router    │       │
-│  └─────────────────┘  └─────────────────┘  └────────────────────┘       │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+How the parts of JellyWatchParty fit together. For implementation detail,
+see the [Technical Reference]({{ '/technical/' | relative_url }}).
 
 ## Components
 
-### 1. Jellyfin Plugin (C#)
+```
+                ┌──────────────────────────────────────────────┐
+                │ Jellyfin server + JellyWatchParty plugin (C#) │
+                │  script injection, /JellyWatchParty/Token,    │
+                │  config page, optional panel bridges          │
+                └───────────────┬──────────────────────────────┘
+          serves the web client │ and a signed token (JWT)
+                                ▼
+┌───────────────────────────────────────────────┐
+│ Browser / Jellyfin Desktop: web client (JS)   │
+│  Watch Party panel, player sync, chat         │
+└───────────────┬───────────────────────────────┘
+                │ WebSocket (port 3000, /ws)
+                ▼
+┌─────────────────────────────────────────────────────────────┐
+│ Session server (Rust)                                       │
+│  rooms and sync          :3000                              │
+│  admin panel (optional)  :3001 ──REST──> Jellyfin (devices) │
+│  chat bot API (optional) :3002 <──────── chat bot container │
+└─────────────────────────────────────────────────────────────┘
+```
 
-Integrates with Jellyfin's plugin system.
+### Jellyfin plugin (C#)
 
-**Responsibilities:**
-- Serve the client JS loader (`/JellyWatchParty/ClientScript`) and each
-  individual module it fetches (`/JellyWatchParty/Client/{path}`)
-- Provide configuration UI for JWT settings
-- Generate JWT tokens for authenticated users
-- Bridge native (non-browser) Jellyfin sessions in as room hosts — see
-  [Host Bridge]({{ '/technical/host-bridge/' | relative_url }})
+- Adds the client script to Jellyfin's web page (through the File
+  Transformation plugin when installed, otherwise by patching
+  `index.html`) and serves the script's modules from
+  `/JellyWatchParty/ClientScript` and `/JellyWatchParty/Client/...`.
+- Issues signed tokens (`/JellyWatchParty/Token`) that identify the Jellyfin
+  user to the session server, and tells the client the session server URL
+  and which optional features are allowed.
+- Provides the configuration page.
+- Optionally bridges a user's own Jellyfin session into a room from the
+  panel ([Host Bridge]({{ '/technical/host-bridge/' | relative_url }})); only
+  then does the plugin itself connect to the session server.
 
-For the normal browser flow, the plugin backend makes **no** outbound
-network calls to the session server — it only ever hands the browser a
-token and a URL, and the browser does the talking. The one exception is
-Host Bridge, which opens its own WebSocket to the session server on behalf
-of a bridged native session. Full detail: [Plugin]({{ '/technical/plugin/' | relative_url }}).
+Details: [Plugin]({{ '/technical/plugin/' | relative_url }}).
 
-### 2. Session Server (Rust)
+### Web client (JavaScript)
 
-A lightweight WebSocket server that manages rooms and relays messages.
+Runs inside Jellyfin's web interface: adds the header, player and home
+screen entries, manages the WebSocket connection, applies the room's
+playback commands to the local player, corrects drift, and synchronizes its
+clock with the server. Details: [Client]({{ '/technical/client/' | relative_url }}).
 
-**Responsibilities:**
-- Accept WebSocket connections and manage room lifecycle (create, join, leave, close)
-- Relay playback events between clients, validating host permissions (or, in a democratic room, who else may play, pause and seek)
-- Filter state updates (anti-jitter, rate limiting) and schedule synchronized actions
+### Session server (Rust)
 
-All state is in-memory (`Arc<RwLock<HashMap<...>>>`) — no database, and
-everything is lost on restart, since rooms are ephemeral by design. Full
-detail: [Server]({{ '/technical/server/' | relative_url }}).
+- Accepts WebSocket connections, manages rooms (create, join, leave, host
+  handover, passwords, chat) and relays playback commands, enforcing who may
+  control playback.
+- Schedules plays slightly in the future so everyone starts at the same
+  moment, and filters noisy position updates.
+- Optionally runs the admin panel, drives Jellyfin devices over Jellyfin's
+  REST API, and serves the chat bot API.
 
-### 3. Web Client (JavaScript)
+All rooms are kept in memory; only chat bot settings are stored on disk
+(`DATA_DIR`). Details: [Server]({{ '/technical/server/' | relative_url }}).
 
-Modular JavaScript injected into Jellyfin's web interface.
+### Chat bot (Rust, optional)
 
-**Responsibilities:**
-- Inject UI elements (button, panel, home section)
-- Manage the WebSocket connection to the session server
-- Intercept video playback events and apply synchronized playback commands
-- Correct drift with playback rate adjustment, and synchronize clocks with the server
-
-Full detail: [Client]({{ '/technical/client/' | relative_url }}).
+A separate container that connects to Discord and/or Telegram and forwards
+users' requests to the session server's chat bot API. It holds no state; the
+session server decides everything. See
+[Integration API]({{ '/technical/integration-api/' | relative_url }}).
 
 ## Data Flow
 
-### Joining a Room
+### Joining a room
 
 ```
-Browser                          Server                      Host Browser
-   │                                │                              │
-   ├── WebSocket connect ──────────►│                              │
-   │◄─── client_hello ──────────────┤                              │
-   │◄─── room_list ─────────────────┤                              │
-   │                                │                              │
-   ├── join_room ──────────────────►│                              │
-   │◄─── room_state ────────────────┤                              │
-   │                                ├── participants_update ──────►│
-   │                                │                              │
-   ├── ready ──────────────────────►│                              │
+Guest browser                    Session server                Host browser
+   ├── WebSocket connect ───────────►│                              │
+   │◄── client_hello, room_list ─────┤                              │
+   ├── auth (token) ────────────────►│                              │
+   ├── join_room ───────────────────►│                              │
+   │◄── room_state ──────────────────┼── participants_update ──────►│
+   ├── ready (item loaded) ─────────►│                              │
 ```
 
-### Synchronized Playback
+### Synchronized play
 
 ```
-Host Browser                     Server                   Client Browser
-     │                              │                            │
-     ├── player_event (play) ──────►│                            │
-     │                              │                            │
-     │                         [Validate host]                   │
-     │                         [Calculate target_ts]             │
-     │                              │                            │
-     │◄─── player_event ────────────┼─── player_event ──────────►│
-     │     target_ts = T+1000       │    target_ts = T+1000      │
-     │                              │                            │
-     │         [Wait for T]         │            [Wait for T]    │
-     │      video.play()            │              video.play()  │
+Host browser                     Session server                Guest browser
+   ├── player_event (play) ────────►│                               │
+   │                          check permission,                     │
+   │                          target = now + 1000 ms                │
+   │◄── player_event (target) ──────┼── player_event (target) ─────►│
+   both start playing at the target time, using their clock offset
 ```
 
-### Host Disconnect (Grace Period, Then Closure)
+### Host disconnect
 
-A dropped connection (Wi-Fi blip, tab throttling, app backgrounding)
-doesn't close the room right away — the server holds the host's slot open
-for a 90-second grace period before tearing anything down:
+A dropped host keeps their place for 90 seconds and can reattach without
+anyone noticing. If they leave instead, the participant who joined earliest
+becomes host (`host_changed`); the room ends when nobody is left.
 
-```
-Host                            Server                    Participants
-  │                                │                            │
-  X (disconnect)                   │                            │
-  │                          [90s grace period starts]           │
-  │                                │                            │
-  │   (reconnects within 90s)      │                            │
-  ├── WS connect ?client_id=... ──►│                            │
-  │                          [same client_id: reattach]         │
-  │◄── room_state (resent) ────────┤                            │
-  │   [nothing broadcast to participants — no visible disruption]│
-  ────────────────────────────────────────────────────────────────
-     OR, if the host never reconnects and others remain:
-  │                          [promote earliest-joined participant]│
-  │                                ├── host_changed ────────────►│
-  │                                │   (room stays open)         │
-  ────────────────────────────────────────────────────────────────
-        OR, if the host never reconnects and no one else is left:
-  │                                ├── room_closed ────────────►│
-  │                                ├── room_list ──────────────►│
-```
-
-See [Server: Reconnect and Room Lifecycle]({{ '/technical/server/' | relative_url }}#reconnect-and-room-lifecycle)
-for the full mechanics, including the persistent client ID that makes
-reattachment possible.
-
-## Technology Stack
+## Technology
 
 | Component | Technology |
 |-----------|------------|
-| Plugin | C# (.NET 9.0), ASP.NET Core |
-| Session Server | Rust, Axum, Tokio |
-| Web Client | JavaScript (IIFE pattern) |
-| Communication | WebSocket, JSON |
-| Authentication | JWT (optional) |
-| Containerization | Docker, Docker Compose |
+| Plugin | C#, .NET 10, Jellyfin 12 plugin API |
+| Session server | Rust, Axum, Tokio |
+| Chat bot | Rust |
+| Web client | Plain JavaScript modules |
+| Communication | WebSocket with JSON messages; REST for the admin panel and chat bot API |
+| Authentication | JWT (HS256), optional |
+| Packaging | Docker images (Alpine), Windows binary, plugin zip |
 
-## State Shape
+## Limits
 
-**Server** (per client and per room, all in-memory):
+| Resource | Limit |
+|----------|-------|
+| Members per room | 20 |
+| Rooms hosted per user (web client) | 1; creating a new room closes the one you host |
+| WebSocket messages per connection | 30 per second |
+| WebSocket message size | 64 KB |
+| Token requests per user | 30 per minute |
+| Host position updates | every 1 s |
+| Guest drift check | every 500 ms |
 
-```
-Client { sender, room_id, user_id, user_name, authenticated, message_count, last_reset, last_seen }
-Room   { room_id, name, host_id, clients, ready_clients, pending_play, state,
-         last_state_ts, last_command_ts, chat_history (capped at 50), password_hash,
-         democratic, device_control, last_command_by, last_change_ts }
-```
-
-**Client** (`JWP.state`): `ws`, `roomId`, `clientId`, `isHost`, `serverOffsetMs`,
-`lastSyncPosition`, `lastSyncServerTs`, `isSyncing`, `isBuffering`, and more —
-see [Client: `state.js`]({{ '/technical/client/' | relative_url }}#module-statejs) for the full list.
-
-## Security Model
-
-- **Authentication**: Optional JWT tokens validated by session server
-- **Authorization**: Only hosts can send playback commands, except play/pause/seek from other members of a democratic room (see [Protocol: Democratic mode]({{ '/technical/protocol/' | relative_url }}#democratic-mode))
-- **Transport**: WebSocket (ws://) or secure WebSocket (wss://)
-- **Rate limiting**: 30 messages/sec per client, 10 token requests/min per user
-- **Message size**: 64KB maximum
-
-See [Security]({{ '/security/' | relative_url }}) for the full security model and threat analysis.
-
-## Operational Limits
-
-| Resource | Limit | Configurable |
-|----------|-------|--------------|
-| Clients per room | 20 | Server constant `MAX_CLIENTS_PER_ROOM` |
-| Hosted rooms per user | 1 | Not configurable — creating a new room closes any room the user already hosts |
-| Messages per second | 30 | Server constant `RATE_LIMIT_MESSAGES` |
-| Message size | 64 KB | Server constant |
-| Token requests | 10/min per user | Plugin constant |
-
-| Metric | Typical Value | Notes |
-|--------|---------------|-------|
-| Sync accuracy | ±50ms | Under normal network conditions |
-| Clock sync precision | ±20ms | After EMA smoothing stabilizes |
-| Drift correction range | 0.85x - 2.0x | Playback rate adjustment |
-| State update interval | 1000ms | From host to server |
-| Sync loop interval | 500ms | Client-side drift check |
-
-For scaling limits and capacity planning, see
-[Deployment: Capacity Planning]({{ '/deployment/' | relative_url }}#capacity-planning). For the
-detailed sync algorithms behind drift correction and clock sync, see
-[Sync Algorithms]({{ '/technical/sync/' | relative_url }}).
+These are constants in the code, not settings. See
+[Sync Algorithms]({{ '/technical/sync/' | relative_url }}) for the timing
+details.

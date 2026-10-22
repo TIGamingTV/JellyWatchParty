@@ -8,383 +8,278 @@ nav_order: 1
 
 ## Prerequisites
 
-- **Docker** and **Docker Compose**
-- **[Just](https://just.systems/)** — command runner (`cargo install just` or [other methods](https://just.systems/man/en/packages.html))
-- **.NET 9.0 SDK** (for plugin development)
-- **Rust 1.83+** (for server development)
-- **Node.js 20+** (optional, for JS tooling)
-- **mold** (recommended, for faster Rust linking)
+- **Docker** with the **Compose** plugin. The dev stack, the plugin build
+  (`mcr.microsoft.com/dotnet/sdk:10.0`) and the plugin tests all run in
+  containers, so a local .NET SDK is optional.
+- **[Just](https://just.systems/)**, the command runner (`cargo install just`
+  or [other methods](https://just.systems/man/en/packages.html)).
+- **Rust** (stable) for the recipes that run `cargo` on the host:
+  `just build server`, `just test server|discord`, `just lint`, `just fmt`,
+  `just check`. CI uses the latest stable toolchain; the Docker images build
+  with Rust 1.88, so don't rely on anything newer.
+- **mold**: `src/server/.cargo/config.toml` always links with mold (see
+  [Cargo configuration](#cargo-configuration)).
+- **Node.js 20+** for the client tests (`just test client`).
+- **curl** and **unzip** (`just build ft`), **zip** (`just release`),
+  **inotifywait** or **fswatch** (`just watch`).
+- **.NET 10 SDK** only if you want to build or test the plugin outside Docker.
 
 ## Quick Start
 
 ```bash
-# Clone the repository
 git clone https://github.com/TIGamingTV/JellyWatchParty.git
 cd JellyWatchParty
 
-# Configure git hooks (required once after clone)
+# Point git at .githooks/ (once per clone)
 just setup
 
-# Start development environment
+# Optional: local settings (ports, MEDIA_DIR, JWT_SECRET, admin panel, ...)
+cp .env.example .env
+
+# Build and start the dev stack
 just up
 ```
 
-This will:
-1. Start Jellyfin on `http://localhost:8096`
-2. Build and mount the plugin
-3. Start the Rust session server on `http://localhost:3000`
-4. Auto-inject the client script into Jellyfin's `index.html`
+`just up`:
+
+1. Downloads the File Transformation plugin (`just build ft`) into
+   `infra/docker/dev/config/plugins/FileTransformation`, if that version isn't
+   there yet. It injects the client script into Jellyfin's `index.html`.
+2. Builds the JellyWatchParty plugin (`just build plugin`): copies the client
+   JS into `src/plugins/jellyfin/JellyWatchParty/Web/`, runs `dotnet publish`
+   in the `plugin-builder` container, and writes `dist/meta.json`.
+3. Starts `session-server` (built from `infra/docker/server.Dockerfile` with
+   `BUILD_MODE=dev`) and `jellyfin-dev` (`jellyfin/jellyfin:12.0`, with the
+   plugin's `dist/` mounted as `/config/plugins/JellyWatchParty`).
+
+| Service | URL |
+|---------|-----|
+| Jellyfin | `http://localhost:8096` (`JELLYFIN_PORT`) |
+| Session server WebSocket | `ws://localhost:3000/ws` (`SESSION_SERVER_PORT`) |
+| Session server health | `http://localhost:3000/health` |
+| Admin panel | `http://localhost:3001` (`ADMIN_PANEL_PORT`; only when `ADMIN_PASSWORD` is set) |
+
+The chat bot is not started by `just up`. To run it, set its tokens in `.env`
+and start it with its Compose profile:
+
+```bash
+docker compose -f infra/docker/dev/docker-compose.yml --profile discord up -d discord-bot
+```
 
 ## First-Time Setup
 
-### 1. Jellyfin Configuration
+### 1. Jellyfin
 
-After running `just up`:
+1. Open `http://localhost:8096` and finish the setup wizard.
+2. Add a library. The dev compose file mounts `MEDIA_DIR` (default
+   `~/Videos/Movies`) read-only at `/media/Movies`.
+3. Create a second user if you want to test with two accounts.
 
-1. Open `http://localhost:8096`
-2. Complete the Jellyfin setup wizard
-3. Add a media library (can use sample media)
-4. Create a user account
+### 2. Plugin configuration (optional)
 
-### 2. Plugin Configuration (Optional)
+Dashboard > Plugins > JellyWatchParty. The defaults work for local
+development (the client connects to `ws://<page host>:3000/ws`). To test
+authentication, set the same JWT secret (32+ characters) in the plugin and as
+`JWT_SECRET` in `.env`, then run `just restart`.
 
-1. Go to Dashboard > Plugins > JellyWatchParty
-2. Configure JWT Secret if testing authentication
-3. Save and restart Jellyfin
+### 3. Verify
 
-### 3. Verify Installation
-
-1. Play any video
-2. Look for the Watch Party button in the header
-3. Click to open the panel
+1. Play any video.
+2. Click the Watch Party button (app header or player controls).
+3. The panel opens and lists rooms.
 
 ## Project Structure
 
 ```
 JellyWatchParty/
 ├── src/
-│   ├── clients/
-│   │   └── jellyfin-web/          # JavaScript client modules
-│   │       ├── plugin.js          # Loader/entry point
-│   │       ├── state.js           # State management
-│   │       ├── utils/             # Utility functions
-│   │       │   ├── log.js, media.js, misc.js
-│   │       │   ├── time.js, video.js
-│   │       ├── ui/                # User interface
-│   │       │   ├── cards.js, home.js, indicators.js
-│   │       │   ├── render.js, styles.js, toasts.js
-│   │       ├── playback/          # Video sync
-│   │       │   ├── bind.js, play.js, sync.js
-│   │       ├── chat/              # Text chat
-│   │       │   ├── input.js, messages.js
-│   │       ├── ws/                # WebSocket
-│   │       │   ├── auth.js, connection.js, send.js
-│   │       │   └── handlers/
-│   │       │       ├── clock.js, playback.js
-│   │       │       ├── room.js, sync.js
-│   │       └── app/               # Initialization
-│   │           ├── cleanup.js, lifecycle.js
-│   │
-│   ├── plugins/
-│   │   └── jellyfin/
-│   │       └── JellyWatchParty/    # C# Jellyfin plugin
-│   │           ├── Plugin.cs
-│   │           ├── Controllers/
-│   │           ├── Configuration/
-│   │           └── Web/           # Bundled JS (copied from clients/)
-│   │
-│   └── server/                    # Rust WebSocket server
-│       ├── src/
-│       │   ├── main.rs
-│       │   ├── types.rs
-│       │   ├── routes.rs
-│       │   ├── tasks.rs
-│       │   ├── messaging.rs
-│       │   ├── auth.rs
-│       │   ├── utils.rs
-│       │   ├── ws/
-│       │   │   ├── mod.rs, connection.rs, dispatch.rs
-│       │   │   ├── constants.rs, validation.rs, pending_play.rs
-│       │   │   └── handlers/
-│       │   │       ├── auth.rs, chat.rs, create.rs
-│       │   │       ├── join.rs, misc.rs, playback.rs
-│       │   └── room/
-│       │       ├── mod.rs, leave.rs, close.rs
-│       └── Cargo.toml
-│
-├── .githooks/
-│   └── pre-commit             # cargo fmt check on staged .rs files
-│
+│   ├── clients/jellyfin-web/        # Injected JavaScript client
+│   │   ├── plugin.js                # Loader (served at /JellyWatchParty/ClientScript)
+│   │   ├── state.js                 # JWP.constants / JWP.state
+│   │   ├── utils/  ui/  playback/  chat/  ws/  ws/handlers/  app/
+│   │   └── tests/                   # node --test suites (*.test.js, setup.js)
+│   ├── plugins/jellyfin/
+│   │   ├── Directory.Build.props    # net10.0, Jellyfin 12.0.0 packages
+│   │   ├── JellyWatchParty/         # C# plugin (JellyWatchPartyPlugin.csproj)
+│   │   │   ├── Plugin.cs, ScriptInjectionMiddleware.cs, FileTransformationIntegration.cs
+│   │   │   ├── Controllers/  Configuration/  Services/
+│   │   │   └── Web/                 # configPage.html + JS copied from clients/ at build time
+│   │   └── JellyWatchParty.Tests/   # xUnit tests
+│   ├── server/                      # Rust session server (crate session-server)
+│   │   ├── .cargo/config.toml       # mold linker, dev profile tuning
+│   │   └── src/
+│   │       ├── main.rs, routes.rs, auth.rs, messaging.rs, types.rs, tasks.rs, ...
+│   │       ├── ws/                  # connection, dispatch, validation, handlers/
+│   │       ├── room/                # ops, leave, close, reconnect
+│   │       ├── admin/               # admin panel (API + embedded UI)
+│   │       ├── jellyfin/            # Jellyfin API device bridge
+│   │       └── integration/         # chat bot integration API
+│   └── integrations/discord-bot/    # Rust chat bot, Discord + Telegram (crate jwp-discord-bot)
 ├── infra/
-│   ├── docker/                # Docker configuration
-│   │   ├── server.Dockerfile
-│   │   ├── dev/
-│   │   │   ├── docker-compose.yml   # Dev environment
-│   │   │   ├── config/             # Jellyfin runtime config (gitignored)
-│   │   │   └── scripts/
-│   │   │       └── jellyfin-entrypoint.sh
-│   │   └── prod/
-│   │       └── docker-compose.yml   # Prod / release builds
-│   └── just/                  # Just modules
-│       ├── common.just        # Shared variables
-│       ├── build.just
-│       ├── test.just
-│       ├── lint.just
-│       ├── logs.just
-│       ├── clean.just
-│       └── shell.just
-│
-├── docs/                      # Documentation
-│
-├── justfile                   # Build automation
-├── CLAUDE.md                  # AI assistant context
-└── README.md                  # Project overview
+│   ├── docker/
+│   │   ├── server.Dockerfile, discord-bot.Dockerfile
+│   │   ├── dev/docker-compose.yml   # Dev stack (+ config/, gitignored Jellyfin config)
+│   │   ├── dev/scripts/jellyfin-entrypoint.sh
+│   │   └── prod/docker-compose.yml  # Published images (JWP_TAG)
+│   └── just/                        # Just modules: build, test, lint, logs, clean, shell
+├── .githooks/pre-commit             # cargo fmt --check for src/server
+├── .github/workflows/               # ci, publish, docker-image, security, docs
+├── docs/                            # This site (Jekyll)
+└── justfile
 ```
 
 ## Commands
 
-Run `just` for a full list (with submodules). Key commands:
+Run `just` for the full list (including modules).
 
 ### Development
 
 | Command | Description |
 |---------|-------------|
-| `just up` | Start full development environment |
-| `just down` | Stop all services |
-| `just dev` | Start stack and follow logs |
-| `just restart` | Restart all services |
-| `just watch` | Watch JS files and auto-restart on change |
-| `just status` | Show service status with health checks |
+| `just up` (`u`) | Build File Transformation + plugin, start `session-server` and `jellyfin-dev` |
+| `just down` (`d`) | Stop all services |
+| `just dev` | `just up`, then follow logs |
+| `just restart` | `up -d` (recreates containers whose config or `.env` changed), then restart both services |
+| `just watch` | Restart Jellyfin whenever a file under `src/clients/jellyfin-web/` changes |
+| `just status` (`s`) | `docker compose ps` plus health checks |
+| `just setup` | `git config core.hooksPath .githooks` |
 
 ### Build (`just build ...`)
 
 | Command | Description |
 |---------|-------------|
-| `just build` | Build the Jellyfin plugin (default) |
-| `just build plugin` | Build the Jellyfin plugin |
-| `just build server` | Build the session server locally (Rust) |
-| `just build image` | Rebuild session server Docker image |
-| `just build all` | Build everything (plugin + server image) |
-| `just rebuild` | Clean + rebuild + restart everything |
-| `just release` | Build release artifacts (zip) |
+| `just build` / `just build plugin` | Copy client JS, `dotnet publish` in Docker, write `dist/meta.json` |
+| `just build ft` | Download the File Transformation plugin (version pinned in `infra/just/common.just`) |
+| `just build server` | `cargo build --release` in `src/server` |
+| `just build discord` | `cargo build --release` in `src/integrations/discord-bot` |
+| `just build image` | Rebuild the `session-server` dev image |
+| `just build all` | `ft` + `plugin` + `image` |
+| `just rebuild` | `just clean`, `just build all`, then `up -d --force-recreate` |
+| `just release` | Local zip: plugin + release server binary in `JellyWatchParty-release.zip` |
 
-### Testing (`just test ...`)
-
-| Command | Description |
-|---------|-------------|
-| `just test` | Run all tests (Rust + .NET) |
-| `just test server` | Run Rust server tests |
-| `just test plugin` | Run .NET plugin tests |
-
-### Linting (`just lint ...`)
+### Tests (`just test ...`)
 
 | Command | Description |
 |---------|-------------|
-| `just lint` | Run all linters (Rust + JS) |
-| `just lint server` | Lint Rust code (clippy) |
-| `just lint client` | Lint JavaScript (eslint) |
-| `just fmt` | Format all code |
-| `just check` | Run cargo check (fast compile check) |
+| `just test` | All four suites below |
+| `just test server` | `cargo test` in `src/server` |
+| `just test discord` | `cargo test` in `src/integrations/discord-bot` |
+| `just test plugin` | `dotnet test` in `mcr.microsoft.com/dotnet/sdk:10.0` |
+| `just test client` | `node --test src/clients/jellyfin-web/tests/*.test.js` |
 
-### Logs (`just logs ...`)
-
-| Command | Description |
-|---------|-------------|
-| `just logs` | Follow logs from all services |
-| `just logs server` | Follow session server logs |
-| `just logs jellyfin` | Follow Jellyfin logs |
-
-### Clean (`just clean ...`)
+### Lint and format
 
 | Command | Description |
 |---------|-------------|
-| `just clean` | Clean all build artifacts |
-| `just clean plugin` | Clean plugin build artifacts |
-| `just clean server` | Clean server build artifacts |
-| `just clean docker` | Remove Docker images and volumes |
-| `just reset` | Full reset (containers + artifacts) |
+| `just lint` | `server` + `discord` + `client` |
+| `just lint server` | `cargo clippy -- -D warnings` (server) |
+| `just lint discord` | `cargo clippy --all-targets -- -D warnings` (bot) |
+| `just lint client` | eslint if installed (never fails the recipe) |
+| `just fmt` | `cargo fmt` in `src/server` (the bot: run `cargo fmt` in its directory) |
+| `just check` | `cargo check` in `src/server` |
 
-### Shell (`just shell ...`)
+### Logs, shells, cleanup
 
 | Command | Description |
 |---------|-------------|
-| `just shell server` | Open shell in session server container |
-| `just shell jellyfin` | Open shell in Jellyfin container |
-
-**Quick aliases:** `u`=up, `d`=down, `s`=status
+| `just logs` / `logs server` / `logs jellyfin` | Follow logs (all, `session-server`, `jellyfin-dev`) |
+| `just shell server` / `shell jellyfin` | Shell in `jwp-session-server` / `jellyfin-dev` |
+| `just clean` | Plugin, server and File Transformation artifacts, `dist/`, release zip |
+| `just clean plugin` / `server` / `ft` | One of the above |
+| `just clean docker` | `compose down -v --rmi local` (removes volumes, including the dev session-server data) |
+| `just reset` | `down` + `clean docker` + `clean` |
 
 ## Development Workflow
 
-### JavaScript Client
+### JavaScript client
 
-1. **Edit files** in `src/clients/jellyfin-web/`
-2. **Rebuild and restart**:
-   ```bash
-   just rebuild
-   ```
-3. **Hard refresh browser** (Ctrl+F5)
+The plugin serves the client JS from resources embedded in its DLL, so an
+edit only shows up after the plugin is rebuilt:
 
-**Tip:** Use `just watch` to automatically restart Jellyfin when JS files change.
-
-### Rust Session Server
-
-1. **Edit files** in `src/server/src/`
-2. **Rebuild everything**:
-   ```bash
-   just rebuild
-   ```
-
-### C# Plugin
-
-1. **Edit files** in `src/plugins/jellyfin/JellyWatchParty/`
-2. **Build and restart**:
-   ```bash
-   just rebuild
-   ```
-
-## Hot Reload
-
-### JavaScript
-
-Use `just watch` for automatic reload on JS file changes. Otherwise:
-1. Run `just rebuild`
-2. Hard refresh browser (Ctrl+F5)
-
-### Rust
-
-The session server needs restart after changes:
 ```bash
-just rebuild
+just build plugin && just restart
 ```
 
-For faster iteration, run locally:
+Then hard-refresh the browser (Ctrl+F5). `just watch` only restarts Jellyfin;
+it does not rebuild the plugin.
+
+### Rust session server
+
+```bash
+just build image && just restart
+```
+
+For faster iteration, run it on the host (`cargo watch` needs
+`cargo install cargo-watch`) and stop the container first so port 3000 is free:
+
 ```bash
 cd src/server
-cargo watch -x run
+RUST_LOG=debug cargo watch -x run
 ```
 
-### C# Plugin
+### C# plugin
 
-Requires rebuilding and restarting Jellyfin:
 ```bash
-just rebuild
+just build plugin && just restart
 ```
+
+`just rebuild` rebuilds everything from scratch when in doubt.
 
 ## Debugging
 
-### JavaScript (Browser)
+### JavaScript (browser)
 
-1. Open Developer Tools (F12)
-2. Go to Console tab
-3. Filter by "JWP"
-4. Set breakpoints in Sources tab
+Open the developer tools and filter the console by `JWP` or `JellyWatchParty`.
+Client logs (`[JWP:<category>]`) are also sent to the session server as
+`client_log` messages and appear in `just logs server`.
 
-**Useful console commands:**
 ```javascript
-// View current state
-console.log(JWP.state);
-
-// Check WebSocket connection
-console.log(JWP.state.ws?.readyState);
-
-// View rooms
-console.log(JWP.state.rooms);
+// The client lives on window.JellyWatchParty
+const JWP = window.JellyWatchParty;
+JWP.state;               // current state
+JWP.state.ws?.readyState // 1 = open
+JWP.state.rooms;         // last room_list
+JWP.constants;           // timing / sync constants
 ```
 
-### Rust (Server)
+### Rust (server)
 
-Enable debug logging:
-```yaml
-# docker-compose.yml
-environment:
-  - RUST_LOG=debug
-```
+Set `RUST_LOG=debug` in `.env` and run `just restart`, or prefix `cargo run`
+with it when running on the host.
 
-Or when running the binary directly:
+### C# (plugin)
+
 ```bash
-RUST_LOG=debug cargo run
+just logs jellyfin
 ```
 
-### C# (Plugin)
+### Script not updating
 
-Check Jellyfin logs:
-```bash
-docker logs jellyfin-dev
-```
-
-Or enable debug logging in Jellyfin settings.
-
-## Testing Changes
-
-### Manual Testing
-
-1. Open Jellyfin in two browser windows
-2. Play the same video in both
-3. Create a room in one window
-4. Join from the other window
-5. Test sync functionality
-
-### Sync Testing
-
-Things to test:
-- [ ] Room creation
-- [ ] Room joining
-- [ ] Play/pause sync
-- [ ] Seek sync
-- [ ] Drift correction (watch for 5+ minutes)
-- [ ] Disconnect/reconnect
-- [ ] Host leaving
-
-## Common Development Issues
-
-### Script Not Updating
-
-1. Clear browser cache (Ctrl+Shift+Delete)
-2. Hard refresh (Ctrl+F5)
-3. Check ETag is changing:
+1. Rebuild the plugin and restart (see above).
+2. Hard-refresh (Ctrl+F5) or clear the browser cache.
+3. Check that the ETag changed:
    ```bash
    curl -I http://localhost:8096/JellyWatchParty/ClientScript
    ```
 
-**Tip:** Use `just watch` to automatically restart Jellyfin when JS files change, avoiding stale cache issues.
+For other problems see [Troubleshooting & FAQ]({{ '/troubleshooting/' | relative_url }}).
 
-For other issues (plugin not loading, WebSocket connection problems, build errors), see the [Troubleshooting & FAQ]({{ '/troubleshooting/' | relative_url }}).
+## Rust Build Configuration
 
-## Build Optimization (Rust)
+### Docker build modes
 
-The Rust server has optimized build configuration for faster development cycles.
+Both Dockerfiles take a `BUILD_MODE` argument:
 
-### Docker Build Modes
+| Mode | Used by | Result |
+|------|---------|--------|
+| `dev` | Dev compose file; default of `server.Dockerfile` | Debug build, fast compile |
+| `release` | Prod compose file, published images; default of `discord-bot.Dockerfile` | Optimized, stripped |
 
-The Dockerfile supports a `BUILD_MODE` argument:
+Both images build on `rust:1.88-alpine` with mold and run on `alpine:3.24`.
 
-| Mode | Usage | Optimization |
-|------|-------|--------------|
-| `dev` | Local development (`docker-compose.yml`) | Fast builds, debug symbols |
-| `release` | CI/CD and production | Full optimization, smaller binary |
+### Cargo configuration
 
-Development builds use `BUILD_MODE=dev` by default. CI releases use `BUILD_MODE=release`.
-
-### Mold Linker (Recommended)
-
-Install the `mold` linker for 5-10x faster linking:
-
-```bash
-# Arch Linux / Manjaro
-sudo pacman -S mold
-
-# Ubuntu/Debian
-sudo apt install mold
-
-# macOS (via Homebrew)
-brew install mold
-```
-
-The project's `.cargo/config.toml` automatically uses mold when available.
-
-### Cargo Configuration
-
-Located in `src/server/.cargo/config.toml`:
+`src/server/.cargo/config.toml`:
 
 ```toml
 [build]
@@ -395,61 +290,32 @@ incremental = true
 opt-level = 0
 
 [profile.dev.package."*"]
-opt-level = 2  # Optimize dependencies (they rarely change)
+opt-level = 2
 ```
 
-### Tokio Features
-
-The server uses minimal tokio features to reduce compile times:
-
-```toml
-# Only what's needed (instead of "full")
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "signal"] }
-```
-
-### Build Times
-
-| Build Type | Without Optimization | With Optimization |
-|------------|---------------------|-------------------|
-| Clean build | ~4-5 min | ~2-3 min |
-| Incremental rebuild | ~15-20s | ~2-3s |
-
-## IDE Setup
-
-### VS Code
-
-Recommended extensions:
-- **rust-analyzer** - Rust support
-- **C# Dev Kit** - C# support
-- **ESLint** - JavaScript linting
-- **Docker** - Docker support
-
-`.vscode/settings.json`:
-```json
-{
-  "rust-analyzer.cargo.buildScripts.enable": true,
-  "editor.formatOnSave": true
-}
-```
-
-### JetBrains
-
-- **RustRover** for Rust
-- **Rider** for C#
+mold is not optional here: without it, linking fails. Install it
+(`pacman -S mold`, `apt install mold`, `brew install mold`), or override the
+flags for one command; a set `RUSTFLAGS` takes precedence over
+`build.rustflags`, e.g. `RUSTFLAGS="-C debuginfo=1" cargo test`. CI deletes
+the file before building. The file is excluded from the Docker build context
+(`.dockerignore`); the Dockerfiles set mold through `RUSTFLAGS` themselves.
+The bot crate has no such file.
 
 ## Environment Variables
 
-For local development, create `.env` file:
+`.env` at the repository root is loaded by `just` and passed on to Compose.
+Start from `.env.example`; every variable is optional. A minimal local setup:
 
 ```bash
-# .env
 JWT_SECRET=dev-secret-at-least-32-characters-long
 ALLOWED_ORIGINS=http://localhost:8096
 RUST_LOG=debug
 ```
 
+See [Configuration]({{ '/configuration/' | relative_url }}) for the full list.
+
 ## Next Steps
 
-- [Contributing]({{ '/development/contributing/' | relative_url }}) - How to contribute
-- [Testing]({{ '/development/testing/' | relative_url }}) - Running tests
-- [Core Structure]({{ '/core-structure/' | relative_url }}) - System design
+- [Contributing]({{ '/development/contributing/' | relative_url }})
+- [Testing]({{ '/development/testing/' | relative_url }})
+- [Core Structure]({{ '/core-structure/' | relative_url }})
