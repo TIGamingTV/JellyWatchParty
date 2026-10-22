@@ -214,9 +214,10 @@ capabilities, read-only root filesystem), see
 
 ## Reporting Security Issues
 
-Please don't publish details of a vulnerability in a public issue. Open an
-issue that only asks the maintainer for a private contact, then send the
-description, reproduction steps and impact there.
+Please don't publish details of a vulnerability in a public issue. Report
+it privately through GitHub:
+[Security > Report a vulnerability](https://github.com/TIGamingTV/JellyWatchParty/security/advisories/new),
+with a description, reproduction steps and the impact.
 
 ## Next Steps
 
