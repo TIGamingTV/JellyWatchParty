@@ -8,58 +8,53 @@ nav_order: 6
 
 {: .note }
 This page describes the **plugin's** bridge, used from the in-player
-Watch Party panel. Since plugin 2.1 it is off unless an admin turns on
-**Let users bridge their devices from the Watch Party panel** (meant for
-small servers with trusted users), and users can only bridge their own
-sessions. The normal way is the session server's
+Watch Party panel. It is off unless an admin turns on **Let users bridge
+their devices from the Watch Party panel** (meant for small servers with
+trusted users), and users can only bridge their own sessions. The normal
+way is the session server's
 [admin panel]({{ '/admin-panel/' | relative_url }}#jellyfin-devices): it drives devices over the
 Jellyfin API, can put any device into any room as host or receiver, and
 starts playback on receivers itself.
 
 ## Overview
 
-Normally, hosting a watch party requires running the injected web
-client — the browser is what talks to the session server. That's a
-problem for native/TV clients that can't run injected JavaScript at
-all (e.g. [Fladder](https://github.com/jyc-oss/fladder) on Android TV,
-Swiftfin, Infuse, official mobile/TV apps). **Host Bridge** solves this
-on the *host* side only: any logged-in user with browser access to the
-same Jellyfin server can bridge one of their own currently-playing
-native sessions in as a room host (administrators: anyone's). Guests are completely unaffected — they still join the
-resulting room from their own room list exactly as they would any
-other room, and the room is indistinguishable from a browser-hosted one
-to them.
+Hosting a watch party normally requires the injected web client, since
+the browser is what talks to the session server. Native/TV clients can't
+run injected JavaScript (e.g. [Fladder](https://github.com/jyc-oss/fladder),
+Swiftfin, Infuse, official mobile/TV apps). The bridge lets the Jellyfin
+server itself connect to the session server on behalf of such a session,
+in one of two roles:
 
-The bridge also supports the opposite direction — a **receiver**: a
-native session can be attached to a room this browser is already in and
-kept in sync with the host, driven by Jellyfin's generic remote-control
-playstate commands (which official clients such as the Android TV app
-honour: pause / unpause / absolute seek). This is how an official client
-that can't run the injected UI can still *follow* a party. The session
-must already be playing the room's item; the receiver keeps play/pause
-and position aligned but does not start playback remotely.
+- **Host:** a session that is playing something drives a new room. Guests
+  join it from their room list like any other room; to them it is
+  indistinguishable from a browser-hosted one.
+- **Receiver:** a session is attached to the room the calling browser is
+  in and kept in sync with it through Jellyfin's generic remote-control
+  playstate commands (Pause / Unpause / absolute Seek), which official
+  clients such as the Android TV app honour. The session must already be
+  playing the room's item; the receiver keeps play/pause and position
+  aligned but doesn't start playback.
 
-Both directions are **opt-in** and off by default, behind a master
-switch, `PluginConfiguration.EnablePanelBridging`. With it on, the host
-role is gated by `AllowThirdPartyClientHost` and the receiver role by
-`AllowSupportedClientReceiver` (admins toggle these in the plugin config
-page's **Watch Party Panel Bridging** section; `PanelHostAllowed` /
-`PanelReceiverAllowed` combine them). The combined values ride along on
-the `/JellyWatchParty/Token` response (`allow_third_party_host` /
-`allow_supported_receiver`) so the injected client can hide the matching
-picker, and are enforced server-side: `Bridge/{sessionId}/Start` rejects
-when hosting is disabled, `Bridge/{sessionId}/Follow` when the receiver
-role is disabled, and `Bridge/Sessions` returns an empty list when
-neither is enabled. Turning the switch (or a role) off stops the
-matching running bridges (`HostBridgeManager.ApplyConfigurationAsync`,
-on `Plugin.ConfigurationChanged`).
+Both roles are off by default behind the master switch
+`PluginConfiguration.EnablePanelBridging`; with it on, the host role is
+gated by `AllowThirdPartyClientHost` and the receiver role by
+`AllowSupportedClientReceiver` (`PanelHostAllowed` /
+`PanelReceiverAllowed` combine them). The combined values are sent to the
+client as `allow_third_party_host` / `allow_supported_receiver` on
+`/JellyWatchParty/Token`, so it only renders the matching picker, and are
+enforced server-side: `Bridge/{sessionId}/Start` and
+`Bridge/{sessionId}/Follow` answer `400` when their role is off, and
+`Bridge/Sessions` returns an empty list when neither role is allowed.
+Turning the switch (or a role) off stops the matching running bridges
+(`HostBridgeManager.ApplyConfigurationAsync`, on
+`Plugin.ConfigurationChanged`). Bridging also needs
+`SessionServerUrl` to be set: the bridge connects from the Jellyfin
+server, so there is no page host to fall back to.
 
-**Ownership**: Sessions, Status, Start, Follow and Stop only cover the
-caller's own sessions (session `UserId` == the caller's
-`Jellyfin-UserId` claim). Callers in the `Administrator` role may
-bridge and stop any session. Before 2.1 any user could bridge or stop
-anyone's session, and attach any session to any room as a receiver,
-bypassing Jellyfin's `EnableRemoteControlOfOtherUsers` permission.
+**Ownership:** Sessions, Status, Start, Follow and Stop only cover the
+caller's own sessions (session `UserId` == the caller's `Jellyfin-UserId`
+claim). Callers in the `Administrator` role may bridge and stop any
+session.
 
 Both bridges send the bridged session's `DeviceId` as `bridge_device_id`
 in `create_room` / `join_room`. The session server records it and shows
@@ -67,19 +62,19 @@ the connection as a *Plugin bridge* in its admin panel. One device is
 never driven from two places: the admin panel refuses a device a plugin
 bridge drives, and the server refuses a plugin bridge's create/join
 (`reason: "device_already_bridged"`) for a device that is already in a
-room. Start waits up to 5 s for the server's answer, so such a refusal
-(or a wrong room password) reaches the user as an error instead of a
-bridge without a room.
+room. Start and Follow wait up to 5 s (`StartAnswerTimeout`) for the
+server's answer (`room_state` or `error`), so a refusal (or a wrong room
+password) reaches the user as an error instead of a bridge without a
+room.
 
-Stopping a bridge sends `leave_room` before closing, so it leaves its
-room at once instead of after the server's 90 s reconnect grace. A
-bridge whose room closes, or that an admin removes, stops itself.
+Stopping a bridge sends `leave_room` before closing, so it leaves its room
+at once instead of after the server's 90 s reconnect grace. A bridge whose
+room closes, or that an admin removes (`room_closed`), drops itself.
 
-So a native client can still participate as a guest via the receiver
-role. Running the injected UI directly (a browser, or Jellyfin Desktop
-via its native player adapter — see
+Running the injected UI directly (a browser, or Jellyfin Desktop via its
+native player adapter — see
 [Client: `utils/video.js`]({{ '/technical/client/' | relative_url }}#module-utilsvideojs)) remains the
-way to join and drive a room from the client itself.
+way to join and drive a room from the device itself.
 
 ## How It Works
 
@@ -91,13 +86,13 @@ Native session (e.g. Fladder on Android TV)
 ISessionManager (Jellyfin server)
       │ PlaybackStart / PlaybackProgress / PlaybackStopped
       ▼
-HostBridgeManager (hosted service, subscribed for the plugin's lifetime)
+HostBridgeManager (hosted service, subscribed for the server's lifetime)
       │ routes events to the matching SessionHostBridge, if any
       ▼
 SessionHostBridge (one per bridged session)
       │ owns a ClientWebSocket to the session server
       │ speaks the normal client protocol: auth → create_room →
-      │ player_event / state_update
+      │ player_event / state_update (+ ping every 20 s)
       ▼
 Session Server (Rust) — room created, this session is the host
       ▲
@@ -109,154 +104,148 @@ Browser guests (unaffected, unaware a bridge is involved)
 
 ### `Services/HostBridgeManager.cs`
 
-A hosted service (`IHostedService`) that subscribes to Jellyfin's
-`ISessionManager.PlaybackStart`/`PlaybackProgress`/`PlaybackStopped`
-events for the plugin's entire lifetime and owns all currently-active
-`SessionHostBridge` instances, keyed by Jellyfin session ID.
+A singleton `IHostedService` (registered in `ServiceRegistrator`) that
+subscribes to `ISessionManager.PlaybackStart` / `PlaybackProgress` /
+`PlaybackStopped` and to `Plugin.ConfigurationChanged`, and owns all
+active bridges, keyed by Jellyfin session id: `SessionHostBridge`s and
+`SessionFollowerBridge`s (a session is one or the other).
 
-**Eligibility filter** (`GetEligibleSessions()`): only sessions that are
-currently playing something, aren't already bridged, and whose `Client`
-does **not** start with `"Jellyfin Web"`, `"Jellyfin Desktop"`, or
-`"Jellyfin Media Player"` (prefix match, since `Client` includes a
-trailing version — e.g. `"Jellyfin Web 10.11.11"`,
-`"Jellyfin Desktop 3.0.0-dev"`). Those three already run the injected
-script and can host normally via "Create Room", so they're excluded
-from the bridge picker to avoid clutter.
+**Eligibility** (`GetEligibleSessions(onlyUserId)`): sessions that are
+playing something, aren't bridged in either role, belong to the caller
+(unless admin), and whose `Client` does **not** start with `"Jellyfin
+Web"`, `"Jellyfin Desktop"` or `"Jellyfin Media Player"` (case-insensitive
+prefix match, since `Client` carries a version). Those already run the
+injected script and can create a room themselves.
 
-`StartBridgeAsync(sessionId)` creates a `SessionHostBridge` for the
-session and starts it; `StopBridgeAsync(sessionId)` tears one down.
-Playback events for an already-bridged session are routed to that
-bridge's `OnPlaybackProgressAsync`; a `PlaybackStopped` event removes
-and disposes the bridge automatically.
+`StartBridgeAsync(sessionId)` / `StartFollowerAsync(sessionId, roomId)`
+check the session (exists, not already bridged, `SessionServerUrl` set),
+start the bridge, and re-check that the role is still allowed;
+`StopBridgeAsync(sessionId)` disposes either kind. `PlaybackStart` and
+`PlaybackProgress` for a host-bridged session go to its
+`OnPlaybackProgressAsync`; `PlaybackStopped` disposes the session's
+bridge in either role.
 
 ### `Services/SessionHostBridge.cs`
 
-One instance per bridged session. Owns a `ClientWebSocket` connection to
-the session server and translates Jellyfin session events into the
-exact same protocol messages a browser host would send
-(see [Protocol]({{ '/technical/protocol/' | relative_url }})):
+One instance per host session. Opens a `ClientWebSocket` to
+`SessionServerUrl` and sends the same protocol messages a browser host
+would (see [Protocol]({{ '/technical/protocol/' | relative_url }})):
 
 | Jellyfin event | → | Protocol message |
 |---|---|---|
-| Bridge start | → | `auth` (JWT if configured, else `user_id`/`user_name`), then `create_room` (with `start_pos` and `media_id` from the session's current playback) |
-| Play/pause state changes | → | `player_event` (`action: "play"` or `"pause"`) |
-| Position updates (no play-state change) | → | `state_update` |
+| Bridge start | → | `auth` (JWT for the session's owner when `HasUsableJwtSecret`, else `user_id`/`user_name`), then `create_room` (`user_name` "User (Device)", `start_pos` and `media_id` from the session's current playback, `bridge_device_id`) |
+| Play/pause state change | → | `player_event` (`action: "play"` or `"pause"`, `position`) |
+| Progress without a play-state change | → | `state_update` (`position`, `play_state`) |
+| Every 20 s | → | `ping` (keeps the server's 60 s zombie reaper away from an idle bridge) |
 
-It tracks its own `RoomId` by watching for the `room_state` message the
-server sends back after `create_room`, and clears it on `room_closed`.
+It takes its `RoomId` from the `room_state` the server sends after
+`create_room`, and clears it on `room_closed`. Sends are serialized
+(`ClientWebSocket` forbids concurrent sends).
 
-**Known limitation: doesn't send `set_media`.** The web host detects an
-item change and sends `set_media` (see [protocol.md]({{
-'/technical/protocol/#set_media' | relative_url }}), issue #71); a
-bridged native host does not, since `HostBridgeManager` disposes the
-bridge on `PlaybackStopped`, which fires on every item change —
-including switches within the same bridged session, not just the end of
-it. A native host that starts a different item currently just ends the
-bridge rather than updating the room's media. Tracked as a follow-up.
+**Known limitation: no `set_media`.** The web host detects an item change
+and sends `set_media` (see
+[Protocol: `set_media`]({{ '/technical/protocol/' | relative_url }}#set_media)); a bridged native host
+doesn't. Jellyfin fires `PlaybackStopped` on every item change, and
+`HostBridgeManager` disposes the bridge on it, so starting another item
+ends the bridge (and its room) instead of switching the room's media.
 
 **Known limitation: doesn't follow others in democratic mode.** In a
 [democratic room]({{ '/technical/protocol/' | relative_url }}#democratic-mode) other members may play,
 pause and seek, but `SessionHostBridge` ignores incoming `player_event`s,
-so the native host session keeps playing as before. The server drops its
+so the native host keeps playing as before. The server drops its
 `state_update`s for 2 s after someone else's command; after that the
 host's own state goes out again and undoes the command. Admin-panel and
 chat-bot device hosts do carry such commands out (see
 [Server: `jellyfin/`]({{ '/technical/server/' | relative_url }}#module-jellyfin)). Plugin bridges never
-announce `capabilities: ["democratic"]` and are excluded from controlling
-a democratic room themselves, in either role.
+announce `capabilities: ["democratic"]` and can't control a democratic
+room themselves, in either role.
+
+**No reconnect:** a bridge doesn't re-establish a dropped WebSocket; stop
+and start it again.
 
 ### `Services/SessionFollowerBridge.cs`
 
-One instance per *receiver* session — the receive-only counterpart to
-`SessionHostBridge`. Owns a `ClientWebSocket` that `auth`s and **joins**
-an existing room (rather than creating one), then consumes the host's
-broadcast messages and translates them into remote-control commands:
+One instance per *receiver* session. Its `ClientWebSocket` sends `auth`
+and `join_room` (`user_name` "User (Device)", `bridge_device_id`) for the
+given room, pings every 20 s, and turns room messages into remote-control
+commands:
 
 | Room message | → | Remote-control command |
 |---|---|---|
-| `room_state` (on join) / `state_update` — `play_state` + `position` | → | initial/ongoing `Pause`/`Unpause` and drift-correcting `Seek` |
-| `player_event` — `action: "play"`/`"pause"` + `position` | → | `Unpause`/`Pause`, plus `Seek` on large drift |
+| `room_state` (on join): `state.play_state` + `state.position` | → | `Seek` if drifted, then `Pause`/`Unpause` |
+| `state_update`: `play_state` + `position` | → | same |
+| `player_event`: `action` (`play`; `pause` or `buffering` = paused) + `position` | → | same |
 
-Commands are sent via
-`ISessionManager.SendPlaystateCommand(controllingSessionId: "", sessionId, …)`
-— an empty controlling-session id skips Jellyfin's control-permission
-path and relays the command straight to the target session's socket.
-Play/pause is only re-sent on a state change, and `Seek` only fires when
-the session has drifted past a threshold (~2 s) and no seek has been
-issued within a short cooldown, so drift correction doesn't spam the
-client. `HostBridgeManager` owns follower bridges alongside host bridges
-(a session is one role or the other) and disposes a follower when its
-session stops playing.
+Commands go through
+`ISessionManager.SendPlaystateCommand(controllingSessionId: "", sessionId,
+…)`; an empty controlling-session id skips Jellyfin's control-permission
+check and relays the command straight to the target session. `Pause` /
+`Unpause` is only sent when the commanded state changes; `Seek` only when
+the session's reported position is more than 2 s
+(`DriftThresholdSeconds`) from the room's and the last seek is at least
+3 s (`SeekCooldown`) old.
 
-`RoomId` is set only when the server confirms the join with a `room_state`
-message — not optimistically at connect time — so a rejected join does not
-show up as a phantom connected bridge. On that same `room_state` the follower
-sends a `ready` message: a headless bridge has no video to buffer, and the
-server's play gate (`all_ready` / `pending_play`) would otherwise hold back
-every host `play` for the whole room until it timed out waiting for the
-follower to ready. `ready` persists for the room's lifetime, so it is sent
-once, on join.
+`RoomId` is set only when the server confirms the join with `room_state`,
+so a rejected join doesn't show up as a connected bridge. On that
+`room_state` the follower also sends `ready`: it has no video to buffer,
+and the server's play gate (`all_ready` / `pending_play`) would otherwise
+hold back every `play` for the whole room until it timed out waiting for
+it. `ready` lasts for the room's lifetime, so it is sent once.
 
-A follower applies every relayed `player_event`, so in a democratic room it
-also follows other members' commands; what someone does on the receiver
-device itself is not sent to the room (only admin-panel device bridges
-with *device control* do that).
+A follower applies every relayed `player_event`, so in a democratic room
+it also follows other members' commands; what someone does on the
+receiver device itself is not sent to the room (only admin-panel device
+bridges with *device control* do that).
 
 **Known limitations (receiver):**
-- **Does not follow `media_changed`.** `ParseRoomEvent` only understands
-  `player_event`, `state_update` and `room_state.state`; a `media_changed`
-  message (room switched to a different item) is ignored. Since the
-  follower is also disposed on its own session's `PlaybackStopped`, an
-  item switch just ends the bridge rather than following it.
-- **Password-protected rooms are not supported.** The follower's `join_room`
-  does not carry the room password (the web client doesn't retain it), so the
-  server rejects the join; the receiver simply never syncs.
-- **No reconnect.** Like `SessionHostBridge`, a follower does not re-establish
-  its WebSocket after a drop — it must be re-attached. It also does not tear
-  itself down on `room_closed` (it just stops following); use Stop, or it is
-  cleaned up when the session stops playing.
+- **Doesn't follow `media_changed`:** it is ignored, and since the
+  follower is disposed on its session's `PlaybackStopped`, an item switch
+  just ends the bridge.
+- **No password-protected rooms:** `join_room` carries no password (the
+  web client doesn't keep it), so the server refuses the join and Follow
+  fails with the server's error.
+- **No reconnect**, like the host bridge.
 
 ### `Services/SessionServerAuth.cs`
 
-Shared JWT-minting logic used by both the bridge (minting a token for
-the *bridged session's* owner, not the HTTP caller) and the normal
-`/JellyWatchParty/Token` endpoint.
+JWT minting shared by the bridges (token for the *bridged session's*
+owner, not the HTTP caller) and `/JellyWatchParty/Token`; see
+[Plugin: JWT generation]({{ '/technical/plugin/' | relative_url }}#jwt-generation).
 
 ## REST Endpoints
 
 See [Plugin: REST API Reference]({{ '/technical/plugin/' | relative_url }}#rest-api-reference) for the
-full endpoint table (`Bridge/Sessions`, `Bridge/Status`,
-`Bridge/{sessionId}/Start`, `Bridge/{sessionId}/Stop`,
-`Bridge/{sessionId}/Follow?roomId=…`) and auth gating. `Follow` attaches
-the session to the given room as a receiver (the room-id comes from the
-room the calling browser is currently in).
+endpoint table, auth and error answers: `GET Bridge/Sessions`, `GET
+Bridge/Status`, `POST Bridge/{sessionId}/Start`, `POST
+Bridge/{sessionId}/Follow?roomId=…` (the web client passes the room it is
+in) and `POST Bridge/{sessionId}/Stop`.
 
 `Bridge/Sessions` returns `sessionId`, `userName`, `deviceName`, `client`,
-`nowPlayingItemName` per eligible session; `Bridge/Status` and the
-`Start`/`Follow`/`Stop` responses return `sessionId`, `userName`, `roomId`,
-`connected`, `role` (`"host"` or `"receiver"`). Response fields are camelCase — Jellyfin's controllers don't
-auto-camelCase JSON output, so the controller projects onto anonymous
-objects with the exact keys the UI expects, matching the existing
-`/Token` endpoint's `user_id`/`auth_enabled` convention of spelling
-field names out explicitly rather than relying on a naming policy.
+`nowPlayingItemName` per eligible session. `Bridge/Status` and the
+`Start`/`Follow` responses return `sessionId`, `userName` ("User
+(Device)"), `roomId`, `connected`, `role` (`"host"` or `"receiver"`);
+`Stop` returns an empty `200`. The controller spells these camelCase keys
+out in anonymous objects, the same way `/Token` spells out
+`user_id`/`auth_enabled`.
 
 ## UI
 
-`src/clients/jellyfin-web/ui/bridge.js` renders a "Host From Another
-Device" section directly inside the normal lobby panel
-(`ui/render.js`'s `renderLobby`) — not the Jellyfin admin config page.
-It lists eligible sessions and active bridges (polling the two `GET`
-endpoints), and is rendered in **both** panel contexts: the pre-room
-lobby (`renderLobby`) and the in-room view (`renderRoom`). Each eligible
-session shows a single action matching the context: **Host** in the
-lobby (start a new room from that session) and **Receiver** while in a
-room (attach that session to the current room, passing `state.roomId`
-to `Follow`). Active bridges show their role and can be stopped with a
-button. All calls use the same `ApiClient.accessToken()` pattern the
-rest of the client uses to call plugin endpoints.
+`src/clients/jellyfin-web/ui/bridge.js` fills two optional sections of the
+Watch Party panel (`ui/render.js`), not the Jellyfin admin page:
+
+- In the lobby, *Host From Another Device (e.g. Fladder)*, rendered only
+  when `allow_third_party_host` is true: each eligible session gets a
+  **Host** button (`Start`).
+- In a room, *Add a Device to This Room*, rendered only when
+  `allow_supported_receiver` is true: each eligible session gets a
+  **Receiver** button (`Follow` with `state.roomId`).
+
+Both list the active bridges with their role and room and a **Stop**
+button, and are refreshed with the panel. Calls use `utils.apiFetch`
+(the `Authorization: MediaBrowser …` header); errors are shown as toasts.
 
 ## Related
 
-- [Features: Known Limitations]({{ '/features/' | relative_url }}#known-limitations) — how this changes the "web only" caveat
-- [Troubleshooting & FAQ: Can I host from Fladder or another Android TV app?]({{ '/troubleshooting/' | relative_url }}#usage)
+- [Features: Known Limitations]({{ '/features/' | relative_url }}#known-limitations)
+- [Troubleshooting & FAQ]({{ '/troubleshooting/' | relative_url }}#frequently-asked-questions)
 - [User Guide: Watching on a TV App]({{ '/user-guide/' | relative_url }}#watching-on-a-tv-app)

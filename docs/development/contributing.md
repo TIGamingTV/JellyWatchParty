@@ -10,253 +10,154 @@ Thank you for your interest in contributing to JellyWatchParty!
 
 ## Getting Started
 
-1. **Fork the repository** on GitHub
+1. **Fork the repository** on GitHub.
 2. **Clone your fork**:
    ```bash
    git clone https://github.com/YOUR-USERNAME/JellyWatchParty.git
    cd JellyWatchParty
    ```
-3. **Set up development environment**:
+3. **Set up the development environment** (see [Setup]({{ '/development/setup/' | relative_url }})):
    ```bash
-   just setup   # Configure git hooks (required once)
+   just setup   # git hooks, once per clone
    just up
    ```
-4. **Create a branch**:
+4. **Create a branch** from `main`:
    ```bash
-   git checkout -b feature/your-feature-name
+   git checkout main
+   git checkout -b feat/your-feature-name
    ```
+   Larger, multi-PR work goes through `develop` first, which publishes the
+   `dev` test builds (see [Release]({{ '/development/release/' | relative_url }})).
 
 ## Code Style
 
 ### Rust
 
-Follow the [Rust Style Guide](https://doc.rust-lang.org/1.0.0/style/README.html):
-
-- Use `rustfmt` for formatting
-- Use `clippy` for linting
-- Prefer descriptive variable names
-- Document public functions
+- Format with `rustfmt` and keep `clippy` clean; CI fails on either.
+- Prefer descriptive names and document public items.
 
 ```bash
-# Format code
-cargo fmt
-
-# Run linter
-cargo clippy
+just fmt            # cargo fmt in src/server
+just lint server    # cargo clippy -- -D warnings
+just lint discord   # bot: cargo clippy --all-targets -- -D warnings
+(cd src/integrations/discord-bot && cargo fmt)
 ```
+
+The pre-commit hook (`.githooks/pre-commit`, enabled by `just setup`) runs
+`cargo fmt --check` in `src/server` whenever `.rs` files are staged. It does
+not check the bot crate, but CI does.
 
 ### C#
 
-Follow [C# Coding Conventions](https://docs.microsoft.com/en-us/dotnet/csharp/fundamentals/coding-style/coding-conventions):
-
-- Use PascalCase for public members
-- Use camelCase for private members
-- Prefix interfaces with `I`
-- Document public APIs with XML comments
-
-```bash
-# Format code
-dotnet format
-```
+Follow the [.NET coding conventions](https://learn.microsoft.com/dotnet/csharp/fundamentals/coding-style/coding-conventions):
+PascalCase for public members, `_camelCase` for private fields, `I` prefix for
+interfaces, XML comments on public APIs. `dotnet format` is available but not
+enforced by CI.
 
 ### JavaScript
 
-- Use meaningful variable names
-- Prefer `const` over `let`
-- Avoid globals (use IIFE pattern)
-- Comment complex logic
+- Each file is an IIFE that attaches to `window.JellyWatchParty`; don't add
+  other globals.
+- Prefer `const`, use meaningful names, comment non-obvious sync logic.
+- New client files must be added to the explicit file lists in
+  `infra/just/common.just` (`client_js_files`), `.github/workflows/ci.yml`
+  and `.github/workflows/publish.yml` (two jobs); load order matters.
 
 ## Commit Messages
 
-Format:
-```
-type: brief description
+[Conventional Commits](https://www.conventionalcommits.org/), with a scope
+where it helps:
 
-Longer description if needed.
+```
+type(scope): imperative summary
+
+Optional body explaining why.
 
 Closes #123
 ```
 
-Types:
-- `feat:` New feature
-- `fix:` Bug fix
-- `docs:` Documentation
-- `style:` Formatting
-- `refactor:` Code restructure
-- `test:` Tests
-- `chore:` Build/tooling
+Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `ci`,
+`chore`. Examples from the history:
 
-Examples:
 ```
-feat: add participant count to room list
-
-fix: prevent feedback loop in HLS buffering
-
-docs: update installation instructions
+fix(docker): move runtime images to alpine 3.24 to patch openssl/zlib CVEs
+ci(security): pin trivy-action and report only fixable high+ CVEs
+chore(plugin): bump version to 4.1.5.0
 ```
 
-**Note:** Do not add AI signature lines (`Co-Authored-By: Claude` etc.) to commits.
+Do not add AI signature lines (`Co-Authored-By: Claude` etc.).
 
 ## Pull Request Process
 
-### 1. Before Submitting
+### Before submitting
 
-- [ ] Code follows project style
-- [ ] Tests pass (`just test`)
-- [ ] Documentation updated
-- [ ] Commit messages are clear
-- [ ] Branch is up to date with main
+- [ ] `just fmt`, `just lint` and `just test` pass
+- [ ] Docs updated if behaviour or configuration changed
+- [ ] Branch is up to date with its target branch
 
-### 2. Creating a PR
+### Opening the PR
 
-1. Push your branch:
-   ```bash
-   git push origin feature/your-feature-name
-   ```
+1. Push your branch: `git push origin feat/your-feature-name`
+2. Open the PR against `main` (or `develop` for work that should ship as a
+   `dev` test build first).
+3. Describe the change, link related issues, say how you tested it, and add
+   screenshots for UI changes.
 
-2. Open PR on GitHub
+### Review and merge
 
-3. Fill out the PR template:
-   - Description of changes
-   - Related issues
-   - Testing performed
-   - Screenshots (if UI changes)
-
-### 3. Code Review
-
-- Respond to feedback promptly
-- Make requested changes in new commits
-- Don't force-push during review
-- Mark conversations resolved when addressed
-
-### 4. Merging
-
-- Maintainer will merge when approved
-- Squash merge for clean history
-- Delete branch after merge
-
-## What to Contribute
-
-### Good First Issues
-
-Look for issues labeled `good-first-issue`:
-- Documentation improvements
-- Bug fixes with clear reproduction steps
-- Small feature additions
-
-### Needed Contributions
-
-| Area | Examples |
-|------|----------|
-| Documentation | Guides, examples, translations |
-| Testing | Unit tests, integration tests |
-| UI/UX | Accessibility, responsiveness |
-| Security | Audit, hardening |
-| Performance | Optimization, profiling |
-
-### Feature Ideas
-
-Before implementing:
-1. Check existing issues
-2. Open a discussion or issue
-3. Get feedback on approach
-4. Then implement
+- Address feedback in new commits; avoid force-pushing during review.
+- A maintainer merges approved PRs. Releases are cut from `main`; see
+  [Release]({{ '/development/release/' | relative_url }}).
 
 ## Development Guidelines
 
-### Adding New Features
+### Features
 
-1. **Discuss first** - Open an issue for significant changes
-2. **Keep it focused** - One feature per PR
-3. **Document** - Update relevant docs
-4. **Test** - Manual testing at minimum
+1. Open an issue first for significant changes.
+2. One feature per PR.
+3. Update the relevant docs.
+4. Add tests where the code is testable (server, bot, plugin and the client
+   helpers all have suites); test manually otherwise.
 
-### Bug Fixes
+### Bug fixes
 
-1. **Reproduce first** - Confirm the bug exists
-2. **Minimal fix** - Don't refactor unrelated code
-3. **Test the fix** - Verify it works
-4. **Add regression test** - If applicable
-
-### Documentation
-
-- Keep docs in sync with code
-- Use clear, simple language
-- Include examples where helpful
-- Update table of contents
+1. Reproduce first.
+2. Keep the fix minimal; don't refactor unrelated code.
+3. Add a regression test if applicable.
 
 ## Testing
 
-### Manual Testing Checklist
-
-Before submitting:
-- [ ] Create room works
-- [ ] Join room works
-- [ ] Play/pause sync works
-- [ ] Seek sync works
-- [ ] Leave room works
-- [ ] Reconnection works
-- [ ] Works in Chrome
-- [ ] Works in Firefox
-
-### Automated Tests
-
 ```bash
-# Rust tests
-cd src/server
-cargo test
-
-# C# tests
-cd src/plugins/jellyfin
-dotnet test JellyWatchParty.Tests/JellyWatchParty.Tests.csproj
+just test           # server, bot, plugin (Docker) and client suites
 ```
+
+Manual checks before submitting sync-related changes:
+
+- [ ] Create / join / leave a room
+- [ ] Play, pause and seek sync
+- [ ] Reconnect after a network drop
+- [ ] Chrome and Firefox
+
+See [Testing]({{ '/development/testing/' | relative_url }}) for details.
 
 ## Continuous Integration
 
-All pull requests are validated by GitHub Actions CI and must pass before
-merging. Run `just fmt`, `just lint`, `just test`, and `just build` locally
-to check before pushing. See [CI/CD]({{ '/development/ci/' | relative_url }}) for the full pipeline
-(workflows, jobs, security scans, and how to fix common CI failures).
+Every PR to `develop` or `main` runs the CI and Security workflows and must
+pass before merging. See [CI/CD]({{ '/development/ci/' | relative_url }}) for
+the jobs and how to fix common failures.
 
 ## Code of Conduct
 
-### Be Respectful
+Be respectful and patient, keep discussions on-topic, and accept
+constructive criticism. Report unacceptable behaviour to the maintainers
+privately.
 
-- Welcome newcomers
-- Be patient with questions
-- Accept constructive criticism
-- Focus on what's best for the project
+## Questions
 
-### Be Professional
-
-- No harassment or discrimination
-- Keep discussions on-topic
-- Respect others' time
-
-### Report Issues
-
-If you experience or witness unacceptable behavior:
-- Contact maintainers privately
-- Provide specific details
-- Allow time for investigation
-
-## Recognition
-
-Contributors are recognized in:
-- GitHub contributors list
-- Release notes (for significant contributions)
-- README acknowledgments (for major features)
-
-## Questions?
-
-- Open a GitHub Discussion for general questions
-- Open an Issue for bugs or feature requests
-- Check existing issues and discussions first
+Open a GitHub issue for bugs, feature requests and questions; check existing
+issues first.
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the same license as the project.
-
-## Thank You!
-
-Every contribution matters - from fixing typos to implementing features. Thank you for helping make JellyWatchParty better!
+By contributing, you agree that your contributions are licensed under the
+project's [MIT License](https://github.com/TIGamingTV/JellyWatchParty/blob/main/LICENSE).

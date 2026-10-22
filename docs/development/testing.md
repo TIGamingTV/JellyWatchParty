@@ -6,307 +6,189 @@ nav_order: 3
 
 # Testing Guide
 
-## Overview
-
-JellyWatchParty uses a combination of automated tests and manual testing procedures.
-
 ## Automated Tests
 
-### Rust Session Server
+`just test` runs all four suites. CI runs the same ones (see
+[CI/CD]({{ '/development/ci/' | relative_url }})).
+
+| Suite | Location | Command |
+|-------|----------|---------|
+| Session server (Rust) | inline `#[cfg(test)]` modules in `src/server/src/**` | `just test server` |
+| Chat bot (Rust) | inline modules in `src/integrations/discord-bot/src/**` | `just test discord` |
+| Plugin (C#, xUnit + Moq) | `src/plugins/jellyfin/JellyWatchParty.Tests/` | `just test plugin` |
+| Client (JavaScript, `node:test`) | `src/clients/jellyfin-web/tests/*.test.js` | `just test client` |
+
+### Session server
 
 ```bash
 cd src/server
-
-# Run all tests
-cargo test
-
-# Run with output
-cargo test -- --nocapture
-
-# Run specific test
-cargo test test_name
-
-# Run with coverage (requires cargo-tarpaulin)
-cargo tarpaulin
+cargo test                         # all tests
+cargo test all_ready               # tests whose name contains "all_ready"
+cargo test -- --nocapture          # show output
+RUST_BACKTRACE=1 cargo test
 ```
 
-#### Test Categories
-
-| Test Type | Description |
-|-----------|-------------|
-| Unit tests | Individual function tests |
-| Integration tests | Module interaction tests |
-
-#### Example Test
+There is no `tests/` directory: tests live next to the code.
+`src/server/src/test_helpers.rs` builds clients, rooms and receivers, and the
+route tests drive the real router (including a real WebSocket upgrade via
+`tokio-tungstenite`). Linking needs mold, see
+[Setup]({{ '/development/setup/' | relative_url }}#cargo-configuration).
 
 ```rust
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_helpers;
+    use std::collections::HashSet;
 
     #[test]
-    fn test_all_ready_empty_room() {
-        let room = Room {
-            clients: vec![],
-            ready_clients: HashSet::new(),
-            ..Default::default()
-        };
-        assert!(all_ready(&room));
-    }
-
-    #[test]
-    fn test_all_ready_partial() {
-        let room = Room {
-            clients: vec!["a".into(), "b".into()],
-            ready_clients: HashSet::from(["a".into()]),
-            ..Default::default()
-        };
+    fn all_ready_false() {
+        let mut room = test_helpers::create_room("r1", "host");
+        room.clients = vec!["host".to_string(), "guest".to_string()];
+        room.ready_clients = HashSet::from(["host".to_string()]);
         assert!(!all_ready(&room));
     }
 }
 ```
 
-### C# Plugin
+### Chat bot
 
 ```bash
-cd src/plugins/jellyfin/JellyWatchParty
-
-# Run tests
-dotnet test
-
-# With coverage
-dotnet test --collect:"XPlat Code Coverage"
+cd src/integrations/discord-bot
+cargo test --locked
 ```
+
+The API tests use a raw socket server in place of the session server; no
+Discord or Telegram connection is needed.
+
+### Plugin
+
+`just test plugin` runs `dotnet test JellyWatchParty.Tests/ -f net10.0` in
+`mcr.microsoft.com/dotnet/sdk:10.0`, so no local SDK is needed. To run it
+locally with the .NET 10 SDK:
+
+```bash
+just build plugin   # copies the client JS into JellyWatchParty/Web/ (embedded resources)
+cd src/plugins/jellyfin
+dotnet test JellyWatchParty.Tests/JellyWatchParty.Tests.csproj
+dotnet test JellyWatchParty.Tests/JellyWatchParty.Tests.csproj --collect:"XPlat Code Coverage"
+```
+
+### Client
+
+```bash
+node --test src/clients/jellyfin-web/tests/*.test.js
+```
+
+`tests/setup.js` fakes the minimal browser globals and loads `state.js`,
+`utils/time.js`, `utils/misc.js` and `utils/validation.js`; test files
+`require` it (and any other module they exercise) and use
+`window.JellyWatchParty`.
+
+### Naming
+
+- Rust: descriptive snake_case without a `test_` prefix
+  (`decide_attach_requires_the_resume_secret`).
+- C#: `Subject_Condition_Expectation` or `Subject_Expectation`
+  (`PluginGuid_IsValidGuid`).
+- JS: `describe('<function>')` + `it('<behaviour>')`.
 
 ## Manual Testing
 
-### Test Environment
+### Environment
 
-1. Start the development environment:
-   ```bash
-   just up
-   ```
+1. `just up`
+2. Open Jellyfin in two browsers (or a normal and a private window; each tab
+   is its own client) and log in.
 
-2. Open Jellyfin in two browser windows/tabs
+### Room management
 
-3. Log in to both
+| Test | Steps | Expected |
+|------|-------|----------|
+| Create room | Watch Party > start a room | Room created, you are host |
+| Join room | Other window: Watch Party > select room > Join | Joined, synced to host |
+| Leave room | In room > Leave | Back to the room list |
+| Host leaves | Host leaves the room | Earliest remaining participant becomes host |
+| Last member leaves | Everyone leaves | Room closes |
+| Password | Create with password, join with a wrong one | "Incorrect password"; locked out after 5 tries for 60 s |
 
-### Test Scenarios
+### Playback sync
 
-#### Room Management
+| Test | Steps | Expected |
+|------|-------|----------|
+| First play | Host presses play with a guest in the room | Waits for everyone to be ready (max 10 s), then 3 s countdown |
+| Play / pause | Host plays or pauses | All clients follow |
+| Seek | Host seeks | All clients jump to the same position |
+| Drift | Play for 10+ minutes | Rate correction starts above 0.3 s drift; hard seek above 2 s |
 
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Create room | Click Watch Party > Enter name > Start Room | Room created, you are host |
-| Join room | Click Watch Party > Select room > Join | Joined room, synced to host |
-| Leave room | In room > Leave | Left room, panel shows lobby |
-| Host leaves | Host leaves room | All participants see "Room closed" |
+### Edge cases
 
-#### Playback Sync
+| Test | Steps | Expected |
+|------|-------|----------|
+| Rapid seeks | Seek several times quickly | Clients end on the last position |
+| Buffering | Throttle the network mid-play | No false pause broadcast |
+| Disconnect | Drop the network briefly | Reconnects (backoff 1 s up to 30 s) and resumes the room; membership is kept for 90 s |
+| Media switch | Host starts another item | Guests load it (`media_changed`) |
+| Democratic mode | Host enables it, guest pauses | Everyone pauses |
 
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Play sync | Host plays | All clients start playing |
-| Pause sync | Host pauses | All clients pause |
-| Seek sync | Host seeks to position | All clients seek to same position |
-| Drift correction | Play for 5 minutes | Clients stay within 200ms |
+Test at least Chrome and Firefox; Safari and mobile browsers when touching
+playback or UI code.
 
-#### Edge Cases
-
-| Test | Steps | Expected Result |
-|------|-------|-----------------|
-| Rapid seek | Seek multiple times quickly | Only last seek applied |
-| Buffering | Let video buffer mid-play | No false pause sent |
-| Disconnect | Disconnect network briefly | Auto-reconnect when restored |
-| Different quality | Clients use different quality | Sync maintained |
-
-### Browser Testing
-
-| Browser | Status | Notes |
-|---------|--------|-------|
-| Chrome | Primary | Full support |
-| Firefox | Secondary | Full support |
-| Safari | Test | May need WebSocket fixes |
-| Edge | Test | Same as Chrome |
-| Mobile Chrome | Test | Touch interactions |
-| Mobile Safari | Test | iOS-specific issues |
-
-### Network Testing
-
-#### Simulate Latency
+### Network conditions
 
 ```bash
-# Linux (requires tc)
-tc qdisc add dev eth0 root netem delay 200ms
-
+# Linux: add 200 ms latency (needs root and iproute2)
+sudo tc qdisc add dev eth0 root netem delay 200ms
 # Reset
-tc qdisc del dev eth0 root
+sudo tc qdisc del dev eth0 root
 ```
-
-#### Test Scenarios
-
-| Condition | Test |
-|-----------|------|
-| High latency (500ms+) | Sync should work but feel delayed |
-| Packet loss (5%) | Should recover gracefully |
-| Disconnect/reconnect | Auto-reconnect after 3s |
 
 ## Load Testing
 
-### WebSocket Connections
-
-Using `websocat`:
-
-```bash
-# Multiple concurrent connections
-for i in {1..100}; do
-  websocat -n ws://localhost:3000/ws &
-done
-```
-
-### Stress Test Script
+Each connection is rate-limited to 30 messages per second and rooms are
+capped at 20 clients. The script below opens 50 connections that each create
+a room; it only works with JWT disabled (`JWT_SECRET` unset), because
+`create_room` requires an authenticated client.
 
 ```python
 #!/usr/bin/env python3
-import asyncio
-import websockets
-import json
+import asyncio, json, time
+import websockets  # pip install websockets
 
-async def client(client_id):
+async def client(n):
     async with websockets.connect('ws://localhost:3000/ws') as ws:
-        # Receive client_hello
-        await ws.recv()
-
-        # Create room
+        await ws.recv()  # client_hello
+        await ws.recv()  # room_list
         await ws.send(json.dumps({
             'type': 'create_room',
-            'payload': {'name': f'Room {client_id}'},
-            'ts': 0
+            'payload': {'user_name': f'load-{n}', 'start_pos': 0},
+            'ts': int(time.time() * 1000),
         }))
-
-        # Wait
         await asyncio.sleep(60)
 
 async def main():
-    tasks = [client(i) for i in range(50)]
-    await asyncio.gather(*tasks)
+    await asyncio.gather(*(client(i) for i in range(50)))
 
 asyncio.run(main())
 ```
 
-## Performance Testing
-
-### Sync Accuracy
-
-1. Start playing video with precise timestamp
-2. Record actual playback time from multiple clients
-3. Calculate drift over time
-
-Target: < 200ms drift after 10 minutes
-
-### Message Latency
+### Message latency
 
 ```javascript
-// In browser console
-const start = Date.now();
-JWP.ws.send(JSON.stringify({type: 'ping', ts: start}));
-// Check pong response for round-trip time
+// In the browser console, while connected
+window.JellyWatchParty.actions.send('ping', { client_ts: Date.now() });
+// The pong handler updates the latency shown in the panel (.jwp-latency)
 ```
 
-Target: < 100ms RTT on local network
-
-## Test Data
-
-### Sample Media
-
-For testing, use:
-- Short video clips (1-5 minutes)
-- Various formats (MP4, MKV)
-- HLS streams (to test buffering)
-
-### Test Users
-
-Create test users in Jellyfin:
-- `testhost` - For hosting
-- `testclient1` - For joining
-- `testclient2` - For joining
-
-## Continuous Integration
-
-Tests run automatically on every push and pull request via GitHub Actions. See [CI/CD]({{ '/development/ci/' | relative_url }}) for details on the CI pipeline.
-
-## Debugging Test Failures
-
-### Rust Test Failures
+### Connectivity checks
 
 ```bash
-# Run with backtrace
-RUST_BACKTRACE=1 cargo test
-
-# Run single test with logging
-RUST_LOG=debug cargo test test_name -- --nocapture
+curl http://localhost:3000/health   # {"status":"ok","auth_enabled":...}
+wscat -c ws://localhost:3000/ws     # npm i -g wscat
 ```
-
-### JavaScript Issues
-
-1. Check browser console for errors
-2. Enable debug logging:
-   ```javascript
-   JWP.constants.DEBUG = true;
-   ```
-
-### Network Issues
-
-```bash
-# Check WebSocket is accessible
-curl http://localhost:3000/health
-
-# Test WebSocket connection
-wscat -c ws://localhost:3000/ws
-```
-
-## Writing New Tests
-
-### Test File Location
-
-| Component | Location |
-|-----------|----------|
-| Rust | `src/server/src/*.rs` (inline) |
-| Rust integration | `src/server/tests/` |
-| C# | `src/plugins/jellyfin/JellyWatchParty.Tests/` |
-
-### Test Naming
-
-```rust
-// Rust
-#[test]
-fn test_function_name_scenario() { }
-
-// Example
-#[test]
-fn test_all_ready_returns_false_when_not_all_clients_ready() { }
-```
-
-```csharp
-// C#
-[Fact]
-public void MethodName_Scenario_ExpectedResult() { }
-
-// Example
-[Fact]
-public void GetToken_WhenAuthenticated_ReturnsValidToken() { }
-```
-
-## Test Coverage Goals
-
-| Component | Goal |
-|-----------|------|
-| Rust business logic | 80% |
-| C# controllers | 70% |
-| JavaScript | Manual testing |
 
 ## Next Steps
 
-- [Contributing]({{ '/development/contributing/' | relative_url }}) - How to submit tests
-- [Setup]({{ '/development/setup/' | relative_url }}) - Development environment
-- [Release]({{ '/development/release/' | relative_url }}) - Release process
+- [Contributing]({{ '/development/contributing/' | relative_url }})
+- [Setup]({{ '/development/setup/' | relative_url }})
+- [Release]({{ '/development/release/' | relative_url }})

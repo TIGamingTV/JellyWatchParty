@@ -5,88 +5,115 @@ nav_order: 7
 
 # Troubleshooting & FAQ
 
-## Quick Diagnostic Checklist
+## Quick Checklist
 
-1. [ ] Session server running? (`curl http://localhost:3000/health`)
-2. [ ] Plugin installed? (Check Dashboard > Plugins)
-3. [ ] Script tag in Custom HTML? (Dashboard > General) — or is [file-transformation]({{ '/installation/' | relative_url }}#enable-the-client-script) installed?
-4. [ ] Browser cache cleared? (Ctrl+F5)
-5. [ ] Correct WebSocket URL configured?
-6. [ ] Firewall allowing the session server port (default 3000)?
-7. [ ] Using a chat bot? See [Discord Bot](#discord-bot) or [Telegram Bot](#telegram-bot) below.
+1. Session server running? `curl http://localhost:3000/health` should answer
+   `{"status":"ok",...}`.
+2. Plugin installed and active? **Dashboard > Plugins**.
+3. Browser cache cleared? Reload with Ctrl+F5 (Cmd+Shift+R on macOS).
+4. Panel says **Online**? If not, see [Cannot connect](#cannot-connect-to-session-server).
+5. `JWT_SECRET` and the plugin's **JWT Secret** identical (or both empty)?
+6. Using a chat bot? See [Discord Bot](#discord-bot) or [Telegram Bot](#telegram-bot).
 
-Related: [Core Structure]({{ '/core-structure/' | relative_url }}) for expected system behavior,
-[Security]({{ '/security/' | relative_url }}) for authentication/CORS issues, [Configuration]({{ '/configuration/' | relative_url }})
-for server and plugin settings.
+Where to look:
+
+| Log | How |
+|-----|-----|
+| Session server | `docker compose logs -f session-server`. The first lines show the allowed origins, `JWT: ENABLED`/`DISABLED`, and whether the admin panel, Jellyfin devices and chat integrations started (and why not). |
+| Chat bot | `docker compose logs -f discord-bot` |
+| Jellyfin | **Dashboard > Logs**, or `docker logs <jellyfin container>`. Plugin lines start with `[JellyWatchParty]`. |
+| Browser | Developer tools (F12) > Console, filter by `JellyWatchParty`. The Network tab, filtered by **WS**, shows the WebSocket connection. |
 
 ## Common Issues
 
 ### Watch Party Button Not Visible
 
-1. **Check Custom HTML configuration** — Dashboard > General > Branding should have:
-   ```html
-   <script src="../JellyWatchParty/ClientScript"></script>
-   ```
-2. **Hard refresh the browser** (Ctrl+F5 / Cmd+Shift+R), or clear the cache completely
-3. **Check browser console** (F12) — a `404` means the script wasn't found (plugin not installed); a `CORS` error means the WebSocket was blocked (check CORS config)
-4. **Verify plugin is installed** — Dashboard > Plugins should show "JellyWatchParty"; check Jellyfin logs for plugin load errors
-5. **On Jellyfin 12, update to the latest JellyWatchParty release** — versions before the Jellyfin 12 UI fix only checked whether `.headerRight` existed, not whether it was visible; Jellyfin 12's default "modern" layout keeps it in the DOM but hidden, so the button silently failed to appear with none of the symptoms above present. Fixed versions detect this and fall back to a floating button anchored next to the user-menu avatar.
-6. **On Jellyfin 12, the floating button overlaps another plugin's button** — that fallback anchors next to the user-menu avatar the same way some other plugins do (e.g. JellyPrivateLibraries); JellyWatchParty automatically detects and steps around any other plugin's own floating button there. If it's still overlapping, both plugins may be older than the versions with this fix — update both.
-7. **The floating button should be replacing SyncPlay but isn't** — this only happens when the admin has enabled "Hide native SyncPlay button" in JellyWatchParty's plugin config; with that off, the button floats next to the toolbar instead of over SyncPlay's icon (this is expected — see [Configuration]({{ '/configuration/' | relative_url }})).
+1. **Reload without cache** (Ctrl+F5).
+2. **Check the plugin is active** in **Dashboard > Plugins**, and restart
+   Jellyfin after installing or updating it.
+3. **Check the script injection in the Jellyfin log.** At startup the plugin
+   logs one of:
+   - `Registered index.html transformation with File Transformation` (good);
+   - `Injected client script into ...` or `Client script already present in ...` (good);
+   - `File Transformation plugin not available and JELLYFIN_WEB_DIR not set`
+     or `No write permission to ...`: install the
+     [File Transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation)
+     plugin and restart Jellyfin.
+4. **Check the browser console.** A `404` for `/JellyWatchParty/ClientScript`
+   or `/JellyWatchParty/Client/...` means the plugin isn't loaded.
+5. **Check the Jellyfin version.** The plugin targets Jellyfin 12.x and logs
+   a warning at startup if the server is a newer major version.
+
+The button is not shown on the admin dashboard.
 
 ### Cannot Connect to Session Server
 
-1. **Check server is running:** `docker ps | grep session` and `curl http://localhost:3000/health`
-2. **Check firewall:** `nc -zv localhost 3000`, open the port if needed (`sudo ufw allow 3000/tcp`)
-3. **Check the WebSocket URL** — browser console shows the attempted URL; should be `ws://host:3000/ws` or `wss://host:3000/ws`
-4. **Check CORS** — session server logs show CORS errors; set `ALLOWED_ORIGINS` to include your Jellyfin URL
+The panel shows **Offline**, and its footer shows the server it tries
+(**Server: host:port**).
 
-### Sync Issues
-
-Participants out of sync, playback drifting apart, or frequent jumping/stuttering:
-
-1. **Wait a few seconds** — initial sync takes 2-3 seconds and drift correction is gradual by design
-2. **Host: pause and play again** to re-sync everyone
-3. **Check network quality** — high latency causes sync issues; check RTT in the panel (ideal < 100ms)
-4. **HLS/transcoding** — transcoded streams have higher latency; try direct play or reduce quality if network is slow
-5. **Check everyone has the same media** — different versions may have different durations
-
-Technical details: [Sync Algorithms]({{ '/technical/sync/' | relative_url }}).
-
-### Room Closes Unexpectedly
-
-Causes: the host disconnected (network dropped, browser closed, computer slept) and didn't reconnect within 90 seconds and no other participant remained to be promoted; or the server restarted (rooms are in-memory/ephemeral). Check server logs for errors if this happens with a stable host connection.
-
-Technical details: [Core Structure: Host Disconnect]({{ '/core-structure/' | relative_url }}#host-disconnect-grace-period-then-closure).
+1. **Is the server reachable from the browser's machine?** Open
+   `http://<server>:3000/health` in that browser.
+2. **Is the Session Server URL right?** Empty means `ws://<Jellyfin
+   host>:3000/ws`. It must be an address browsers can reach: not a Docker
+   service name, not `localhost` (unless the browser runs on the server).
+3. **HTTPS:** a Jellyfin page opened over `https://` can only connect to
+   `wss://`. Put the session server behind your reverse proxy
+   ([Deployment]({{ '/deployment/' | relative_url }}#behind-a-reverse-proxy))
+   and set the URL to `wss://.../ws`. The client shows a "Session Server URL
+   problem" notice for an insecure URL.
+4. **Origin:** if the session server logs
+   `Rejected connection from origin: <origin>`, add exactly that origin to
+   `ALLOWED_ORIGINS` and run `docker compose up -d`.
+5. **Firewall:** port 3000 (or your proxy) must be open.
 
 ### Authentication Errors
 
-1. **Check JWT configuration matches** — plugin JWT Secret must match server `JWT_SECRET`; both must be configured or both must be empty
-2. **Check token expiration** — default 1 hour; refresh the page for a new token
-3. **Rate limiting** — max 10 token requests per minute; wait and try again
-4. **JWT Secret is set but very short** — the widget shows "Offline" and changing the Session Server URL setting seems to have no effect: check the Jellyfin server logs for repeated errors on `GET /JellyWatchParty/Token`. A JWT Secret under 32 characters is treated as unusable and disables authentication (see [Configuration: JWT Secret Guidelines]({{ '/configuration/' | relative_url }}#jwt-secret-guidelines)) — set a proper secret with `openssl rand -base64 32`, or clear the field entirely to explicitly run without authentication.
+- **"Authentication required: no token provided"**: the session server has
+  `JWT_SECRET` set but the plugin's **JWT Secret** is empty or shorter than
+  32 characters (the plugin then issues no tokens). Use the same 32+ character
+  secret on both.
+- **"Authentication failed"** (server log `Auth failed for ...`): the secrets,
+  **JWT Audience** / `JWT_AUDIENCE` or **JWT Issuer** / `JWT_ISSUER` differ.
+- **Token rate limit:** the plugin issues at most 30 tokens per user per
+  minute. Repeated page reloads can hit it; wait a minute.
 
-### HLS Streaming Issues
+Tokens are renewed automatically before they expire.
 
-Sync works initially but drifts during playback, frequent buffering interrupts sync, position jumps backward, or "false pauses" trigger unwanted sync events. HLS chunks video into small segments, causing buffering gaps, position reporting delays, and `readyState` changes during segment loads. JellyWatchParty filters most of this automatically (see [Sync Algorithms: HLS Handling]({{ '/technical/sync/' | relative_url }}#5-hls-handling-and-feedback-loop-prevention)); if issues persist:
+### Sync Issues
 
-- Reduce bitrate/quality in Jellyfin playback settings
-- Prefer Direct Play or Direct Stream over full transcoding (Dashboard > Playback > Active Devices shows which is in use)
-- Safari uses native HLS (not hls.js) and may report `readyState` differently during buffering — keep the tab in focus, or use Chrome/Firefox
+1. **Wait a few seconds**: after joining or a seek, guests catch up by
+   adjusting playback speed.
+2. **Host: pause and play again** to re-sync everyone.
+3. **Check the latency** (**RTT** in the panel). High latency or an
+   unstable connection makes sync worse.
+4. **Transcoding:** transcoded (HLS) streams buffer more. Lower the quality
+   or use direct play if a guest keeps falling behind.
+5. **Same item:** guests always play the host's item; different versions of
+   a file can have different lengths.
 
-### Rate Limiting Issues
+Details: [Sync Algorithms]({{ '/technical/sync/' | relative_url }}).
 
-| Limit | Value | Applies To |
-|-------|-------|------------|
-| Token requests | 10/min | Per user, plugin endpoint |
-| WebSocket messages | 30/sec | Per client connection |
-| Message size | 64 KB | Per message |
+### Room Closes Unexpectedly
 
-Usually caused by rapid page refreshes/reconnection attempts (token limit) or spamming play/pause/seek (message limit) — normal usage won't hit either. Check server logs: `docker logs session-server 2>&1 | grep -i "rate"`.
+- The session server restarted (rooms are kept in memory).
+- Everyone left. When the host leaves, the person who joined earliest
+  becomes host; the room only ends when nobody is left. A dropped
+  connection keeps its place for 90 seconds.
+- Creating a new room closes the room you currently host.
+- An admin closed it, or (chat bot rooms) it was empty longer than
+  **Close empty rooms after**.
 
-### Panel Opens But Empty
+### "Rate limit exceeded"
 
-Wait for the WebSocket to finish connecting ("Connecting..." status), check the browser console (F12) for JavaScript/script-loading errors, and clear the browser cache in case an old script version is cached.
+Each connection may send 30 messages per second. Normal use doesn't reach
+this; rapid repeated seeking can. The server logs `Rate limited client`.
+
+### Panel Opens but Shows No Rooms
+
+**No active rooms.** means nobody has created one. If the panel is
+**Offline**, see [Cannot connect](#cannot-connect-to-session-server). Check
+the browser console for script errors after an update and reload with
+Ctrl+F5.
 
 ### Democratic Mode
 
@@ -134,7 +161,7 @@ Work through these in order:
    the server > Copy Server ID, with Developer Mode on). Check that the bot
    was invited with the `applications.commands` scope. After you save the
    Server ID, allow up to 30 seconds. If it still doesn't appear, check
-   `docker logs jwp-discord-bot`.
+   `docker compose logs discord-bot`.
 2. **"Watch parties from chat are turned off on this server".** **Bot
    enabled** is off in the admin panel.
 3. **The chip reads "No bot token" or "Bot offline".** Run
@@ -153,10 +180,11 @@ Work through these in order:
    needs the admin panel running (`ADMIN_PASSWORD` set, `ADMIN_ENABLED` not
    `false`) and the Jellyfin devices settings (`JELLYFIN_URL`,
    `JELLYFIN_API_KEY`).
-5. **The bot's `JWP_INTEGRATION_URL` can't reach the session server.** The
-   bot's default is `http://session-server:3002`. The quick-start compose uses
-   `jwp-session`, which sets the URL explicitly. If you changed
-   `INTEGRATION_PORT`, the URL must change too.
+5. **The bot's `JWP_INTEGRATION_URL` can't reach the session server.** It
+   must be `http://<session server's compose service name>:<INTEGRATION_PORT>`;
+   the default `http://session-server:3002` matches the installation compose
+   file. The bot logs `session server refused our token` when the integration
+   tokens differ.
 6. **A user gets "wrong name or code" with the right code.** The bot gives
    the same answer for a wrong name, a wrong code and a locked code, on
    purpose. Check the Jellyfin user name, then the admin panel: a code marked
@@ -218,107 +246,55 @@ Most of the [Discord list](#discord-bot) applies too (codes, limits,
    administrator with **Delete messages** to remove them there. In the
    private chat it can always delete them.
 
-## Log Analysis
+## Resetting
 
-**Session server:** `docker logs session-server` (or `-f` to follow). Look for `Client connected`/`disconnected`, `Room created`/`closed`, `SECURITY: Wildcard origin` (CORS warning), `Message too large`, `Invalid token`.
-
-**Jellyfin:** Docker (`docker logs jellyfin`), Linux (`/var/log/jellyfin/`), Windows (`%ProgramData%\Jellyfin\Server\log\`). Look for `[JellyWatchParty] JWT authentication is enabled.` or `[JellyWatchParty] JwtSecret is not configured.`
-
-**Browser console:** F12 > Console, filter by "JWP". `[JWP] Loaded`, `[JWP] Connected`, `[JWP] Disconnected`, `[JWP] Room joined`.
-
-## Network Debugging
-
-```javascript
-// In browser console — check WebSocket state
-console.log(JWP.state.ws?.readyState);
-// 0 = CONNECTING, 1 = OPEN, 2 = CLOSING, 3 = CLOSED
-```
-
-```bash
-curl http://localhost:3000/health
-npm install -g wscat && wscat -c ws://localhost:3000/ws
-```
-
-Or open Developer Tools (F12) > Network tab > filter "WS" to inspect WebSocket messages directly.
-
-## Performance Issues
-
-**High CPU (server):** check number of rooms/clients. **High CPU (client):** reduce video quality, close other tabs, check for JS errors.
-
-**Memory (server):** rooms are in-memory (~1KB/client, ~5KB/room); restart to clear if needed.
-
-**Slow sync:** reduce `SYNC_LEAD_MS` if latency is low, increase if latency is high (see [Sync Algorithms]({{ '/technical/sync/' | relative_url }})); check client hardware.
-
-## Reset Procedures
-
-**Client:** clear browser cache/cookies, hard refresh, or in console: `localStorage.clear(); location.reload();`
-
-**Server:** `docker restart session-server` (clears all rooms). After changing environment variables use `docker compose up -d` instead: a restart keeps the container's old environment.
-
-**Admin panel login didn't change:** see [Changing the username or password]({{ '/admin-panel/' | relative_url }}#changing-the-username-or-password). Variables need the container recreated (`docker compose up -d`) and `ADMIN_USERNAME` must be listed under `environment:` in your compose file; `*_FILE` secrets are picked up within 10 seconds. The startup log line `Admin panel: login '...'` shows what the server is using, and each failed login logs whether the username or the password was wrong. More in [If you can't sign in]({{ '/admin-panel/' | relative_url }}#if-you-cant-sign-in).
-
-**Plugin:** Dashboard > Plugins > JellyWatchParty > clear all fields > Save > restart Jellyfin
+- **Browser:** reload with Ctrl+F5, or clear the site data for your Jellyfin
+  address.
+- **Session server:** `docker compose restart session-server` ends all
+  rooms. After changing `.env`, use `docker compose up -d` instead: a restart
+  keeps the old environment.
+- **Admin panel login didn't change:** see
+  [Changing the username or password]({{ '/admin-panel/' | relative_url }}#changing-the-username-or-password)
+  and [If you can't sign in]({{ '/admin-panel/' | relative_url }}#if-you-cant-sign-in).
 
 ## Frequently Asked Questions
 
-### General
+**Do all participants need Jellyfin accounts?** Yes. Everyone plays the item
+from the same Jellyfin server, so they also need access to its library.
 
-**What is JellyWatchParty?** A Jellyfin plugin that lets multiple users watch the same video in sync — when the host plays, pauses, or seeks, everyone follows automatically.
+**Does it work with Plex or Emby?** No. It is built for Jellyfin's plugin
+system and web interface.
 
-**Is it free?** Yes, open source and free to use.
+**Is Docker required?** No. There is a Windows binary, and the server can be
+built from source. See [Installation]({{ '/installation/' | relative_url }}).
 
-**Does it work with Plex or Emby?** No — it uses Jellyfin's plugin API and web interface specifically.
+**Can I run everything on one machine?** Yes. Jellyfin uses 8096 and the
+session server 3000 by default.
 
-**Do all participants need Jellyfin accounts?** Yes, everyone needs access to the same Jellyfin server and media library.
+**Who controls playback?** The host. In [democratic mode]({{ '/features/' | relative_url }}#democratic-mode)
+other participants can play, pause and seek too.
 
-### Setup
+**What happens if the host leaves?** The person who joined earliest becomes
+host. A brief disconnect is invisible: the host keeps their place for 90
+seconds.
 
-**Why do I need a separate session server?** Jellyfin's plugin architecture doesn't support WebSocket endpoints, so a separate lightweight server handles real-time communication between clients.
+**Can I use the Android TV app or Fladder?** Yes, as a Jellyfin device: an
+admin adds it in the [admin panel]({{ '/admin-panel/' | relative_url }}#jellyfin-devices),
+or users add their own through a chat bot or (if enabled) the panel.
+Fladder can only host.
 
-**Can I run everything on one machine?** Yes — Jellyfin and the session server use different ports (8096 and 3000 by default).
+**Can I make a room private?** Yes, with a password when you create it.
+Admins can create password-protected groups.
 
-**Is Docker required?** No, but recommended. See [Installation]({{ '/installation/' | relative_url }}) for native build options.
+**Does everyone need the same video quality?** No. Each player streams
+independently; only position and play state are shared.
 
-**Why do I need to add a script tag manually?** Since Jellyfin 10.9, plugins can't automatically inject scripts for security reasons — the manual step (or the file-transformation plugin) ensures administrators explicitly approve script injection.
-
-### Usage
-
-**Who controls playback?** The host (room creator) — their play/pause/seek actions are mirrored to all participants. In [democratic mode]({{ '/features/' | relative_url }}#democratic-mode) any participant on Jellyfin Web or Jellyfin Desktop (and chat bot users, if allowed) can play, pause and seek too. The host turns it on with *Everyone can control playback* in the Watch Party panel (needs the plugin setting *Allow democratic mode*); an admin can turn it on for any room from the admin panel. See [Democratic Mode](#democratic-mode) below if it doesn't work.
-
-**What happens if the host leaves?** A brief disconnect (network blip, backgrounded app) is invisible to participants for 90 seconds while the server waits for reconnection. If the host doesn't return and other participants remain, the earliest-joined one is automatically promoted to host and the room stays open. It only closes if no one is left.
-
-**Can I use the official Android TV app (or Fladder) in a watch party?** Yes. An admin adds the device to a room from the session server's [admin panel]({{ '/admin-panel/' | relative_url }}#jellyfin-devices), as **host** (it drives the room) or **receiver** (it follows the room's play/pause/seek and is started on the room's item automatically; Fladder can only host). On trusted servers an admin can also let users bridge their own devices from the Watch Party panel via the [Native Client Bridge]({{ '/technical/host-bridge/' | relative_url }}) (receivers there must already be playing the same item, and the room must not be password-protected).
-
-**Can I chat with other viewers?** Yes — real-time text chat in the panel, with the last 50 messages replayed to late joiners/reconnecting clients.
-
-**Can I make a room private?** Yes, with an optional password set at room creation.
-
-**Does everyone need the same video quality?** No — each client transcodes independently; sync is based on playback position, not video quality.
-
-### Sync Quality
-
-**How accurate is the sync?** Typically within 100-200ms, using clock synchronization and drift correction.
-
-**Why do I see slight speed changes?** Playback speed is adjusted (0.85x-2.0x) to gradually correct drift without jarring seeks — imperceptible in most cases. See [Sync Algorithms]({{ '/technical/sync/' | relative_url }}).
-
-**What if I'm several seconds behind?** If drift exceeds 2.0 seconds, the client seeks directly instead of adjusting speed.
-
-**Does buffering affect sync?** Yes, temporarily — the system waits for all clients to be "ready" before starting playback and continuously corrects drift afterward.
-
-### Technical
-
-**What ports are used?** 8096 (Jellyfin) and 3000 (session server) by default.
-
-**What protocol is used?** WebSocket with JSON messages — see [Protocol]({{ '/technical/protocol/' | relative_url }}).
-
-**Is the connection encrypted?** It can be — use WSS with HTTPS. See [Security]({{ '/security/' | relative_url }}).
-
-**How is authentication handled?** Optional JWT tokens — see [Security]({{ '/security/' | relative_url }}).
+**What ports are used?** 3000 (WebSocket), 3001 (admin panel, optional),
+3002 (chat bot API, internal only).
 
 ## Getting Help
 
-When reporting issues, include: your Jellyfin version, browser and OS, Docker version (if applicable), session server + plugin configuration (without secrets), reverse proxy setup, relevant logs (server/Jellyfin/browser console), and steps to reproduce.
-
-- [GitHub Issues](https://github.com/TIGamingTV/JellyWatchParty/issues) - Bug reports
-- [GitHub Discussions](https://github.com/TIGamingTV/JellyWatchParty/discussions) - Questions
-- [Jellyfin Forums](https://forum.jellyfin.org/) - Community help
+Open an issue on [GitHub](https://github.com/TIGamingTV/JellyWatchParty/issues)
+with your Jellyfin version, how you run the session server, your browser or
+app, the relevant log lines (server, Jellyfin, browser console; remove
+secrets) and the steps to reproduce.

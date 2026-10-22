@@ -3,299 +3,190 @@ title: Deployment
 nav_order: 8
 ---
 
-# Production Deployment
+# Deployment and Operations
 
-## Architecture Overview
+This page covers running JellyWatchParty in production: HTTPS through a
+reverse proxy, hardening, and day-to-day operations (logs, updates,
+backups). Start with [Installation]({{ '/installation/' | relative_url }}).
+
+## Behind a Reverse Proxy
+
+When Jellyfin is served over HTTPS, browsers only allow secure WebSocket
+(`wss://`) connections, so the session server must be behind the same kind
+of proxy. The usual setup routes `/ws` on the Jellyfin host name to the
+session server:
 
 ```
-Internet
-    │
-    ▼
-┌─────────────────────────────────────┐
-│         Reverse Proxy               │
-│    (nginx/Caddy/Traefik)           │
-│    SSL termination, routing         │
-└───────────┬─────────────┬───────────┘
-            │             │
-    ┌───────▼───────┐ ┌───▼───────────┐
-    │   Jellyfin    │ │ Session Server│
-    │   :8096       │ │    :3000      │
-    └───────────────┘ └───────────────┘
+Browser ──https/wss──> reverse proxy ──> Jellyfin        :8096   (everything else)
+                                    └──> session server  :3000   (/ws only)
 ```
 
-## Docker Compose Deployment
+Then:
 
-```yaml
-# docker-compose.prod.yml
-version: '3.8'
+1. Set the plugin's **Session Server URL** to `wss://jellyfin.example.com/ws`.
+2. Set `ALLOWED_ORIGINS=https://jellyfin.example.com` on the session server.
+3. Stop publishing port 3000 on the host if only the proxy needs it: put the
+   proxy and the session server on the same Docker network and remove the
+   `3000:3000` mapping.
 
-services:
-  jellyfin:
-    image: jellyfin/jellyfin:latest
-    container_name: jellyfin
-    volumes:
-      - ./config:/config
-      - ./cache:/cache
-      - /path/to/media:/media:ro
-      - ./plugins/JellyWatchParty.dll:/config/plugins/JellyWatchParty/JellyWatchParty.dll:ro
-    environment:
-      - JELLYFIN_PublishedServerUrl=https://jellyfin.example.com
-    restart: unless-stopped
-    networks:
-      - internal
+The examples assume the proxy reaches the containers as `jellyfin` and
+`session-server` on a shared Docker network. Never route `/ws` (or anything
+public) to port 3001 or 3002.
 
-  session-server:
-    image: ghcr.io/tigamingtv/jwp-session-server:latest
-    container_name: jwp-session
-    environment:
-      - ALLOWED_ORIGINS=https://jellyfin.example.com
-      - JWT_SECRET=${JWT_SECRET}
-      - RUST_LOG=warn
-    restart: unless-stopped
-    networks:
-      - internal
-
-  caddy:
-    image: caddy:2-alpine
-    container_name: caddy
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    restart: unless-stopped
-    networks:
-      - internal
-
-networks:
-  internal:
-
-volumes:
-  caddy_data:
-  caddy_config:
-```
-
-```bash
-# .env
-JWT_SECRET=your-very-secure-32-character-secret-key
-```
-
-## Reverse Proxy Configuration
-
-### Caddy (Recommended)
+### Caddy
 
 ```caddyfile
 jellyfin.example.com {
-    reverse_proxy jellyfin:8096
-
     handle /ws {
         reverse_proxy session-server:3000
+    }
+    handle {
+        reverse_proxy jellyfin:8096
     }
 }
 ```
 
-Caddy automatically provisions Let's Encrypt certificates for the block above.
-
 ### nginx
 
+Inside the `server` block of your Jellyfin site:
+
 ```nginx
-location /ws {
-    proxy_pass http://session-server;
+location = /ws {
+    proxy_pass http://session-server:3000;
     proxy_http_version 1.1;
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection "upgrade";
     proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_read_timeout 86400;
+    proxy_read_timeout 1h;
 }
-
 ```
-
-For Let's Encrypt with Certbot: `sudo apt install certbot python3-certbot-nginx && sudo certbot --nginx -d jellyfin.example.com` (auto-renewal is usually configured automatically via `certbot.timer`).
 
 ### Traefik
 
 ```yaml
 services:
-  jellyfin:
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.jellyfin.rule=Host(`jellyfin.example.com`)"
-      - "traefik.http.routers.jellyfin.tls.certresolver=letsencrypt"
-      - "traefik.http.services.jellyfin.loadbalancer.server.port=8096"
-
   session-server:
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.jwp-ws.rule=Host(`jellyfin.example.com`) && PathPrefix(`/ws`)"
+      - "traefik.http.routers.jwp-ws.rule=Host(`jellyfin.example.com`) && Path(`/ws`)"
       - "traefik.http.routers.jwp-ws.tls.certresolver=letsencrypt"
       - "traefik.http.services.jwp-ws.loadbalancer.server.port=3000"
 ```
 
-### Cloudflare Tunnel
+### Separate host name
 
-Cloudflare Tunnel (`cloudflared`) creates an outbound-only connection to Cloudflare's edge, so no ports need to be opened. **Important:** in the tunnel config, use the Docker service name or host IP to reach the session server — never `localhost`, which resolves to the tunnel container's own loopback.
+You can also give the session server its own host name (for example
+`jwp.example.com` proxied to port 3000, or a Cloudflare Tunnel ingress to
+`http://session-server:3000`). Set the Session Server URL to
+`wss://jwp.example.com/ws`. `ALLOWED_ORIGINS` stays the address of
+**Jellyfin**, since that is the page the browser connects from.
 
-```yaml
-# ~/.cloudflared/config.yml
-tunnel: your-tunnel-id
-credentials-file: /path/to/credentials.json
+### Admin panel through a proxy
 
-ingress:
-  - hostname: jellyfin.example.com
-    service: http://jellyfin:8096
-  - hostname: jwp.example.com
-    service: http://session-server:3000
-  - service: http_status:404
-```
+Give the admin panel its own host name and HTTPS, and set
+`ADMIN_COOKIE_SECURE=true`; see
+[Admin Panel: Behind a reverse proxy]({{ '/admin-panel/' | relative_url }}#behind-a-reverse-proxy).
 
-Set plugin **Session Server URL** to `wss://jwp.example.com/ws`. If `cloudflared` runs on the Docker host (not in a container), use the host IP or `host.docker.internal` instead of the service name.
+## Hardening
 
-## Deployment Hardening
+- Enable authentication: the same 32+ character secret in `JWT_SECRET` and
+  the plugin's **JWT Secret**.
+- List only your Jellyfin address(es) in `ALLOWED_ORIGINS`; don't use `*`.
+- Keep port 3001 (admin panel) on `127.0.0.1`, the LAN, or behind HTTPS, or
+  set `ADMIN_ENABLED=false` if you don't use it. Keep port 3002 unpublished.
+- The images run as an unprivileged user (UID 1000). The session server only
+  writes to `DATA_DIR`, so you can also drop capabilities and make the root
+  filesystem read-only:
 
-- **Use internal networks** — don't expose the session server port externally; put it on the same Docker network as the reverse proxy and `expose` (not `ports`) it
-- **Set the Session Server URL** in plugin settings to the reverse-proxy hostname (e.g. `wss://jellyfin.example.com/ws`) — without this, the client defaults to `ws://<current-host>:3000/ws`, which isn't reachable through a proxy
-- **Keep the admin panel private** — it listens on its own port (3001) and only starts when `ADMIN_PASSWORD` is set. Don't route it through the public `/ws` proxy rule. Publish it on `127.0.0.1`, keep it on the LAN, or proxy it under HTTPS with `ADMIN_COOKIE_SECURE=true` (see [Admin Panel]({{ '/admin-panel/' | relative_url }}#behind-a-reverse-proxy)). Set `ADMIN_ENABLED=false` if you don't use it.
-- **Keep the integration API internal** — with the Discord bot, port 3002 must only be reachable from the bot container (the compose files don't publish it)
-- **Use read-only volumes** for the plugin DLL and media directory
-- **Drop capabilities:**
   ```yaml
   services:
     session-server:
       cap_drop: [ALL]
+      security_opt: ["no-new-privileges:true"]
       read_only: true
-      security_opt: [no-new-privileges:true]
   ```
 
-See [Security]({{ '/security/' | relative_url }}) for authentication, CORS, and the full threat model.
+- The session server limits each connection to 30 messages per second, but
+  not per IP address. Add rate limiting at the proxy if it is exposed to the
+  internet.
 
-## Health Checks
+See [Security]({{ '/security/' | relative_url }}) for the security model.
 
-```yaml
-services:
-  session-server:
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 5s
-```
+## Operations
+
+Run these in the folder that contains `compose.yaml`.
+
+| Task | Command |
+|------|---------|
+| Start (in the background) | `docker compose up -d` (add `--profile discord` to include the chat bot) |
+| Follow logs | `docker compose logs -f session-server` (bot: `discord-bot`) |
+| Status and health | `docker compose ps` and `curl http://localhost:3000/health` |
+| Restart | `docker compose restart session-server` |
+| Apply changes to `.env` or `compose.yaml` | `docker compose up -d` (a restart keeps the old environment) |
+| Stop | `docker compose down` (the `jwp-data` volume is kept) |
+
+The images have a built-in health check (`/health` every 30 seconds), shown
+as `healthy` in `docker compose ps`.
+
+Restarting the session server ends every room and signs admins out of the
+admin panel; participants drop back to the lobby and have to create a new
+room. Plan restarts and updates outside watch parties.
+
+### What is persisted
+
+| Data | Where | Survives a restart |
+|------|-------|--------------------|
+| Rooms, chat, admin sessions, bot activity log | Session server memory | No |
+| Chat bot settings, link codes, linked accounts | `DATA_DIR` (`jwp-data` volume): `integrations.json`, `secret.key` | Yes |
+| Plugin settings | Jellyfin's configuration directory | Yes |
+
+### Updating
+
+The `latest` image tag always points to the latest release. Update the
+plugin and the images together.
+
+1. Back up the `jwp-data` volume if you use the chat bots (below).
+2. Update the session server and bot:
+   ```bash
+   docker compose pull
+   docker compose up -d          # add --profile discord if you use the bot
+   ```
+3. Update the plugin in Jellyfin (**Dashboard > Plugins**, install the
+   offered update), then restart Jellyfin.
+4. Reload Jellyfin in the browser (Ctrl+F5) and check that the panel shows
+   **Online**.
+
+**Pinning a version:** from v4.1.5.0 on, each release is also tagged with
+its version (`4.1.5.0`) and its minor version (`4.1`). Set `JWP_TAG=4.1.5.0`
+in `.env` to stay on that release, and keep the plugin on the same version;
+change the tag to update. Older releases only have `latest`; to stay on one
+of those, pin the image digest, which you can look up with:
 
 {% raw %}
 ```bash
-docker inspect --format='{{.State.Health.Status}}' session-server
+docker inspect --format '{{index .RepoDigests 0}}' ghcr.io/tigamingtv/jwp-session-server:latest
 ```
 {% endraw %}
 
-## Logging
+**Windows binary:** stop `session-server.exe`, replace it with the one from
+the new release, and start it again.
 
-| Level | Use Case |
-|-------|----------|
-| `error` | Production (minimal) |
-| `warn` | Production (recommended) |
-| `info` | Debugging |
-| `debug` | Development |
-| `trace` | Deep debugging |
+### Backing up
 
-```yaml
-services:
-  session-server:
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-```
-
-Forward to syslog or Loki instead of local files if you're aggregating logs centrally:
-
-```yaml
-services:
-  session-server:
-    logging:
-      driver: loki
-      options:
-        loki-url: "http://loki:3100/loki/api/v1/push"
-        labels: "service=jwp-session"
-```
-
-## Alerting
-
-Simple uptime check via cron:
+Only the `jwp-data` volume needs a backup (and your `compose.yaml` and
+`.env`). Keep `secret.key` with `integrations.json`: without it, every link
+code stops matching and you have to assign new codes.
 
 ```bash
-#!/bin/bash
-if ! curl -sf http://localhost:3000/health > /dev/null; then
-    echo "JellyWatchParty session server is DOWN" | mail -s "ALERT: JWP Down" admin@example.com
-fi
+docker volume ls | grep jwp-data     # the volume is named <folder>_jwp-data
+docker run --rm -v <folder>_jwp-data:/data -v "$PWD":/backup alpine \
+  tar czf /backup/jwp-data.tgz -C /data .
 ```
 
-```cron
-*/5 * * * * /usr/local/bin/check-jwp.sh
-```
+### Removing
 
-For fleet-style monitoring, point [Uptime Kuma](https://github.com/louislam/uptime-kuma) at `http://session-server:3000/health`, or wire an Alertmanager rule against container `up` metrics if you already run Prometheus:
-
-```yaml
-groups:
-  - name: jwp
-    rules:
-      - alert: JWPSessionServerDown
-        expr: up{job="session-server"} == 0
-        for: 1m
-        labels:
-          severity: critical
-```
-
-The session server doesn't currently expose Prometheus metrics itself — monitor container resource usage (`docker stats session-server`, or cAdvisor) and connection/room counts from logs in the meantime.
-
-## Capacity Planning
-
-| Metric | Per Client | Per Room |
-|--------|------------|----------|
-| Memory | ~1 KB | ~5 KB |
-| CPU | Minimal | Minimal |
-| Bandwidth | ~1 KB/s | ~10 KB/s |
-
-**Current limitations:** single instance (stateful, in-memory) — see [Configuration: Multi-Instance Setup]({{ '/configuration/' | relative_url }}#multi-instance-setup) for why you shouldn't run more than one.
-
-**Connection limits:** WebSocket connections are bounded by OS file-descriptor limits (default 1024) — raise with `ulimit -n 65535`, or in Docker:
-
-```yaml
-services:
-  session-server:
-    ulimits:
-      nofile:
-        soft: 65535
-        hard: 65535
-```
-
-## Backup Strategy
-
-**Back up:** Jellyfin `/config` directory (includes plugin config), Docker Compose files, `.env` files with secrets, and the `jwp-data` volume if you use the [Discord bot]({{ '/discord-bot/' | relative_url }}) (bot settings, link codes, linked accounts). Back up the whole volume, including `secret.key`: without that key, every link code stops matching, and you have to assign new codes.
-
-**Don't back up:** session server rooms (ephemeral, in-memory) or cache directories.
-
-```bash
-#!/bin/bash
-BACKUP_DIR=/backup/jellyfin
-DATE=$(date +%Y%m%d)
-docker compose stop jellyfin
-tar -czf $BACKUP_DIR/config-$DATE.tar.gz ./config
-docker compose start jellyfin
-```
-
-## Upgrade Procedure
-
-1. **Backup first:** `docker compose stop && tar -czf backup-before-upgrade.tar.gz ./config`
-2. **Pull new images:** `docker compose pull`
-3. **Update plugin:** download the new `.dll` from [Releases](https://github.com/TIGamingTV/JellyWatchParty/releases) and replace it in your plugins volume
-4. **Restart:** `docker compose up -d`
-5. **Verify:** check Dashboard for plugin status, test Watch Party functionality, check logs for errors
-
-## Troubleshooting a Deployment
-
-If the health check is failing: confirm the container is running (`docker ps`), check its logs (`docker logs session-server`), and test from inside the container (`docker exec session-server curl localhost:3000/health`). For everything else, see [Troubleshooting & FAQ]({{ '/troubleshooting/' | relative_url }}).
+1. In Jellyfin, uninstall **JellyWatchParty** under **Dashboard > Plugins**
+   and restart Jellyfin. The plugin removes the script it added to the web
+   page.
+2. Run `docker compose down`. Add `-v` only if you also want to delete the
+   `jwp-data` volume (chat bot settings and links).

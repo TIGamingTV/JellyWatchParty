@@ -38,7 +38,7 @@ public sealed class SessionFollowerBridge : IAsyncDisposable
     // arrive inbound; the resulting Seek/Pause/Unpause go to the Jellyfin
     // session, not back over this socket), so without a heartbeat the session
     // server's zombie reaper (ZOMBIE_TIMEOUT_MS, 60s) silently ejects it from
-    // the room. Ping well inside that window (see implem.md §1.9).
+    // the room. Ping well inside that window (see docs/development/third-party-clients.md, "Clock synchronization").
     private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(20);
 
     private readonly string _sessionId;

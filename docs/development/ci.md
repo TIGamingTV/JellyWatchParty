@@ -6,244 +6,168 @@ nav_order: 5
 
 # Continuous Integration
 
-JellyWatchParty uses GitHub Actions for continuous integration and security scanning.
+GitHub Actions runs five workflows from `.github/workflows/`.
+
+| Workflow | File | Triggers |
+|----------|------|----------|
+| CI | `ci.yml` | Push and PR to `main` / `develop` |
+| Security | `security.yml` | Push and PR to `main` / `develop`, weekly (Monday 00:00 UTC) |
+| Publish | `publish.yml` | Push to `main` / `develop`, release published |
+| Docker Image | `docker-image.yml` | Reusable, called by Publish once per image |
+| Deploy Documentation | `docs.yml` | Push to `main` touching `docs/**` or the workflow, manual dispatch, dispatched by Publish after a manifest update |
 
 ## Branching model
 
-`develop` is the integration branch — PRs land there first. `main` only receives
-merges from `develop` (or hotfix branches) and is what releases are cut from.
-See [Release]({{ '/development/release/' | relative_url }}) for the full flow.
+Releases are cut from `main`. Fixes and self-contained features are merged
+into `main`; larger work goes through `develop`, which publishes `dev` test
+builds. See [Release]({{ '/development/release/' | relative_url }}#branching-model).
 
-## Workflows
-
-### CI Workflow (`ci.yml`)
-
-Runs on every push and pull request to `main` and `develop` branches.
+## CI (`ci.yml`)
 
 ```
-┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
-│   Rust Tests    │  │ Discord Bot     │  │   .NET Tests    │  │   JS Lint       │
-│  (formatting,   │  │ Tests (fmt,     │  │  (build, test)  │  │  (syntax check) │
-│  clippy, test)  │  │ clippy, test)   │  │                 │  │                 │
-└────────┬────────┘  └────────┬────────┘  └─────────────────┘  └─────────────────┘
-         │                    │
-         ▼                    ▼
-┌─────────────────┐  ┌─────────────────┐
-│  Build Server   │  │ Build Discord   │
-│  (Docker image) │  │ Bot (Docker)    │
-└─────────────────┘  └─────────────────┘
+Rust Tests ─────────▶ Build Server
+Discord Bot Tests ──▶ Build Discord Bot Image
+.NET Tests
+JavaScript Lint & Tests
 ```
 
-#### Jobs
+| Job | What it runs |
+|-----|--------------|
+| **Rust Tests** | `src/server`: deletes `.cargo/config.toml` (mold), then `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test --verbose` on stable Rust |
+| **Discord Bot Tests** | `src/integrations/discord-bot`: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test --locked` on stable Rust |
+| **.NET Tests** | .NET SDK 10.0.x: copies the client JS into `JellyWatchParty/Web/`, then restore, build and test `JellyWatchParty.Tests` |
+| **JavaScript Lint & Tests** | Node 20: `node --check` on every client file outside `tests/`, then `node --test src/clients/jellyfin-web/tests/*.test.js` |
+| **Build Server** | Builds `server.Dockerfile` (default `BUILD_MODE=dev`), not pushed |
+| **Build Discord Bot Image** | Builds `discord-bot.Dockerfile` with `BUILD_MODE=release`, not pushed |
 
-| Job | Steps | Duration |
-|-----|-------|----------|
-| **Rust Tests** | Format check, Clippy, Unit tests | ~3 min |
-| **Discord Bot Tests** | Format check, Clippy, Unit tests (`src/integrations/discord-bot`) | ~2 min |
-| **.NET Tests** | Build, Unit tests | ~2 min |
-| **JavaScript Lint** | Syntax validation | ~30s |
-| **Build Server** | Docker multi-stage build (not pushed) | ~5 min |
-| **Build Discord Bot Image** | Docker build of `discord-bot.Dockerfile` (not pushed) | ~3 min |
+CI uses the latest stable Rust while the Dockerfiles pin `rust:1.88-alpine`;
+new clippy lints on stable can fail CI in code that hasn't changed.
 
-### Security Workflow (`security.yml`)
+## Security (`security.yml`)
 
-Runs on every push/PR and weekly (Monday 00:00 UTC).
+| Job | Tool | Notes |
+|-----|------|-------|
+| **Cargo Audit** | `cargo audit` | Server and bot crates. Results are only in the job log, not the Security tab |
+| **Trivy Container Scan** (`session-server`, `discord-bot`) | `aquasecurity/trivy-action`, pinned by commit (v0.36.0) | `docker build --pull`, then reports fixable `CRITICAL`/`HIGH` CVEs as SARIF (categories `trivy-session-server`, `trivy-discord-bot`) |
+| **CodeQL Analysis** | `github/codeql-action` | JavaScript |
 
-| Scan | Tool | Purpose |
-|------|------|---------|
-| **Cargo Audit** | `cargo-audit` | Rust dependency vulnerabilities (RustSec) |
-| **Trivy** | `aquasecurity/trivy` | Container image CVEs (fixable HIGH/CRITICAL only) |
-| **CodeQL** | `github/codeql-action` | JavaScript static analysis |
+Trivy and CodeQL results appear under **Security > Code scanning**.
 
-Results are uploaded to the GitHub Security tab.
+## Publish (`publish.yml`)
 
-### Publish Workflow (`publish.yml`)
+On pushes, a **Detect Changes** job (`dorny/paths-filter`) decides what to
+rebuild:
 
-Handles Docker image publishing to GHCR and release artifacts. A `changes`
-job (via `dorny/paths-filter`) detects whether the server (`src/server/**`,
-`infra/docker/server.Dockerfile`), the Discord bot
-(`src/integrations/discord-bot/**`, `infra/docker/discord-bot.Dockerfile`)
-or the plugin (`src/plugins/jellyfin/**`, `src/clients/jellyfin-web/**`)
-changed, so each push only rebuilds the components that actually changed.
-A change to `docker-image.yml` rebuilds both images.
+| Output | Paths |
+|--------|-------|
+| `server` | `src/server/**`, `infra/docker/server.Dockerfile`, `.github/workflows/docker-image.yml` |
+| `bot` | `src/integrations/discord-bot/**`, `infra/docker/discord-bot.Dockerfile`, `.github/workflows/docker-image.yml` |
+| `plugin` | `src/plugins/jellyfin/**`, `src/clients/jellyfin-web/**` |
 
-Both images are built by the reusable workflow `docker-image.yml`: one native
-runner per platform (amd64, arm64) pushes by digest, then a merge job creates
-the multi-arch manifest and its tags.
+A release rebuilds everything regardless.
 
-#### Triggers
+| Job | Runs on | Does |
+|-----|---------|------|
+| **Session Server Image** | `server` changed, or release | `ghcr.io/tigamingtv/jwp-session-server` via `docker-image.yml` |
+| **Discord Bot Image** | `bot` changed, or release | `ghcr.io/tigamingtv/jwp-discord-bot` (the Discord + Telegram bot) via `docker-image.yml` |
+| **Build Jellyfin Plugin** | Release | `dotnet publish -f net10.0` with `Version`/`AssemblyVersion`/`FileVersion` set to the tag minus `v`; zips `JellyWatchParty-<tag>.zip` |
+| **Build Windows Session Server** | Release | `cargo build --release` on `windows-latest`; zips `session-server.exe` + `README.txt` as `jwp-session-server-windows-<tag>.zip` |
+| **Upload Release Assets** | Release, after the server image, plugin and Windows jobs succeed | Attaches both zips to the release (the bot image is not required) |
+| **Update Plugin Repository Manifest** | Release, after the assets | Prepends a version (`targetAbi 12.0.0.0`, MD5 checksum, release body as changelog) to `docs/jellyfin-plugin-repo/manifest.json` on `main`, then dispatches `docs.yml` |
+| **Build Develop Plugin** | Push to `develop` with `plugin` changed | Same build with version `0.0.<run_number>`, zipped as `JellyWatchParty-dev.zip` |
+| **Publish Develop Plugin & Manifest** | After the job above | Uploads the zip to the rolling `develop-latest` prerelease, replaces the single entry in `manifest-dev.json` on `main`, dispatches `docs.yml` |
 
-| Event | Condition | Result |
-|-------|-----------|--------|
-| Push to `main` | Server / bot changed | That image tagged `beta` |
-| Push to `develop` | Server / bot changed | That image tagged `dev` |
-| Push to `develop` | Plugin/client changed | Plugin rebuilt (Jellyfin 12.x), rolling `develop-latest` pre-release updated with the zip, `manifest-dev.json` updated with the `targetAbi` entry |
-| GitHub Release | Published | Both images tagged `X.Y.Z`, `X.Y`, `latest`; plugin built for Jellyfin 12.x, zip attached to the release, `manifest.json` updated with the `targetAbi` entry |
+The manifest step only accepts numeric tags with 2-4 parts (`v4.1.4.0`) and
+expects the `v` prefix in the asset name.
 
-#### Jobs
+### Docker images (`docker-image.yml`)
 
-| Job | Trigger | Description |
-|-----|---------|--------------|
-| **Detect Changes** | Push only | Computes `server`/`bot`/`plugin` path-filter outputs used to gate the jobs below |
-| **Session Server Image** | Server changed, or release | Builds `jwp-session-server` (amd64, arm64) and pushes to GHCR |
-| **Discord Bot Image** | Bot changed, or release | Builds `jwp-discord-bot` (the chat bot: Discord and Telegram; amd64, arm64) and pushes to GHCR |
-| **Build Jellyfin Plugin** | Release only | Builds the plugin for `net10.0`/Jellyfin 12.x and creates a zip archive |
-| **Upload Release Assets** | Release only | Attaches the plugin zip and Windows server to the GitHub Release (needs the server image, not the bot image) |
-| **Update Plugin Manifest** | Release only | Adds the `targetAbi 12.0.0.0` entry to `manifest.json` |
-| **Build Develop Plugin** | Push to `develop`, plugin/client changed | Same build as the release job |
-| **Publish Develop Plugin & Manifest** | After the job above | Publishes the zip as an asset on the rolling `develop-latest` pre-release and updates the `targetAbi` entry in `manifest-dev.json` |
+Each image is built natively per platform (`linux/amd64` on
+`ubuntu-latest`, `linux/arm64` on `ubuntu-24.04-arm`) with
+`BUILD_MODE=release`, pushed by digest, and joined into one multi-arch
+manifest by the **Merge & Push Manifest** job. The build uses `pull: true`
+and `no-cache-filters: runtime`, so the `runtime` stage (which runs
+`apk upgrade`) is rebuilt every time while the Rust builder layers come from
+the GHA cache. Fixing a Trivy alert in an Alpine package is usually a
+rebuild; when the Alpine branch nears end of life, bump `FROM alpine:` in both
+Dockerfiles.
 
-Jellyfin 10.11.x support has been dropped; only Jellyfin 12.x is built and
-published. Users still on 10.11.x should install an older release
-(`targetAbi 10.11.11.0`).
+| Event | Tags |
+|-------|------|
+| Push to `main` | `beta` |
+| Push to `develop` | `dev` |
+| Release `vA.B.C.D` | `latest`, `A.B.C.D`, `A.B` |
 
-#### Plugin Repository
-
-On release, the workflow automatically updates the [Jellyfin plugin repository](https://tigamingtv.github.io/JellyWatchParty/jellyfin-plugin-repo/manifest.json):
-
-1. Downloads the built plugin zip
-2. Calculates its MD5 checksum
-3. Updates `docs/jellyfin-plugin-repo/manifest.json` with a new version entry (`targetAbi 12.0.0.0`)
-4. Commits and pushes to `main`
-5. Triggers GitHub Pages deployment
-
-Users can then install/update the plugin directly from Jellyfin's plugin interface.
-
-On every push to `develop` that touches the plugin or client JS, the same
-thing happens against a separate develop channel — see
-[Release: Develop Plugin Channel]({{ '/development/release/' | relative_url }}#develop-plugin-channel) for how
-testers install it.
-
-#### Docker Images
-
-Same tags for `jwp-session-server` and `jwp-discord-bot`:
+Release tags have four parts (`v4.1.5.0`), which `type=semver` can't parse,
+so the version tags come from `type=match` patterns on the tag name. Releases
+up to v4.1.4.0 were published before this and only have `latest`.
 
 ```bash
-# Latest stable release
-docker pull ghcr.io/tigamingtv/jwp-session-server:latest
-docker pull ghcr.io/tigamingtv/jwp-discord-bot:latest
-
-# Specific version (release v0.1.0)
-docker pull ghcr.io/tigamingtv/jwp-session-server:0.1.0
-
-# Latest build from main (pre-release)
-docker pull ghcr.io/tigamingtv/jwp-session-server:beta
-
-# Latest build from develop
-docker pull ghcr.io/tigamingtv/jwp-session-server:dev
-docker pull ghcr.io/tigamingtv/jwp-discord-bot:dev
+docker pull ghcr.io/tigamingtv/jwp-session-server:latest   # last release
+docker pull ghcr.io/tigamingtv/jwp-session-server:beta     # last main build
+docker pull ghcr.io/tigamingtv/jwp-discord-bot:dev         # last develop build
 ```
 
 A new GHCR package starts out private; see
 [Release: Package Visibility]({{ '/development/release/' | relative_url }}#package-visibility).
 
-## Build Configuration
+### Plugin repository
 
-### Rust (Alpine + musl)
+Jellyfin installs from `https://tigamingtv.github.io/JellyWatchParty/jellyfin-plugin-repo/manifest.json`
+(stable) or `manifest-dev.json` (develop, see
+[Release: Develop Plugin Channel]({{ '/development/release/' | relative_url }}#develop-plugin-channel)).
+Both files live in `docs/jellyfin-plugin-repo/` on `main`, and the site is
+redeployed after each update.
 
-The Docker build uses Alpine with musl libc for smaller images:
-
-```dockerfile
-FROM rust:1.88-alpine AS builder
-RUN apk add --no-cache musl-dev mold
-# ... build with musl target
-
-FROM alpine:3.24 AS runtime
-RUN apk upgrade --no-cache && apk add --no-cache ca-certificates
-# ~26MB final image
-```
-
-The runtime stage runs `apk upgrade`, and the publish build passes
-`pull: true` and `no-cache-filters: runtime` to `docker/build-push-action`,
-so every published image gets the current Alpine security fixes even when the
-Rust builder layers come from the GHA cache. Fixing a Trivy alert for an
-Alpine package is usually just a rebuild; when the Alpine branch nears end of
-life, bump the `FROM alpine:` tag in both Dockerfiles.
-
-**Note:** Local development uses glibc (standard Rust). The `.cargo/config.toml` configures the `mold` linker for faster local builds, but this is excluded from Docker builds via `.dockerignore`.
+## Build Notes
 
 ### .NET
 
-The plugin targets `net10.0` (Jellyfin 12.x — see
-`src/plugins/jellyfin/Directory.Build.props`), pulling NuGet packages from
-nuget.org with a version pinned in `JellyfinPackageVersion`:
+The plugin targets `net10.0` and Jellyfin 12.x
+(`src/plugins/jellyfin/Directory.Build.props`: `JellyfinPackageVersion`
+12.0.0, `JellyfinTargetAbi` 12.0.0.0). `Jellyfin.Controller` and
+`Jellyfin.Model` come from nuget.org with `ExcludeAssets="runtime"`.
 
-```xml
-<PackageReference Include="Jellyfin.Controller" Version="$(JellyfinPackageVersion)" ExcludeAssets="runtime" />
-<PackageReference Include="Jellyfin.Model" Version="$(JellyfinPackageVersion)" ExcludeAssets="runtime" />
-```
-
-The `.csproj` embeds `Web\**\*.js` as resources, so CI copies the client JS
-files (including subdirectories: `utils/`, `ui/`, `playback/`, `chat/`,
-`ws/`, `app/`) into `JellyWatchParty/Web/` before building, using the same
-explicit file list as the release/develop plugin build jobs:
-
-```yaml
-- name: Copy JS files to plugin Web directory
-  run: |
-    mkdir -p JellyWatchParty/Web
-    cp ../../clients/jellyfin-web/plugin.js JellyWatchParty/Web/plugin.js
-    for f in state.js utils/time.js ... ; do
-      mkdir -p "JellyWatchParty/Web/$(dirname "$f")"
-      cp "../../clients/jellyfin-web/$f" "JellyWatchParty/Web/$f"
-    done
-```
-
-**Note:** An explicit file list is used instead of `cp -r .../jellyfin-web/*`
-so that `tests/*.test.js` and other non-shipped files never get embedded as
-plugin resources.
+The csproj embeds `Web\**\*.js`, so every job that builds the plugin first
+copies the client files into `JellyWatchParty/Web/` from an explicit list
+(not `cp -r`, so `tests/` never gets embedded). That list exists in
+`ci.yml`, in both plugin jobs of `publish.yml`, and as `client_js_files` in
+`infra/just/common.just`; keep them identical.
 
 ## Troubleshooting
 
-### CI Failures
-
 **Rust formatting:**
 ```bash
-cd src/server && cargo fmt
-git add -u && git commit --amend --no-edit
+(cd src/server && cargo fmt)
+(cd src/integrations/discord-bot && cargo fmt)
 ```
 
-**Clippy warnings:**
+**Clippy:**
 ```bash
-cd src/server && cargo clippy -- -D warnings
-# Fix warnings or add #[allow(...)] with justification
+(cd src/server && cargo clippy -- -D warnings)
+(cd src/integrations/discord-bot && cargo clippy --all-targets -- -D warnings)
 ```
 
-**Docker build fails:**
+**`cargo test --locked` fails in the bot job:** `Cargo.lock` is out of date;
+run `cargo update -p <crate>` or `cargo build` locally and commit the lock
+file.
+
+**Docker build:**
 ```bash
-# Test locally
 docker build -f infra/docker/server.Dockerfile -t test ./src/server
 docker build -f infra/docker/discord-bot.Dockerfile -t test-bot ./src/integrations/discord-bot
 ```
 
-## Badges
+## Badge
 
-The README includes CI status badges:
+The README shows the CI status of `main`:
 
 ```markdown
 [![CI](https://img.shields.io/github/actions/workflow/status/TIGamingTV/JellyWatchParty/ci.yml?branch=main)](https://github.com/TIGamingTV/JellyWatchParty/actions/workflows/ci.yml)
 ```
 
-| Badge | Meaning |
-|-------|---------|
-| ![CI passing](https://img.shields.io/badge/CI-passing-brightgreen) | All checks pass |
-| ![CI failing](https://img.shields.io/badge/CI-failing-red) | One or more checks failed |
-
-## Security Alerts
-
-View security findings:
-
-1. Go to repository **Security** tab
-2. Click **Code scanning alerts** or **Dependabot alerts**
-3. Review and address as needed
-
-Current alert policy:
-- **CRITICAL/HIGH**: Must fix before release
-- **MEDIUM**: Fix in next release
-- **LOW/NOTE**: Track, fix when convenient
-
 ## Next Steps
 
-- [Setup]({{ '/development/setup/' | relative_url }}) - Development environment
-- [Contributing]({{ '/development/contributing/' | relative_url }}) - Contribution guidelines
-- [Testing]({{ '/development/testing/' | relative_url }}) - Test documentation
+- [Setup]({{ '/development/setup/' | relative_url }})
+- [Contributing]({{ '/development/contributing/' | relative_url }})
+- [Testing]({{ '/development/testing/' | relative_url }})

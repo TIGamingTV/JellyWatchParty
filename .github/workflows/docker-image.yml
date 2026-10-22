@@ -147,8 +147,10 @@ jobs:
           tags: |
             type=raw,value=beta,enable=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
             type=raw,value=dev,enable=${{ github.event_name == 'push' && github.ref == 'refs/heads/develop' }}
-            type=semver,pattern={{version}},enable=${{ github.event_name == 'release' }}
-            type=semver,pattern={{major}}.{{minor}},enable=${{ github.event_name == 'release' }}
+            # Release tags have four parts (v4.1.5.0), which type=semver
+            # can't parse, so match them directly: 4.1.5.0 and 4.1.
+            type=match,pattern=^v(\d+\.\d+\.\d+\.\d+)$,group=1,enable=${{ github.event_name == 'release' }}
+            type=match,pattern=^v(\d+\.\d+)\.\d+\.\d+$,group=1,enable=${{ github.event_name == 'release' }}
             type=raw,value=latest,enable=${{ github.event_name == 'release' }}
 
       - name: Create manifest list and push

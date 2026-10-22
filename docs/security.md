@@ -24,18 +24,16 @@ openssl rand -base64 32
 ```
 
 A secret under 32 characters is treated as unusable and disables
-authentication (see [Configuration: JWT Secret Guidelines]({{ '/configuration/' | relative_url }}#jwt-secret-guidelines))
+authentication (see [Configuration: Plugin Settings]({{ '/configuration/' | relative_url }}#plugin-settings))
 rather than being used as a weak key.
 
 Set the result as **JWT Secret** in **Dashboard > Plugins > JellyWatchParty**,
 and as `JWT_SECRET` in the session server's environment — both must use the
 **same secret**:
 
-```yaml
-services:
-  session-server:
-    environment:
-      - JWT_SECRET=K7xR9mPqN2wLhVbE4cT8fY0jU5sA3dG1
+```bash
+# .env next to compose.yaml
+JWT_SECRET=<output of openssl rand -base64 32>
 ```
 
 ### Token Structure
@@ -47,6 +45,7 @@ services:
 | `aud` | Audience (configurable) |
 | `iss` | Issuer (configurable) |
 | `iat` | Issued at timestamp |
+| `jti` | Random token ID |
 | `exp` | Expiration timestamp |
 
 Default lifetime: 1 hour (3600s), configurable 60s-86400s (24h) in plugin settings.
@@ -62,14 +61,14 @@ environment:
   # - ALLOWED_ORIGINS=*                                     # NOT recommended for production
 ```
 
-Using `*` logs `SECURITY: Wildcard origin (*) configured - ALL origins allowed!` — any website could then connect to your session server.
+Using `*` logs `SECURITY: Wildcard origin (*) configured - ALL origins allowed!` — any website could then connect to your session server. Connections without an `Origin` header (non-browser clients) are always accepted, so the origin check protects against malicious web pages, not against other programs; that is what JWT authentication is for. Only the WebSocket endpoint is origin-checked.
 
 ## Rate Limiting
 
 | Limit | Value | Scope |
 |-------|-------|-------|
-| Token requests | 10/min | Per authenticated Jellyfin user (plugin endpoint) |
-| WebSocket messages | 30/sec | Per WebSocket connection (client UUID) |
+| Token requests | 30/min | Per authenticated Jellyfin user (plugin endpoint) |
+| WebSocket messages | 30/sec | Per WebSocket connection |
 | Message size | 64 KB | Per message |
 
 **Important — rate limiting is per-client, not per-IP.** The session server limits by WebSocket client UUID, not IP address, so an attacker could open multiple connections to bypass it. This is because the server often sits behind a reverse proxy without direct IP visibility, and JWT authentication covers most abuse cases. For production, add IP-based rate limiting at the reverse proxy:
@@ -139,14 +138,14 @@ The [admin panel]({{ '/admin-panel/' | relative_url }}) runs on its own port and
 
 The [Discord bot]({{ '/discord-bot/' | relative_url }}) and the [Telegram bot]({{ '/telegram-bot/' | relative_url }}) let linked users run rooms and their own devices without an admin. Each platform has its own integration token, and a bot only sees and reaches its own platform's rooms. On Telegram, codes and room passwords are only accepted in a private chat with the bot, which deletes those messages right after reading them; anonymous admins are refused, and in private chats the bot checks that the user is in the configured group. The bot is a separate container that only relays who is asking; the session server decides everything:
 
-- **Linking:** an admin assigns a 4-digit code to a Jellyfin user. The user enters their Jellyfin name and the code in a private Discord form. After 10 wrong codes for one user (from anyone), that code stops working until the admin assigns a new one, so a guesser has at most a 1 in 1,000 chance per assigned code. A Discord account that enters 5 wrong codes within 15 minutes is blocked until that window ends, and linking pauses for everyone after 50 wrong codes in 10 minutes. Another account can't take over an existing link.
+- **Linking:** an admin assigns a 4-digit code to a Jellyfin user. The user enters their Jellyfin name and the code in a private Discord form or a private Telegram chat. After 10 wrong codes for one user (from anyone), that code stops working until the admin assigns a new one, so a guesser has at most a 1 in 1,000 chance per assigned code. A chat account that enters 5 wrong codes within 15 minutes is blocked until that window ends, and linking pauses for everyone after 50 wrong codes in 10 minutes. Another account can't take over an existing link.
 - **Storage:** codes are stored as HMAC-SHA256 with a per-install key, in `DATA_DIR` (files mode 0600). They are shown once and never logged.
 - **Permissions:** devices can only be added by the Jellyfin user they're signed in as. This is checked against Jellyfin's session list at the moment of adding. Only a room's owner, a Jellyfin administrator, or a member of the Discord admin role (if one is set) controls the host and can remove people or close the room. Room passwords use the same check and throttle as the Watch Party panel. Democratic mode from chat is off unless the admin turns on **Democratic mode commands**; then only the owner or an admin switches it, and only participants of a democratic room may play, pause and seek.
 - **Integration API:** its own port (3002), never published. It needs a platform's token (`DISCORD_INTEGRATION_TOKEN` or `TELEGRAM_INTEGRATION_TOKEN`), which grants no admin panel access; holding one lets someone act only as users already linked on that platform (with the platform's admin role, if one is set, since the server trusts the roles the bot reports). Requests are limited to 30 per minute per chat account, and every action is in the admin panel's activity log.
 
 ## Reconnect Takeover Protection
 
-Reconnecting with a known `client_id` used to be enough to take over that client's session, including its room and host role (client ids are visible to everyone in a room). Each client entry now has a random resume secret, sent only to its owner; reattaching requires it, and a connection without it gets a new id. See [Protocol]({{ '/technical/protocol/' | relative_url }}#client_id-and-resume-query-parameters).
+Client ids are visible to everyone in a room, so an id alone can't reattach to a session. Each client has a random resume secret, sent only to its owner and rotated on every reattach; reattaching requires it, and a connection without it gets a new id. See [Protocol]({{ '/technical/protocol/' | relative_url }}#client_id-and-resume-query-parameters).
 
 ## Threat Model
 
@@ -198,8 +197,8 @@ the latest version.
 
 ## Container Security
 
-The session server and chat bot images use **Alpine Linux** (~26MB) rather
-than a Debian base (~100MB) for a minimal attack surface. The runtime stage
+The session server and chat bot images use **Alpine Linux** for a minimal
+attack surface. The runtime stage
 runs `apk upgrade` at build time, so each published image carries the latest
 Alpine security fixes. Both binaries use rustls for TLS; the system OpenSSL
 (`libssl3`/`libcrypto3`) is only present because the base image ships it.
@@ -208,30 +207,17 @@ CVEs that have a fix available are uploaded to the GitHub Security tab.
 Remaining known CVEs (e.g. BusyBox `netstat`/`tar`) affect tools the
 application doesn't use and require local access to exploit.
 
-Runtime hardening already in place: non-root user (`appuser`, UID 1000),
-health checks with automatic restart. For maximum hardening in sensitive
-environments, consider a distroless or scratch-based image (requires a
-custom healthcheck binary / static binary compilation).
-
-```yaml
-services:
-  session-server:
-    user: "1000:1000"
-    read_only: true
-    security_opt:
-      - no-new-privileges:true
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-          cpus: '0.5'
-```
+Both images run as a non-root user (`appuser`, UID 1000), and the session
+server image has a built-in health check. For further hardening (dropped
+capabilities, read-only root filesystem), see
+[Deployment: Hardening]({{ '/deployment/' | relative_url }}#hardening).
 
 ## Reporting Security Issues
 
-If you discover a security vulnerability, **do not** open a public issue —
-email the maintainer directly with a description, reproduction steps, and
-potential impact.
+Please don't publish details of a vulnerability in a public issue. Report
+it privately through GitHub:
+[Security > Report a vulnerability](https://github.com/TIGamingTV/JellyWatchParty/security/advisories/new),
+with a description, reproduction steps and the impact.
 
 ## Next Steps
 

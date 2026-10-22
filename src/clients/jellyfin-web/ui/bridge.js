@@ -6,7 +6,7 @@
 
   // Bridges a native-client Jellyfin session (e.g. Fladder or the official
   // Android TV app, which can't run this injected script at all) into a
-  // JellyWatchParty room. See docs/ARCHITECTURE.md "Native Client Bridge".
+  // JellyWatchParty room. See docs/technical/host-bridge.md.
   // Only shown when an admin enabled panel bridging (trusted servers); users
   // can bridge only their own sessions. Admins normally use the session
   // server's admin panel instead.

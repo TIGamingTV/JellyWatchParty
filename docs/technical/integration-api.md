@@ -10,22 +10,31 @@ The session server's API for chat sidecars: the
 [Discord bot]({{ '/discord-bot/' | relative_url }}) and the
 [Telegram bot]({{ '/telegram-bot/' | relative_url }}).
 It runs on its own
-listener (`INTEGRATION_HOST:INTEGRATION_PORT`, default `127.0.0.1:3002`)
-and only starts when the admin panel, Jellyfin devices and `DATA_DIR` are
-set up and at least one sidecar token is configured.
+listener (`INTEGRATION_HOST:INTEGRATION_PORT`, default `127.0.0.1:3002`;
+the host must be an IP address and the port must differ from `PORT` and
+`ADMIN_PORT`) and only starts when the admin panel, Jellyfin devices
+(`JELLYFIN_URL`, `JELLYFIN_API_KEY`) and `DATA_DIR` are set up and at least
+one sidecar token is configured. The bots reach it at
+`JWP_INTEGRATION_URL` (default `http://session-server:3002`).
 
-Code: `src/server/src/integration/` (`api.rs` HTTP, `actions.rs`
+Code: `src/server/src/integration/` (`mod.rs` errors, limits and the
+empty-room reaper, `config.rs` environment, `api.rs` HTTP, `actions.rs`
 permissions and room operations, `store.rs` data file and codes, `view.rs`
 room list), with admin endpoints in `src/server/src/admin/integrations.rs`.
+The bots live in `src/integrations/discord-bot/` (one crate for Discord and
+Telegram).
 
 ## Authentication
 
 Every request needs `Authorization: Bearer <token>`. The token decides the
 platform: `DISCORD_INTEGRATION_TOKEN` means `discord`,
 `TELEGRAM_INTEGRATION_TOKEN` means `telegram`. Each platform needs its own
-token, so one bot can never act as another. Tokens are compared
-as SHA-256 digests in constant time. A wrong or missing token gets `401
-{"reason":"unauthorized"}`. Bodies are limited to 16 KiB.
+token, so one bot can never act as another: tokens must be at least 32
+characters and different from each other (or the integration doesn't
+start), and each can be read from a file with the `_FILE` suffix. Tokens
+are compared as SHA-256 digests in constant time. A wrong or missing token
+gets `401 {"reason":"unauthorized"}`; an unknown path gets `404
+{"reason":"invalid"}`. Bodies are limited to 16 KiB.
 
 User actions carry an `actor`: what the platform said about the person
 asking.
@@ -50,9 +59,17 @@ Before running an action, the server checks:
 5. `channel_id` is allowed, if channels are restricted (Discord only).
 6. The required role is in `roles`, if one is configured (Discord only).
 
-For everything except `link`, it then also checks that the account is
-linked, and that the Jellyfin user exists and is enabled. `GET /Users` is
-cached for 60 s.
+For everything except `link` and `unlink`, it then also checks that the
+account is linked, and that the Jellyfin user exists and is enabled.
+Jellyfin's user list is cached for 60 s (a stale copy is used for up to
+10 minutes while Jellyfin is unreachable). Jellyfin administrators, and
+holders of the platform's `admin_role_id`, count as admins.
+
+`link` checks `username` (case-insensitive) and the 4-digit `code`
+(spaces and dashes ignored). Wrong attempts are limited (`locked_out`
+with `retry_after_ms`): 5 per chat account per 15 minutes, 50 from
+everyone per 10 minutes. 10 wrong codes for one Jellyfin user freeze that
+code until an admin assigns a new one.
 
 ## Errors
 
@@ -78,25 +95,25 @@ cached for 60 s.
 | Method and path | Body | Answer |
 |---|---|---|
 | `GET /config` | | `{provider, version, settings}`. `version` changes when an admin saves settings. |
-| `POST /heartbeat` | `{bot_name}` | `{ok, now}`. Marks the bot as online in the admin panel. |
+| `POST /heartbeat` | `{bot_name}` | `{ok, now}`. Marks the bot as online in the admin panel (for 90 s). |
 | `GET /rooms?since=<v>` | | `{version, rooms}`. With `since`, waits up to 25 s for a change after version `v`. |
 | `PUT /rooms/{id}/panel` | `{channel_id, message_id}` | Remembers where the room's panel message is. `channel_id` may be negative (Telegram groups). |
 | `POST /link` | `{actor, username, code}` | `{ok, user_name}` |
-| `POST /unlink` | `{actor}` | |
-| `POST /me` | `{actor}` | `{user_id, user_name, is_admin, owns, joined}` |
-| `POST /devices` | `{actor}` | `{devices: [{session_id, device_name, client, remote_control, now_playing, bridged_as, room_id}]}`. Only the actor's own sessions. |
-| `POST /rooms` | `{actor, name, password?}` | `{ok, id, name}` |
-| `POST /rooms/{id}/join` | `{actor, password?}` | `{ok, already?}` |
-| `POST /rooms/{id}/leave` | `{actor}` | Also removes the actor's devices from the room. |
-| `POST /rooms/{id}/update` | `{actor, name?, password?}` | `password`: absent keeps it, `null`/`""` removes it. Owner only. |
-| `POST /rooms/{id}/close` | `{actor}` | Owner only. |
-| `POST /rooms/{id}/owner` | `{actor, to}` | `to` is a chat account id that has joined the room. Owner only. |
-| `POST /rooms/{id}/kick` | `{actor, member}` or `{actor, user}` | A member (client id), or a participant by account id together with their devices. Owner only. |
-| `POST /rooms/{id}/host` | `{actor, member}` | Owner only. |
-| `POST /rooms/{id}/devices` | `{actor, session_id, role: "host"\|"receiver"}` | `{ok, member_id}`. Participants only. `host` is allowed for the owner, or when the room has no host. |
-| `POST /rooms/{id}/devices/remove` | `{actor, member}` | Own devices; the owner can remove any member. |
+| `POST /unlink` | `{actor}` | `{ok}` |
+| `POST /me` | `{actor}` | `{user_id, user_name, is_admin, owns, joined}` (room ids) |
+| `POST /devices` | `{actor}` | `{devices: [{session_id, device_name, client, remote_control, now_playing, bridged_as, room_id}]}`. Only the actor's own sessions that don't run the web client and are recently active or already bridged. |
+| `POST /rooms` | `{actor, name, password?}` | `{ok, id, name}`. The creator is owner and first participant. `password_required` if the platform requires one; `room_limit` over `max_rooms_per_user` (not for admins) or `max_rooms_total`. |
+| `POST /rooms/{id}/join` | `{actor, password?}` | `{ok}`, or `{ok, already: true}`. Admins skip the password; 5 wrong ones per minute give `too_many_attempts`. At most 50 participants. |
+| `POST /rooms/{id}/leave` | `{actor}` | `{ok}`. Also removes the actor's devices from the room. The owner can't leave. |
+| `POST /rooms/{id}/update` | `{actor, name?, password?}` | `{ok}`. `password`: absent keeps it, `null`/`""` removes it. Owner only. |
+| `POST /rooms/{id}/close` | `{actor}` | `{ok}`. Owner only. |
+| `POST /rooms/{id}/owner` | `{actor, to}` | `{ok}`. `to` is a linked chat account id that has joined the room. Owner only. |
+| `POST /rooms/{id}/kick` | `{actor, member}` or `{actor, user}` | `{ok}`. A member (client id), or a participant by account id together with their devices. Owner only. |
+| `POST /rooms/{id}/host` | `{actor, member}` | `{ok}`. Owner only. |
+| `POST /rooms/{id}/devices` | `{actor, session_id, role: "host"\|"receiver"}` | `{ok, member_id}`. Participants (and admins) only; the role must be allowed (`allow_host` / `allow_receiver`). `host` is allowed for the owner and admins, or when the room has no host. |
+| `POST /rooms/{id}/devices/remove` | `{actor, member}` | `{ok}`. Own devices; the owner can remove any member. |
 | `POST /rooms/{id}/democratic` | `{actor, enabled}` | `{ok, democratic}`. Owner only; needs `democratic_commands`. Sends `democratic_changed` to the room. |
-| `POST /rooms/{id}/playback` | `{actor, action: "play"\|"pause"}`, `{actor, action: "seek", position}` or `{actor, action: "seek", offset}` | `{ok, action, position}`. Participants (and the owner and admins) of a democratic room that has started; needs `democratic_commands`. `position` seeks to that second, `offset` by that many (negative: back); the result is clamped at 0. Any other combination is `invalid`. |
+| `POST /rooms/{id}/playback` | `{actor, action: "play"\|"pause"}`, `{actor, action: "seek", position}` or `{actor, action: "seek", offset}` | `{ok, action, position}`. Participants (and the owner and admins) of a democratic room that has started, has media and has members; needs `democratic_commands`. `position` seeks to that second, `offset` by that many from the room's current position (negative: back); the result is clamped to 0–86400. Any other combination is `invalid`. |
 
 "Owner only" also allows admins: Jellyfin administrators, or holders of
 the configured admin role (on Telegram: group administrators, when
@@ -170,9 +187,6 @@ then renamed):
                                            "telegram": { … } } } } }
 ```
 
-Files written before Telegram support have no `telegram` settings; they
-load with the defaults (off).
-
 One code links one account on each platform: the code isn't used up, and
 links are kept per platform. **New code** and **Remove code** drop the
 links on every platform; **Unlink** only drops one.
@@ -186,14 +200,25 @@ Settings are checked per platform when saved:
 | `required_role_id` | Role id | Must be empty |
 | `admin_role_id` | Role id | Empty, or `admin` (group administrators) |
 
-Other settings are the same on both platforms (`max_rooms_per_user`,
-`max_rooms_total`, `empty_room_minutes`, `require_password`, `allow_host`,
-`allow_receiver`, and `democratic_commands`, default `false`). Files
-without `democratic_commands` load with it off.
+`enabled` (default `false`) needs `guild_id`. The other settings are the
+same on both platforms:
+
+| Setting | Default | Range |
+|---|---|---|
+| `max_rooms_per_user` | `2` | 1–10 |
+| `max_rooms_total` | `20` | 1–100 |
+| `empty_room_minutes` | `30` | 5–1440 |
+| `require_password` | `false` | |
+| `allow_host` / `allow_receiver` | `true` | |
+| `democratic_commands` | `false` | |
+
+Missing fields (and a missing `telegram` block) load with their
+defaults.
 
 `code_hmac` is HMAC-SHA256 over `"jwp-link-code\0" || user id || "\0" ||
 code`, keyed with `DATA_DIR/secret.key` (32 random bytes, created on first
-start). A file that doesn't parse stops the integration from starting; it is
+start). Codes are 4 digits and never stored. A file that doesn't parse, or
+was written by a newer server, stops the integration from starting; it is
 never overwritten.
 
 ## Admin endpoints (admin panel, session and CSRF header required)

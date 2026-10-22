@@ -12,7 +12,7 @@ namespace JellyWatchParty.Plugin.Services;
 /// Bridges one Jellyfin session's playback into one JellyWatchParty room,
 /// with that session acting as the room's host. Opens its own WebSocket
 /// connection to the Rust session server and speaks the same client
-/// protocol a browser host would (see docs/ARCHITECTURE.md) — the resulting
+/// protocol a browser host would (see docs/technical/protocol.md) — the resulting
 /// room is indistinguishable from a browser-hosted one to guests.
 /// </summary>
 public sealed class SessionHostBridge : IAsyncDisposable
@@ -24,7 +24,7 @@ public sealed class SessionHostBridge : IAsyncDisposable
     // WebSocket frames when its playback state changes, so without a steady
     // heartbeat a paused or otherwise idle bridge is silently reaped and
     // removed from its room mid-session. Ping well inside that window,
-    // mirroring the web client's keepalive (see implem.md §1.9).
+    // mirroring the web client's keepalive (see docs/development/third-party-clients.md, "Clock synchronization").
     private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(20);
 
     // How long Start waits for the session server to confirm (room_state) or

@@ -83,56 +83,31 @@ You need the [admin panel]({{ '/admin-panel/' | relative_url }}) and
 
 ### 2. Configure the containers
 
-In `.env`:
+The [installation compose file]({{ '/installation/' | relative_url }}#docker-compose-recommended)
+already contains the bot (service `discord-bot`; one container serves both
+platforms) and passes the variables on. Set them in `.env`:
 
 ```bash
 # Shared secret between the session server and the bot, only for Telegram
-# (32+ characters, different from DISCORD_INTEGRATION_TOKEN)
-TELEGRAM_INTEGRATION_TOKEN=$(openssl rand -hex 32)
+# (32+ characters, different from DISCORD_INTEGRATION_TOKEN).
+# Generate it once with `openssl rand -hex 32` and paste the result.
+TELEGRAM_INTEGRATION_TOKEN=<64 hex characters>
 TELEGRAM_BOT_TOKEN=123456789:AA...
 ```
 
-The compose files in the repository and the
-[Installation]({{ '/installation/' | relative_url }}#quick-start-docker-compose)
-quick start already pass these on. In your own compose file:
-
-```yaml
-services:
-  jwp-session:
-    image: ghcr.io/tigamingtv/jwp-session-server:latest
-    environment:
-      # ... your existing settings, plus:
-      - DATA_DIR=/data
-      - INTEGRATION_HOST=0.0.0.0          # inside the Docker network only
-      - TELEGRAM_INTEGRATION_TOKEN=${TELEGRAM_INTEGRATION_TOKEN}
-    volumes:
-      - jwp-data:/data
-    # Do not add 3002 to ports.
-
-  jwp-discord-bot:                         # the chat bot, despite its name
-    image: ghcr.io/tigamingtv/jwp-discord-bot:latest
-    restart: unless-stopped
-    profiles: [discord, telegram]
-    depends_on: [jwp-session]
-    environment:
-      - JWP_INTEGRATION_URL=http://jwp-session:3002
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - TELEGRAM_INTEGRATION_TOKEN=${TELEGRAM_INTEGRATION_TOKEN}
-
-volumes:
-  jwp-data:
-```
+Then start the session server and the bot (`--profile discord` starts the
+same container):
 
 ```bash
 docker compose --profile telegram up -d
+docker compose logs -f discord-bot
 ```
 
-| Variable | Where | Meaning |
-|---|---|---|
-| `TELEGRAM_INTEGRATION_TOKEN` (`_FILE`) | session server and bot | The same value on both. Must differ from `DISCORD_INTEGRATION_TOKEN`. |
-| `TELEGRAM_BOT_TOKEN` (`_FILE`) | bot | From @BotFather. The Telegram part of the bot only runs when it is set. |
-| `TELEGRAM_API_URL` | bot | Bot API server (default `https://api.telegram.org`). Only for a [self-hosted Bot API server](https://github.com/tdlib/telegram-bot-api). |
-| `JWP_INTEGRATION_URL` | bot | As for Discord: the session server's integration API. |
+In your own compose file, set up the containers as described for
+[Discord]({{ '/discord-bot/' | relative_url }}#2-configure-the-containers),
+with the `TELEGRAM_*` variables. `TELEGRAM_API_URL` is only needed for a
+[self-hosted Bot API server](https://github.com/tdlib/telegram-bot-api).
+All variables: [Configuration]({{ '/configuration/' | relative_url }}#chat-bot-environment-variables).
 
 The bot needs no open port: it fetches updates from Telegram (long
 polling). Only one program may fetch a bot's updates, so don't run two
