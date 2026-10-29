@@ -1,3 +1,5 @@
+> **Unofficial personal project.** Not affiliated with Jellyfin and not security-audited. Use it at your own risk. The code was not reviewed by me.
+
 <p align="center">
   <img src="docs/logo.png" alt="JellyWatchParty" width="400">
 </p>
